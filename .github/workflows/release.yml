@@ -12,6 +12,8 @@ permissions:
 jobs:
   build:
     name: ${{ matrix.label }} executable
+    runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -19,57 +21,194 @@ jobs:
           - os: windows-latest
             label: Windows
             executable: QuantumScope.exe
+
           - os: ubuntu-24.04
             label: Linux
             executable: QuantumScope
-    runs-on: ${{ matrix.os }}
+
     steps:
+      # --------------------------------------------------
+      # 1. Checkout repository
+      # --------------------------------------------------
       - name: Checkout source
         uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # 2. Configure Python
+      # --------------------------------------------------
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-      - name: System graphics libraries (Linux build)
+          python-version: "3.12"
+
+      # --------------------------------------------------
+      # 3. Linux graphics dependencies
+      # --------------------------------------------------
+      - name: System graphics libraries (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-randr0 libxcb-shape0
-      - name: Install dependencies and bundler
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]" pyinstaller
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1 \
+            libegl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-xinerama0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-randr0 \
+            libxcb-shape0
+
+      # --------------------------------------------------
+      # 4. Install Python dependencies
+      # --------------------------------------------------
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" pyinstaller
+
+      # --------------------------------------------------
+      # 5. Scientific validation
+      # --------------------------------------------------
       - name: Physics tests
         run: python -m pytest -q
+
+      # --------------------------------------------------
+      # 6. Build application
+      # --------------------------------------------------
       - name: Build executable directory
-        run: python -m PyInstaller --noconfirm --clean --windowed --onedir --name QuantumScope --collect-submodules vtkmodules --collect-data vtkmodules --collect-all pyvista --collect-all pyqtgraph --collect-all pyvistaqt src/quantumscope/__main__.py
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m PyInstaller \
+            --noconfirm \
+            --clean \
+            --windowed \
+            --onedir \
+            --name QuantumScope \
+            --paths src \
+            --collect-submodules vtkmodules \
+            --collect-data vtkmodules \
+            --collect-data pyvista \
+            --collect-data pyqtgraph \
+            --collect-data pyvistaqt \
+            --exclude-module pyqtgraph.examples \
+            --exclude-module pyqtgraph.opengl \
+            --exclude-module pyvista.trame \
+            src/quantumscope/__main__.py
+
+      # --------------------------------------------------
+      # 7. Determine package version
+      # --------------------------------------------------
+      - name: Set package version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="v0.1.3-dev"
+          fi
+
+          echo "PACKAGE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------
+      # 8. Create downloadable ZIP
+      # --------------------------------------------------
       - name: Create downloadable ZIP
         shell: python
         env:
           PLATFORM: ${{ matrix.label }}
         run: |
-          import os, pathlib, zipfile
-          source = pathlib.Path('dist/QuantumScope')
-          label = os.environ['PLATFORM']
-          target = pathlib.Path(f'QuantumScope-v0.1.3-{label}.zip')
-          with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
-              for file in source.rglob('*'):
+          import os
+          import pathlib
+          import zipfile
+
+          source = pathlib.Path("dist/QuantumScope")
+
+          label = os.environ["PLATFORM"]
+          version = os.environ["PACKAGE_VERSION"]
+
+          target = pathlib.Path(
+              f"QuantumScope-{version}-{label}.zip"
+          )
+
+          with zipfile.ZipFile(
+              target, "w", zipfile.ZIP_DEFLATED
+          ) as archive:
+
+              for file in source.rglob("*"):
                   if file.is_file():
-                      archive.write(file, pathlib.Path('QuantumScope') / file.relative_to(source))
-              if label == 'Linux':
-                  archive.writestr('RUN_ON_LINUX.txt', 'Extract the ZIP; run chmod +x QuantumScope/QuantumScope && ./QuantumScope/QuantumScope.\nFor NVIDIA PRIME graphics on Ubuntu, launch using the included run_packaged_nvidia.sh from the extracted root.\n')
+                      archive.write(
+                          file,
+                          pathlib.Path("QuantumScope")
+                          / file.relative_to(source)
+                      )
+
+              if label == "Linux":
+
+                  archive.writestr(
+                      "RUN_ON_LINUX.txt",
+                      "QuantumScope Linux Application\n\n"
+                      "1. Extract the ZIP.\n"
+                      "2. Open a terminal in the extracted folder.\n"
+                      "3. Run:\n\n"
+                      "chmod +x QuantumScope/QuantumScope\n"
+                      "./QuantumScope/QuantumScope\n\n"
+                      "For NVIDIA PRIME graphics:\n"
+                      "chmod +x run_packaged_nvidia.sh\n"
+                      "./run_packaged_nvidia.sh\n"
+                  )
+
+                  launcher = pathlib.Path(
+                      "run_packaged_nvidia.sh"
+                  )
+
+                  if launcher.exists():
+                      archive.write(
+                          launcher,
+                          "run_packaged_nvidia.sh"
+                      )
+
               else:
-                  archive.writestr('RUN_ON_WINDOWS.txt', 'Extract the ZIP and double-click QuantumScope/QuantumScope.exe.\n')
-              if label == 'Linux':
-                  archive.write('run_packaged_nvidia.sh', 'run_packaged_nvidia.sh')
-          print(target)
+
+                  archive.writestr(
+                      "RUN_ON_WINDOWS.txt",
+                      "QuantumScope Windows Application\n\n"
+                      "1. Extract the ZIP.\n"
+                      "2. Open the QuantumScope folder.\n"
+                      "3. Double-click QuantumScope.exe.\n"
+                  )
+
+          print(f"Created: {target}")
+
+      # --------------------------------------------------
+      # 9. Upload workflow artifact
+      # --------------------------------------------------
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: QuantumScope-v0.1.3-${{ matrix.label }}
-          path: QuantumScope-v0.1.3-${{ matrix.label }}.zip
+          name: QuantumScope-${{ env.PACKAGE_VERSION }}-${{ matrix.label }}
+          path: QuantumScope-${{ env.PACKAGE_VERSION }}-${{ matrix.label }}.zip
           if-no-files-found: error
+
+      # --------------------------------------------------
+      # 10. Attach to GitHub Release
+      # --------------------------------------------------
       - name: Attach ZIP to tagged GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release view "${GITHUB_REF_NAME}" || gh release create "${GITHUB_REF_NAME}" --title "QuantumScope ${GITHUB_REF_NAME}" --notes "Cross-platform preview build. See README for requirements and known limitations."
-          gh release upload "${GITHUB_REF_NAME}" "QuantumScope-v0.1.3-${{ matrix.label }}.zip" --clobber
+          gh release view "${GITHUB_REF_NAME}" || \
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "QuantumScope ${GITHUB_REF_NAME}" \
+            --notes "Cross-platform QuantumScope release."
+
+          gh release upload \
+            "${GITHUB_REF_NAME}" \
+            "QuantumScope-${PACKAGE_VERSION}-${{ matrix.label }}.zip" \
+            --clobber
