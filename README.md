@@ -1,6 +1,6 @@
 # QuantumScope
 
-**QuantumScope v0.1.0 — Hydrogen Explorer** is an open-source, Linux-first desktop tool for physically grounded quantum-state visualization.
+**QuantumScope v0.1.3 — Hydrogen Explorer** is an open-source, Windows-and-Linux desktop tool for physically grounded quantum-state visualization.
 
 The initial release calculates *analytical, nonrelativistic* bound-state hydrogen wavefunctions and renders their probability densities in interactive 3D.
 
@@ -14,6 +14,12 @@ The initial release calculates *analytical, nonrelativistic* bound-state hydroge
 - Finite-grid probability diagnostic
 - PNG screenshot and `.npz` scientific data export
 - Separate, independently testable physics package
+
+## Windows setup (new in v0.1.3)
+
+On Windows 10/11 (64-bit), install Python 3.12 (recommended) and extract this repository into a writable folder. Double-click **`install_and_run_windows.bat`** to create `.venv`, install dependencies, and launch the GUI. For subsequent launches, double-click **`run_windows.bat`**. No Linux commands or CUDA are required. See [WINDOWS.md](WINDOWS.md) for Windows GPU selection and troubleshooting.
+
+This release provides source-based Windows installation, **not** a bundled or signed `.exe` installer. Windows GUI/GPU functionality requires local validation; automated physics tests run on Windows as well as Linux.
 
 ## Ubuntu setup
 
@@ -126,3 +132,14 @@ density contains phase. Phase at low-amplitude points should not be interpreted
 as physically measurable, and global phase is arbitrary. Standard camera views,
 zoom, coordinate bounds in reduced-mass Bohr radii, and renderer diagnostics
 are also provided. The About dialog is unchanged in this release.
+
+## v0.1.3 update: Windows source distribution
+
+- Added `install_and_run_windows.bat`, `run_windows.bat`, and Windows setup guide.
+- Preserved Linux launchers (`run.sh`, `run_nvidia.sh`, `run_default.sh`).
+- Added Windows test matrix to GitHub Actions.
+- Native GUI/graphics validation remains pending on a Windows machine.
+
+## GitHub binary packages
+
+See [PACKAGING.md](PACKAGING.md) for automated GitHub Actions builds of runnable Windows and Linux releases.

@@ -3,6 +3,10 @@ import sys
 
 
 def main():
+    if "--version" in sys.argv:
+        from quantumscope import __version__
+        print(f"QuantumScope {__version__}")
+        return 0
     from PySide6.QtWidgets import QApplication
     from quantumscope.gui.main_window import MainWindow
 

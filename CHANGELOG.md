@@ -1,3 +1,10 @@
+## 0.1.3 — Cross-platform source release
+- Added Windows batch installer and launcher using an isolated Python virtual environment.
+- Added Windows setup and graphics selection documentation.
+- Extended CI physics tests to Windows.
+- Kept existing Linux graphics configurations and About dialog unchanged.
+- No claim of a compiled Windows executable or Windows GPU validation yet.
+
 ## v0.1.1 — About dialog enhancement
 
 - GlassBalance-inspired About panel, local portrait selection, custom logo, maintainer credits and configurable GitHub link.
