@@ -1,0 +1,1 @@
+"""QuantumScope Qt interface."""
