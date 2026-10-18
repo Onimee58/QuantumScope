@@ -75,17 +75,19 @@ def draw_orbital(plotter, axis, density, psi, mode, enclosed=90,
             isosurfaces=[level], scalars="density")
         if surface.n_points:
             if phase_coloring:
-                # Phase is defined for the complex state itself; only sample it on
-                # the |psi|² enclosing surface. Never claim density carries phase.
-                centers = surface.cell_centers().points
-                # Nearest grid samples avoid relying on costly interpolation.
-                ix = np.clip(np.rint((centers[:, 0] - axis[0]) / (axis[1] - axis[0])).astype(int), 0, len(axis)-1)
-                iy = np.clip(np.rint((centers[:, 1] - axis[0]) / (axis[1] - axis[0])).astype(int), 0, len(axis)-1)
-                iz = np.clip(np.rint((centers[:, 2] - axis[0]) / (axis[1] - axis[0])).astype(int), 0, len(axis)-1)
-                surface.cell_data["wavefunction phase (rad)"] = np.angle(psi[ix, iy, iz]).astype(np.float32)
+                # Interpolate the *complex wavefunction* at surface vertices, not
+                # nearest voxel cell centers. Nearest-cell phase coloring created
+                # staircase/triangle artifacts around nodal features.
+                from scipy.ndimage import map_coordinates
+                verts = surface.points
+                origin, step = float(axis[0]), float(axis[1] - axis[0])
+                coords = ((verts - origin) / step).T
+                real = map_coordinates(np.real(psi), coords, order=1, mode="nearest")
+                imag = map_coordinates(np.imag(psi), coords, order=1, mode="nearest")
+                surface.point_data["wavefunction phase (rad)"] = np.angle(real + 1j * imag).astype(np.float32)
                 plotter.add_mesh(surface, scalars="wavefunction phase (rad)",
-                                 preference="cell", cmap="twilight", clim=(-np.pi, np.pi),
-                                 opacity=0.85, smooth_shading=True, show_scalar_bar=True,
+                                 preference="point", cmap="twilight", clim=(-np.pi, np.pi),
+                                 opacity=0.96, smooth_shading=True, show_scalar_bar=True,
                                  scalar_bar_args={"color": "white", "title": "phase (rad)", "vertical": True})
             else:
                 plotter.add_mesh(surface, color="deepskyblue", opacity=0.78,

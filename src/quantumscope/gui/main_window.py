@@ -3,6 +3,7 @@ from pathlib import Path
 import traceback
 import os
 import subprocess
+import sys
 
 import numpy as np
 import pyqtgraph as pg
@@ -16,7 +17,7 @@ from PySide6.QtWidgets import (
 from pyvistaqt import QtInteractor
 from quantumscope import __version__
 from quantumscope.physics import HydrogenAtom, density_grid
-from quantumscope.physics.hydrogen import A_MU_METERS, captured_probability
+from quantumscope.physics.hydrogen import A_MU_METERS, captured_probability, RealHydrogenState
 from quantumscope.visualization.orbitals import draw_orbital, set_camera_view, probability_radius
 
 
@@ -193,7 +194,12 @@ class MainWindow(QMainWindow):
         self.resize(1420, 920)
         self.atom = HydrogenAtom()
         self.axis = self.density = self.psi = self.state = None
+        self.compare_axis = self.compare_density = self.compare_psi = self.compare_state = None
+        # Signals from dependent quantum-number controls may fire during UI construction.
+        # Do not render until all widgets and plotters have been initialized.
+        self._ui_ready = False
         self._build_ui()
+        self._ui_ready = True
         self._build_menu()
         self.refresh()
 
@@ -232,7 +238,30 @@ class MainWindow(QMainWindow):
         state_form.addRow("Principal n", self.n)
         state_form.addRow("Angular l", self.l)
         state_form.addRow("Magnetic m", self.m)
+        self.basis = QComboBox()
+        self.basis.addItems(["Complex Y(l,m)", "Real cosine", "Real sine"])
+        state_form.addRow("Orbital basis", self.basis)
         controls.addWidget(state_box)
+
+        compare_box = QGroupBox("Side-by-side comparison")
+        compare_form = QFormLayout(compare_box)
+        self.compare_enable = QCheckBox("Enable second 3D viewer")
+        self.compare_n = QSpinBox()
+        self.compare_n.setRange(1, 4)
+        self.compare_n.setValue(2)
+        self.compare_l = QComboBox()
+        self.compare_m = QComboBox()
+        self.compare_basis = QComboBox()
+        self.compare_basis.addItems(["Complex Y(l,m)", "Real cosine", "Real sine"])
+        self.compare_n.valueChanged.connect(lambda: self._update_compare_l())
+        self.compare_l.currentIndexChanged.connect(lambda: self._update_compare_m())
+        compare_form.addRow(self.compare_enable)
+        compare_form.addRow("Compare n", self.compare_n)
+        compare_form.addRow("Compare l", self.compare_l)
+        compare_form.addRow("Compare m", self.compare_m)
+        compare_form.addRow("Compare basis", self.compare_basis)
+        controls.addWidget(compare_box)
+        self._update_compare_l()
 
         view_box = QGroupBox("Visualization")
         vf = QFormLayout(view_box)
@@ -260,9 +289,10 @@ class MainWindow(QMainWindow):
         gf = QFormLayout(graphics_box)
         self.renderer = QComboBox()
         self.renderer.addItems(["Auto (GPU preferred)", "GPU", "CPU"])
-        gf.addRow("Volume renderer", self.renderer)
-        note = QLabel("VTK uses OpenGL GPU/VRAM when supported. Auto falls back to CPU. "
-                      "Large grids require more memory.")
+        gf.addRow("Volume rendering method", self.renderer)
+        note = QLabel("This selects the VTK density-cloud mapper, NOT the physical GPU. "
+                      "The active Intel/NVIDIA graphics device is selected at application startup. "
+                      "Surface rendering is independent of this setting.")
         note.setWordWrap(True)
         gf.addRow(note)
         controls.addWidget(graphics_box)
@@ -294,8 +324,18 @@ class MainWindow(QMainWindow):
         inspect_button = QPushButton("Refresh renderer information")
         inspect_button.clicked.connect(self._update_gpu_diagnostics)
         df.addWidget(inspect_button)
+        if sys.platform.startswith("linux"):
+            restart_gpu = QPushButton("Restart using NVIDIA (Linux)")
+            restart_gpu.setToolTip("Restart using XCB/GLX and NVIDIA PRIME offloading")
+            restart_gpu.clicked.connect(self._restart_on_nvidia)
+            df.addWidget(restart_gpu)
         controls.addWidget(diagnostic_box)
 
+        self.export_scale = QSpinBox()
+        self.export_scale.setRange(1, 4)
+        self.export_scale.setValue(2)
+        controls.addWidget(QLabel("PNG export scale (1–4×)"))
+        controls.addWidget(self.export_scale)
         self.auto_render = QCheckBox("Update when changing state/mode")
         controls.addWidget(self.auto_render)
         render_btn = QPushButton("Render state")
@@ -322,8 +362,20 @@ class MainWindow(QMainWindow):
         scroll.setWidget(options)
         splitter.addWidget(scroll)
 
+        self.viewer_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.plotter = QtInteractor(central)
-        splitter.addWidget(self.plotter)
+        self.viewer_splitter.addWidget(self.plotter)
+        self.compare_plotter = QtInteractor(central)
+        self.viewer_splitter.addWidget(self.compare_plotter)
+        self.compare_plotter.hide()
+        # Make the left sidebar span the full content height.
+        # The compact radial plot belongs below the 3D viewers on the RIGHT only.
+        viewer_column = QWidget()
+        viewer_layout = QVBoxLayout(viewer_column)
+        viewer_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_layout.setSpacing(6)
+        viewer_layout.addWidget(self.viewer_splitter, stretch=1)
+        splitter.addWidget(viewer_column)
         splitter.setSizes([330, 1070])
 
         bottom = QGroupBox("Radial probability  P(r) = r² |Rₙₗ(r)|²")
@@ -333,11 +385,18 @@ class MainWindow(QMainWindow):
         self.radial_plot.setLabel("bottom", "r", units="a_mu")
         self.radial_plot.setLabel("left", "P(r)", units="a_mu^-1")
         self.radial_plot.showGrid(x=True, y=True, alpha=0.2)
-        self.radial_plot.setMinimumHeight(180)
+        self.radial_plot.setMinimumHeight(95)
         blayout.addWidget(self.radial_plot)
-        layout.addWidget(bottom, stretch=1)
+        bottom.setMinimumHeight(125)
+        bottom.setMaximumHeight(178)
+        viewer_layout.addWidget(bottom, stretch=0)
         self.statusBar().showMessage("Nonrelativistic isolated hydrogen • reduced-mass Coulomb model")
         self._update_l()
+        for ctrl in (self.basis, self.compare_enable, self.compare_n, self.compare_l,
+                     self.compare_m, self.compare_basis):
+            signal = (ctrl.stateChanged if isinstance(ctrl, QCheckBox) else
+                      ctrl.valueChanged if isinstance(ctrl, QSpinBox) else ctrl.currentIndexChanged)
+            signal.connect(self._auto_refresh)
         for ctrl, signal in ((self.n, self.n.valueChanged),
                              (self.l, self.l.currentIndexChanged),
                              (self.m, self.m.currentIndexChanged),
@@ -350,7 +409,40 @@ class MainWindow(QMainWindow):
                              (self.show_grid, self.show_grid.stateChanged)):
             signal.connect(self._auto_refresh)
 
+    def _update_compare_l(self):
+        old = self.compare_l.currentData()
+        self.compare_l.blockSignals(True)
+        self.compare_l.clear()
+        for l in range(self.compare_n.value()):
+            self.compare_l.addItem(str(l), l)
+        self.compare_l.setCurrentIndex(min(old if old is not None else 0,
+                                           self.compare_n.value()-1))
+        self.compare_l.blockSignals(False)
+        self._update_compare_m()
+
+    def _update_compare_m(self):
+        l = self.compare_l.currentData()
+        if l is None:
+            return
+        old = self.compare_m.currentData()
+        self.compare_m.blockSignals(True)
+        self.compare_m.clear()
+        for m in range(-l, l + 1):
+            self.compare_m.addItem(str(m), m)
+        self.compare_m.setCurrentIndex((old if old is not None and abs(old) <= l else 0)+l)
+        self.compare_m.blockSignals(False)
+        self._auto_refresh()
+
+    def _make_state(self, n, l, m, basis):
+        if basis == "Complex Y(l,m)":
+            return self.atom.state(n, l, m)
+        order = abs(m)
+        kind = "sin" if basis == "Real sine" and order else "cos"
+        return RealHydrogenState(n, l, order, kind)
+
     def _auto_refresh(self, *_):
+        if not self._ui_ready:
+            return
         if self.auto_render.isChecked():
             self.refresh()
 
@@ -383,6 +475,37 @@ class MainWindow(QMainWindow):
         set_camera_view(self.plotter, probability_radius(self.axis, self.density),
                         self.camera_view.currentText(), self.zoom_factor.value())
         self.plotter.render()
+        if self.compare_enable.isChecked() and self.compare_density is not None:
+            set_camera_view(self.compare_plotter,
+                            probability_radius(self.compare_axis, self.compare_density),
+                            self.camera_view.currentText(), self.zoom_factor.value())
+            self.compare_plotter.render()
+
+    def _restart_on_nvidia(self):
+        """GPU selection is process-wide: a new Qt/OpenGL context is required."""
+        if not sys.platform.startswith("linux"):
+            return
+        choice = QMessageBox.question(
+            self, "Restart on NVIDIA",
+            "This closes QuantumScope and restarts it with NVIDIA PRIME offloading.\n"
+            "Unsaved visualization settings will be reset. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return
+        env = os.environ.copy()
+        env.update({"QT_QPA_PLATFORM": "xcb", "QT_XCB_GL_INTEGRATION": "xcb_glx",
+                    "__NV_PRIME_RENDER_OFFLOAD": "1", "__GLX_VENDOR_LIBRARY_NAME": "nvidia"})
+        # Use the current interpreter (source installation) or executable (packaged build).
+        command = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "quantumscope"]
+        try:
+            subprocess.Popen(command, env=env, start_new_session=True,
+                             cwd=str(Path.home()), close_fds=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "NVIDIA launch failed", str(exc))
+            return
+        self.close()
 
     def _update_gpu_diagnostics(self):
         """Query the *current VTK GL context*; environment hints aren't proof."""
@@ -410,7 +533,8 @@ class MainWindow(QMainWindow):
     def refresh(self):
         try:
             self.statusBar().showMessage("Rendering…")
-            self.state = self.atom.state(self.n.value(), self.l.currentData(), self.m.currentData())
+            self.state = self._make_state(self.n.value(), self.l.currentData(),
+                                          self.m.currentData(), self.basis.currentText())
             self.axis, self.density, self.psi = density_grid(
                 self.state, resolution=self.resolution.value())
             backend, radius = draw_orbital(
@@ -419,6 +543,21 @@ class MainWindow(QMainWindow):
                 self.renderer.currentText(), self.opacity.value(),
                 self.phase_color.isChecked(), self.show_grid.isChecked(),
                 self.camera_view.currentText(), self.zoom_factor.value())
+            self.compare_plotter.setVisible(self.compare_enable.isChecked())
+            if self.compare_enable.isChecked():
+                self.compare_state = self._make_state(
+                    self.compare_n.value(), self.compare_l.currentData(),
+                    self.compare_m.currentData(), self.compare_basis.currentText())
+                self.compare_axis, self.compare_density, self.compare_psi = density_grid(
+                    self.compare_state, resolution=self.resolution.value())
+                draw_orbital(self.compare_plotter, self.compare_axis,
+                             self.compare_density, self.compare_psi,
+                             self.mode.currentText(), self.enclosed.value(),
+                             self.renderer.currentText(), self.opacity.value(),
+                             self.phase_color.isChecked(), self.show_grid.isChecked(),
+                             self.camera_view.currentText(), self.zoom_factor.value())
+            else:
+                self.compare_axis = self.compare_density = self.compare_psi = self.compare_state = None
             r = np.linspace(0, max(30, 10*self.state.n*self.state.n), 1000)
             probability = self.state.radial_probability(r)
             self.radial_plot.clear()
@@ -430,9 +569,12 @@ class MainWindow(QMainWindow):
             self.radial_plot.setYRange(0, float(max(probability)) * 1.12, padding=0)
             captured = captured_probability(self.axis, self.density)
             orbital = "spdf"[self.state.l]
+            state_name = getattr(self.state, "label", f"{self.state.n}{orbital} (m={self.state.m})")
             self.details.setText(
-                f"<b>Orbital:</b> {self.state.n}{orbital} (m={self.state.m})<br>"
+                f"<b>Orbital:</b> {state_name}<br>"
                 f"<b>Energy:</b> {self.state.energy_ev:.6f} eV<br>"
+                f"<b>Basis:</b> {self.basis.currentText()}<br>"
+                f"<b>Comparison:</b> {getattr(self.compare_state, 'label', 'active' if self.compare_state else 'off')}<br>"
                 f"<b>Bohr radius (reduced mass):</b> {A_MU_METERS * 1e12:.4f} pm<br>"
                 f"<b>Grid:</b> ±{self.axis[-1]:g} a_mu per axis<br>"
                 f"<b>Grid probability:</b> {captured:.6f} (numerical estimate)<br>"
@@ -452,7 +594,8 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Export 3D image", "orbital.png", "PNG (*.png)")
         if path:
             try:
-                self.plotter.screenshot(str(Path(path).with_suffix(".png")))
+                self.plotter.screenshot(str(Path(path).with_suffix(".png")),
+                                        scale=self.export_scale.value())
             except Exception as exc:
                 QMessageBox.critical(self, "Export error", str(exc))
 
@@ -467,10 +610,12 @@ class MainWindow(QMainWindow):
                                     psi_a_mu_minus3_over2=self.psi,
                                     n=self.state.n, l=self.state.l, m=self.state.m,
                                     energy_ev=self.state.energy_ev,
+                                    orbital_basis=self.basis.currentText(),
                                     reduced_bohr_radius_m=A_MU_METERS)
             except Exception as exc:
                 QMessageBox.critical(self, "Export error", str(exc))
 
     def closeEvent(self, event):
         self.plotter.close()
+        self.compare_plotter.close()
         super().closeEvent(event)

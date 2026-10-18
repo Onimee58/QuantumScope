@@ -1,3 +1,11 @@
+## 0.1.4 — Real orbitals and comparison
+
+- Introduced real tesseral hydrogen orbital basis with unit-normalized cosine/sine combinations.
+- Added optional dual 3D orbital viewer and state selectors.
+- Added 1–4× PNG screenshot export scale and extended NPZ basis metadata.
+- Updated version and portable cross-platform PyInstaller action; avoided broad pyqtgraph collection on headless CI.
+- Added numerical checks for real-orbital angular nodes and density identities.
+
 ## 0.1.3 — Cross-platform source release
 - Added Windows batch installer and launcher using an isolated Python virtual environment.
 - Added Windows setup and graphics selection documentation.
@@ -33,3 +41,10 @@
 - Add in-application VTK OpenGL capability diagnostics.
 - Add NVIDIA PRIME / GLX and system-default launch scripts.
 - Preserve About dialog for future revision.
+
+### v0.1.4 UI/graphics hotfix (post-release candidate)
+- Sidebar extends to the bottom of the application; radial plot is compact and placed below the viewers only.
+- Phase colors on probability-enclosing surfaces now use trilinear interpolation of the complex wavefunction at mesh vertices instead of nearest-voxel cell sampling.
+- Clarified VTK volume mapper versus physical GPU choice.
+- Added a Linux restart-on-NVIDIA action using the previously verified XCB/GLX PRIME environment; the active GPU is reported by graphics diagnostics.
+- Scientific calculations and Windows/Linux packaging workflows retained.

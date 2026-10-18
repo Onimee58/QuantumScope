@@ -1,6 +1,6 @@
 # QuantumScope
 
-**QuantumScope v0.1.3 — Hydrogen Explorer** is an open-source, Windows-and-Linux desktop tool for physically grounded quantum-state visualization.
+**QuantumScope v0.1.4 — Hydrogen Explorer** is an open-source, Windows-and-Linux desktop tool for physically grounded quantum-state visualization.
 
 The initial release calculates *analytical, nonrelativistic* bound-state hydrogen wavefunctions and renders their probability densities in interactive 3D.
 
@@ -15,7 +15,7 @@ The initial release calculates *analytical, nonrelativistic* bound-state hydroge
 - PNG screenshot and `.npz` scientific data export
 - Separate, independently testable physics package
 
-## Windows setup (new in v0.1.3)
+## Windows setup (new in v0.1.4)
 
 On Windows 10/11 (64-bit), install Python 3.12 (recommended) and extract this repository into a writable folder. Double-click **`install_and_run_windows.bat`** to create `.venv`, install dependencies, and launch the GUI. For subsequent launches, double-click **`run_windows.bat`**. No Linux commands or CUDA are required. See [WINDOWS.md](WINDOWS.md) for Windows GPU selection and troubleshooting.
 
@@ -133,7 +133,7 @@ as physically measurable, and global phase is arbitrary. Standard camera views,
 zoom, coordinate bounds in reduced-mass Bohr radii, and renderer diagnostics
 are also provided. The About dialog is unchanged in this release.
 
-## v0.1.3 update: Windows source distribution
+## v0.1.4 update: Windows source distribution
 
 - Added `install_and_run_windows.bat`, `run_windows.bat`, and Windows setup guide.
 - Preserved Linux launchers (`run.sh`, `run_nvidia.sh`, `run_default.sh`).
@@ -143,3 +143,13 @@ are also provided. The About dialog is unchanged in this release.
 ## GitHub binary packages
 
 See [PACKAGING.md](PACKAGING.md) for automated GitHub Actions builds of runnable Windows and Linux releases.
+
+
+## v0.1.4: Real orbital basis and comparisons
+
+- Select **Complex Y(l,m)**, **Real cosine**, or **Real sine** orbital bases. The real choices use `|m|`, with the conventional relative global phase not physically observable. `m=0` has only a cosine choice; sine is mapped to cosine in the GUI.
+- Enable **Side-by-side comparison** to render two independent hydrogen states at once. Both viewers share representation, resolution, camera orientation, and color options; each computes its own state. Memory usage rises with grid resolution.
+- **PNG export scale** supports 1–4× resolution for the main 3D viewer.
+- The older probability enclosure is a constant-density isosurface threshold chosen from sampled grid mass. It is not an exact probability-enclosing mesh because voxel rankings and mesh interpolation are approximate.
+- Phase coloring applies to the wavefunction, not its density; angular real-orbital colors differ by sign (0 or π), subject to the arbitrary overall sign convention.
+- All builds should be validated with Windows and Linux GUI launch smoke tests after downloading CI artifacts.

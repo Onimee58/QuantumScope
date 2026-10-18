@@ -109,3 +109,38 @@ def enclosing_density_threshold(density, spacing, fraction=0.9):
     weights = ranked * float(spacing)**3
     i = np.searchsorted(np.cumsum(weights), fraction * weights.sum())
     return float(ranked[min(i, len(ranked) - 1)])
+
+
+@dataclass(frozen=True)
+class RealHydrogenState(HydrogenState):
+    """Normalized real tesseral hydrogen orbital, with |m| and cosine/sine choice.
+
+    For m=0 this is Y_l^0. For m>0 the real and imaginary combinations of
+    Y_l^(+m) and Y_l^(-m) are orthonormal; their overall sign is conventional.
+    """
+    kind: str = "cos"
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.m < 0 or self.kind not in ("cos", "sin"):
+            raise ValueError("Real orbitals require m>=0 and kind cos/sin")
+        if self.m == 0 and self.kind != "cos":
+            raise ValueError("The m=0 sine orbital is identically zero")
+
+    def wavefunction(self, x, y, z):
+        positive = super().wavefunction(x, y, z)
+        if self.m == 0:
+            return positive.real
+        # Condon-Shortley: Y_l^-m = (-1)^m conjugate(Y_l^m).
+        # Both combinations are orthonormal under integration over solid angle.
+        if self.kind == "cos":
+            return np.sqrt(2.0) * positive.real
+        return np.sqrt(2.0) * positive.imag
+
+    @property
+    def label(self):
+        if self.l == 1 and self.m == 1:
+            return f"{self.n}p_" + ("x" if self.kind == "cos" else "y")
+        if self.l == 1 and self.m == 0:
+            return f"{self.n}p_z"
+        return f"{self.n}{'spdf'[self.l]} real {self.kind}({self.m}phi)"
