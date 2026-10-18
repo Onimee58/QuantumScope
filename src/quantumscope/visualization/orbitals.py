@@ -1,6 +1,7 @@
 """VTK/PyVista visualization with probability-aware framing and GPU fallback."""
 import numpy as np
 import pyvista as pv
+from quantumscope.visualization.phase import phase_with_node_mask
 from quantumscope.physics.hydrogen import enclosing_density_threshold
 
 
@@ -84,11 +85,13 @@ def draw_orbital(plotter, axis, density, psi, mode, enclosed=90,
                 coords = ((verts - origin) / step).T
                 real = map_coordinates(np.real(psi), coords, order=1, mode="nearest")
                 imag = map_coordinates(np.imag(psi), coords, order=1, mode="nearest")
-                surface.point_data["wavefunction phase (rad)"] = np.angle(real + 1j * imag).astype(np.float32)
+                surface.point_data["wavefunction phase (rad)"] = phase_with_node_mask(
+                    real, imag, float(np.sqrt(np.max(density))))
                 plotter.add_mesh(surface, scalars="wavefunction phase (rad)",
                                  preference="point", cmap="twilight", clim=(-np.pi, np.pi),
-                                 opacity=0.96, smooth_shading=True, show_scalar_bar=True,
-                                 scalar_bar_args={"color": "white", "title": "phase (rad)", "vertical": True})
+                                 opacity=0.96, smooth_shading=True, nan_color="gray",
+                                 interpolate_before_map=False, show_scalar_bar=True,
+                                 scalar_bar_args={"color": "white", "title": "phase (rad)", "vertical": True, "width": 0.055, "height": 0.48, "position_x": 0.92, "position_y": 0.27})
             else:
                 plotter.add_mesh(surface, color="deepskyblue", opacity=0.78,
                                  smooth_shading=True, specular=0.32, specular_power=25,

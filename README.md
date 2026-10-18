@@ -1,6 +1,6 @@
 # QuantumScope
 
-**QuantumScope v0.1.4 — Hydrogen Explorer** is an open-source, Windows-and-Linux desktop tool for physically grounded quantum-state visualization.
+**QuantumScope — Hydrogen Explorer** is an open-source, Windows-and-Linux desktop tool for physically grounded quantum-state visualization.
 
 The initial release calculates *analytical, nonrelativistic* bound-state hydrogen wavefunctions and renders their probability densities in interactive 3D.
 
@@ -153,3 +153,17 @@ See [PACKAGING.md](PACKAGING.md) for automated GitHub Actions builds of runnable
 - The older probability enclosure is a constant-density isosurface threshold chosen from sampled grid mass. It is not an exact probability-enclosing mesh because voxel rankings and mesh interpolation are approximate.
 - Phase coloring applies to the wavefunction, not its density; angular real-orbital colors differ by sign (0 or π), subject to the arbitrary overall sign convention.
 - All builds should be validated with Windows and Linux GUI launch smoke tests after downloading CI artifacts.
+
+
+## v0.1.5 visualization controls
+
+- Drag the divider to resize the sidebar and 3D comparison panels.
+- Enable **Synchronize comparison cameras** to rotate both orbital viewers together.
+- Uncheck **Radial probability** to collapse the plot temporarily.
+- Uncheck **Scientific information** to collapse detailed state metadata.
+- Phase colors use a cyclic colormap; near-zero wavefunction magnitudes are masked because phase is undefined at nodes.
+- Linux users can restart on NVIDIA PRIME from the graphics diagnostics panel; selecting a GPU volume mapper does not select a physical graphics device.
+
+
+### Hydrogen Dynamics (v0.1.6)
+Choose **Experiments → Hydrogen Dynamics (superposition)...** for time-dependent coherent superpositions of two bound states. See [DYNAMICS.md](DYNAMICS.md) for model assumptions, animation controls, and data interpretation.

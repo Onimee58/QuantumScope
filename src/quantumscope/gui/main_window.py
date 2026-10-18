@@ -198,15 +198,32 @@ class MainWindow(QMainWindow):
         # Signals from dependent quantum-number controls may fire during UI construction.
         # Do not render until all widgets and plotters have been initialized.
         self._ui_ready = False
+        self._syncing_camera = False
+        self._rendering = False
         self._build_ui()
         self._ui_ready = True
         self._build_menu()
         self.refresh()
 
     def _build_menu(self):
+        experiments = self.menuBar().addMenu("&Experiments")
+        launch = experiments.addAction("Hydrogen Dynamics (superposition)...")
+        launch.triggered.connect(self.show_dynamics)
+        launch_3d = experiments.addAction("Hydrogen Dynamics — 3D animation...")
+        launch_3d.triggered.connect(self.show_dynamics_3d)
         help_menu = self.menuBar().addMenu("&Help")
         about_action = help_menu.addAction("&About QuantumScope")
         about_action.triggered.connect(self.show_about)
+
+    def show_dynamics(self):
+        from quantumscope.gui.dynamics_dialog import HydrogenDynamicsDialog
+        dialog = HydrogenDynamicsDialog(self)
+        dialog.exec()
+
+    def show_dynamics_3d(self):
+        from quantumscope.gui.dynamics_3d_dialog import HydrogenDynamics3DDialog
+        dialog = HydrogenDynamics3DDialog(self)
+        dialog.exec()
 
     def show_about(self):
         AboutDialog(self).exec()
@@ -220,8 +237,8 @@ class MainWindow(QMainWindow):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setMinimumWidth(265)
-        scroll.setMaximumWidth(420)
+        scroll.setMinimumWidth(410)
+        scroll.setMaximumWidth(820)
         options = QWidget()
         controls = QVBoxLayout(options)
         controls.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -229,6 +246,7 @@ class MainWindow(QMainWindow):
 
         state_box = QGroupBox("Hydrogen quantum state")
         state_form = QFormLayout(state_box)
+        state_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.n = QSpinBox()
         self.n.setRange(1, 4)
         self.l = QComboBox()
@@ -245,6 +263,7 @@ class MainWindow(QMainWindow):
 
         compare_box = QGroupBox("Side-by-side comparison")
         compare_form = QFormLayout(compare_box)
+        compare_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.compare_enable = QCheckBox("Enable second 3D viewer")
         self.compare_n = QSpinBox()
         self.compare_n.setRange(1, 4)
@@ -265,6 +284,7 @@ class MainWindow(QMainWindow):
 
         view_box = QGroupBox("Visualization")
         vf = QFormLayout(view_box)
+        vf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.mode = QComboBox()
         self.mode.addItems(["Density cloud", "Probability enclosure", "Real(psi)", "Imag(psi)"])
         self.resolution = QSpinBox()
@@ -287,6 +307,7 @@ class MainWindow(QMainWindow):
 
         graphics_box = QGroupBox("Graphics")
         gf = QFormLayout(graphics_box)
+        gf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.renderer = QComboBox()
         self.renderer.addItems(["Auto (GPU preferred)", "GPU", "CPU"])
         gf.addRow("Volume rendering method", self.renderer)
@@ -299,6 +320,7 @@ class MainWindow(QMainWindow):
 
         camera_box = QGroupBox("Camera & scientific display")
         cf = QFormLayout(camera_box)
+        cf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.camera_view = QComboBox()
         self.camera_view.addItems(["Perspective", "+X", "+Y", "+Z"])
         self.zoom_factor = QDoubleSpinBox()
@@ -307,10 +329,13 @@ class MainWindow(QMainWindow):
         self.zoom_factor.setValue(1.3)
         self.phase_color = QCheckBox("Color enclosure by wavefunction phase")
         self.show_grid = QCheckBox("Show axes and coordinates (a_mu)")
+        self.sync_cameras = QCheckBox("Synchronize comparison cameras")
+        self.sync_cameras.setChecked(True)
         cf.addRow("View", self.camera_view)
         cf.addRow("Magnification", self.zoom_factor)
         cf.addRow(self.phase_color)
         cf.addRow(self.show_grid)
+        cf.addRow(self.sync_cameras)
         controls.addWidget(camera_box)
         self.camera_view.currentIndexChanged.connect(self._change_camera)
         self.zoom_factor.valueChanged.connect(self._change_camera)
@@ -352,6 +377,8 @@ class MainWindow(QMainWindow):
         controls.addWidget(data_btn)
 
         details_box = QGroupBox("Scientific information")
+        details_box.setCheckable(True)
+        details_box.setChecked(True)
         detail_layout = QVBoxLayout(details_box)
         self.details = QLabel()
         self.details.setWordWrap(True)
@@ -359,15 +386,34 @@ class MainWindow(QMainWindow):
         detail_layout.addWidget(self.details)
         controls.addWidget(details_box)
         controls.addStretch()
+        # Allow long setting labels to wrap instead of creating horizontal scrolling.
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        options.setMinimumWidth(398)
         scroll.setWidget(options)
         splitter.addWidget(scroll)
 
         self.viewer_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.plotter = QtInteractor(central)
-        self.viewer_splitter.addWidget(self.plotter)
         self.compare_plotter = QtInteractor(central)
-        self.viewer_splitter.addWidget(self.compare_plotter)
-        self.compare_plotter.hide()
+        self.primary_panel = QWidget()
+        primary_layout = QVBoxLayout(self.primary_panel)
+        primary_layout.setContentsMargins(0, 0, 0, 0)
+        primary_layout.setSpacing(2)
+        self.primary_label = QLabel("Primary orbital")
+        primary_layout.addWidget(self.primary_label)
+        primary_layout.addWidget(self.plotter, stretch=1)
+        self.viewer_splitter.addWidget(self.primary_panel)
+        self.compare_panel = QWidget()
+        compare_layout = QVBoxLayout(self.compare_panel)
+        compare_layout.setContentsMargins(0, 0, 0, 0)
+        compare_layout.setSpacing(2)
+        self.compare_label = QLabel("Comparison orbital")
+        compare_layout.addWidget(self.compare_label)
+        compare_layout.addWidget(self.compare_plotter, stretch=1)
+        self.viewer_splitter.addWidget(self.compare_panel)
+        self.compare_panel.hide()
+        self.plotter.camera.AddObserver("ModifiedEvent", lambda *_: self._mirror_camera(self.plotter, self.compare_plotter))
+        self.compare_plotter.camera.AddObserver("ModifiedEvent", lambda *_: self._mirror_camera(self.compare_plotter, self.plotter))
         # Make the left sidebar span the full content height.
         # The compact radial plot belongs below the 3D viewers on the RIGHT only.
         viewer_column = QWidget()
@@ -376,9 +422,14 @@ class MainWindow(QMainWindow):
         viewer_layout.setSpacing(6)
         viewer_layout.addWidget(self.viewer_splitter, stretch=1)
         splitter.addWidget(viewer_column)
-        splitter.setSizes([330, 1070])
+        splitter.setSizes([455, 965])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
 
         bottom = QGroupBox("Radial probability  P(r) = r² |Rₙₗ(r)|²")
+        bottom.setCheckable(True)
+        bottom.setChecked(True)
+        self.radial_group = bottom
         blayout = QVBoxLayout(bottom)
         self.radial_plot = pg.PlotWidget()
         self.radial_plot.setBackground("#101820")
@@ -388,7 +439,8 @@ class MainWindow(QMainWindow):
         self.radial_plot.setMinimumHeight(95)
         blayout.addWidget(self.radial_plot)
         bottom.setMinimumHeight(125)
-        bottom.setMaximumHeight(178)
+        bottom.setMaximumHeight(170)
+        bottom.toggled.connect(self._toggle_radial_plot)
         viewer_layout.addWidget(bottom, stretch=0)
         self.statusBar().showMessage("Nonrelativistic isolated hydrogen • reduced-mass Coulomb model")
         self._update_l()
@@ -408,6 +460,29 @@ class MainWindow(QMainWindow):
                              (self.phase_color, self.phase_color.stateChanged),
                              (self.show_grid, self.show_grid.stateChanged)):
             signal.connect(self._auto_refresh)
+
+    def _toggle_radial_plot(self, shown):
+        self.radial_plot.setVisible(shown)
+        self.radial_group.setMaximumHeight(170 if shown else 35)
+
+    def _mirror_camera(self, source, destination):
+        """Keep both cameras in matching world coordinates without recursive updates."""
+        if (not self._ui_ready or self._syncing_camera or self._rendering or
+                not self.compare_enable.isChecked() or not self.sync_cameras.isChecked()):
+            return
+        self._syncing_camera = True
+        try:
+            src, dst = source.camera, destination.camera
+            dst.SetPosition(*src.GetPosition())
+            dst.SetFocalPoint(*src.GetFocalPoint())
+            dst.SetViewUp(*src.GetViewUp())
+            dst.SetParallelProjection(src.GetParallelProjection())
+            dst.SetParallelScale(src.GetParallelScale())
+            dst.SetViewAngle(src.GetViewAngle())
+            destination.reset_camera_clipping_range()
+            destination.render()
+        finally:
+            self._syncing_camera = False
 
     def _update_compare_l(self):
         old = self.compare_l.currentData()
@@ -531,23 +606,26 @@ class MainWindow(QMainWindow):
             self._change_camera()
 
     def refresh(self):
+        self._rendering = True
         try:
             self.statusBar().showMessage("Rendering…")
             self.state = self._make_state(self.n.value(), self.l.currentData(),
                                           self.m.currentData(), self.basis.currentText())
             self.axis, self.density, self.psi = density_grid(
                 self.state, resolution=self.resolution.value())
+            self.primary_label.setText("Primary: " + getattr(self.state, "label", f"n={self.state.n}, l={self.state.l}, m={self.state.m}"))
             backend, radius = draw_orbital(
                 self.plotter, self.axis, self.density, self.psi,
                 self.mode.currentText(), self.enclosed.value(),
                 self.renderer.currentText(), self.opacity.value(),
                 self.phase_color.isChecked(), self.show_grid.isChecked(),
                 self.camera_view.currentText(), self.zoom_factor.value())
-            self.compare_plotter.setVisible(self.compare_enable.isChecked())
+            self.compare_panel.setVisible(self.compare_enable.isChecked())
             if self.compare_enable.isChecked():
                 self.compare_state = self._make_state(
                     self.compare_n.value(), self.compare_l.currentData(),
                     self.compare_m.currentData(), self.compare_basis.currentText())
+                self.compare_label.setText("Comparison: " + getattr(self.compare_state, "label", f"n={self.compare_state.n}, l={self.compare_state.l}, m={self.compare_state.m}"))
                 self.compare_axis, self.compare_density, self.compare_psi = density_grid(
                     self.compare_state, resolution=self.resolution.value())
                 draw_orbital(self.compare_plotter, self.compare_axis,
@@ -558,6 +636,10 @@ class MainWindow(QMainWindow):
                              self.camera_view.currentText(), self.zoom_factor.value())
             else:
                 self.compare_axis = self.compare_density = self.compare_psi = self.compare_state = None
+            self._rendering = False
+            if self.compare_enable.isChecked() and self.sync_cameras.isChecked():
+                # Ensure both begin with the same orientation after a refresh.
+                self._mirror_camera(self.plotter, self.compare_plotter)
             r = np.linspace(0, max(30, 10*self.state.n*self.state.n), 1000)
             probability = self.state.radial_probability(r)
             self.radial_plot.clear()
@@ -587,6 +669,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Render complete • {backend}")
             self._update_gpu_diagnostics()
         except Exception as exc:
+            self._rendering = False
             self.statusBar().showMessage("Render failed")
             QMessageBox.critical(self, "Rendering error", f"{exc}\n\n{traceback.format_exc()}")
 

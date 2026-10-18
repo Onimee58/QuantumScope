@@ -1,3 +1,25 @@
+## v0.1.7 — 3D Hydrogen Dynamics and layout repair
+
+- Added 3D dynamics experiment with time evolution, density cloud, isosurface, and 3D GIF export.
+- Fixed main sidebar startup width (previously hard-coded 330 px); increased minimum width and disabled horizontal overflow.
+- Kept v0.1.6 2D dynamics and Windows/Linux workflows.
+- Requires real GUI validation on both platforms before tagging.
+
+## v0.1.6 — Hydrogen Dynamics
+- New **Experiments → Hydrogen Dynamics** interactive 2D cross-section of exact two-state hydrogen superpositions.
+- Physical femtosecond time evolution, play/pause, time scrubber, amplitudes, relative phase, slice controls and export.
+- Preserves v0.1.5 comparison, Linux NVIDIA PRIME and Windows/Linux build workflow.
+
+# Changelog
+
+## v0.1.5 — Visualization refinement
+- Resizable sidebar and full-height layout.
+- Collapsible radial probability plot and scientific information.
+- Camera synchronization between comparison viewers, with optional toggle.
+- Orbital labels over both viewers.
+- Mask numerically undefined phases near nodal points; cyclic phase colormap retained.
+- Windows/Linux build workflow preserved; NVIDIA PRIME launcher preserved.
+
 ## 0.1.4 — Real orbitals and comparison
 
 - Introduced real tesseral hydrogen orbital basis with unit-normalized cosine/sine combinations.
