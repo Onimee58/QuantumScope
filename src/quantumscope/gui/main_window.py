@@ -1,34 +1,36 @@
 """QuantumScope Hydrogen Explorer Qt desktop UI."""
 from pathlib import Path
+from importlib.resources import files
 import traceback
 import os
 import subprocess
+import sys
 
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QSettings, QUrl
-from PySide6.QtGui import QDesktopServices, QPixmap, QPainter, QPen, QColor
+from PySide6.QtGui import QDesktopServices, QPixmap, QPainter, QPen, QColor, QIcon
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
     QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QDoubleSpinBox,
-    QSplitter, QVBoxLayout, QWidget, QFileDialog, QDialog, QDialogButtonBox, QFrame, QInputDialog,
+    QSplitter, QVBoxLayout, QWidget, QFileDialog, QDialog, QDialogButtonBox, QFrame, QInputDialog, QTabWidget, QSizePolicy, QToolButton, QMenu, QApplication,
 )
 from pyvistaqt import QtInteractor
 from quantumscope import __version__
 from quantumscope.physics import HydrogenAtom, density_grid
-from quantumscope.physics.hydrogen import A_MU_METERS, captured_probability
+from quantumscope.physics.hydrogen import A_MU_METERS, captured_probability, RealHydrogenState
 from quantumscope.visualization.orbitals import draw_orbital, set_camera_view, probability_radius
 
 
 class AboutDialog(QDialog):
-    """GlassBalance-inspired QuantumScope project and developer dialog."""
+    """Project information and developer credits."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About QuantumScope")
         self.setModal(True)
-        self.setMinimumSize(380, 545)
-        self.resize(400, 575)
+        self.setMinimumSize(430, 560)
+        self.resize(470, 590)
         self.settings = QSettings("QuantumScope", "QuantumScope")
         self.setStyleSheet("""
             QDialog { background: #15263b; color: #f0f6ff; }
@@ -58,7 +60,7 @@ class AboutDialog(QDialog):
 
         logo = QLabel()
         logo.setFixedSize(58, 58)
-        logo.setPixmap(self._make_logo())
+        logo.setPixmap(QPixmap(str(files("quantumscope").joinpath("assets/quantumscope.png"))).scaled(58, 58, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         layout.addWidget(logo, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         title = QLabel(f"QuantumScope v{__version__}")
@@ -67,9 +69,9 @@ class AboutDialog(QDialog):
         layout.addWidget(title)
 
         for value in (
-            "Hydrogen Explorer · Open-source quantum visualization",
-            "Created and maintained by Md. Saif Hassan Onim, PhD",
-            "Scientific visualization of the nonrelativistic hydrogen atom",
+            "Open-source quantum visualization studio · Windows & Linux",
+            "Developed and maintained by Md. Saif Hassan Onim",
+            "Hydrogen orbitals · 2D/3D dynamics · Double-slit interference",
         ):
             label = QLabel(value)
             label.setObjectName("secondary")
@@ -86,9 +88,6 @@ class AboutDialog(QDialog):
         self.repo_button = QPushButton("GitHub project ↗")
         self.repo_button.clicked.connect(self._open_repo)
         layout.addWidget(self.repo_button)
-        set_repo = QPushButton("Set GitHub repository URL")
-        set_repo.clicked.connect(self._set_repo)
-        layout.addWidget(set_repo)
         self._update_repo_button()
 
         rule = QFrame()
@@ -96,7 +95,7 @@ class AboutDialog(QDialog):
         layout.addWidget(rule)
 
         details = QLabel("Built with Python · PySide6 · PyVista · VTK · NumPy · SciPy\n"
-                         "License: MIT · Scientific model: reduced-mass hydrogen")
+                         "License: MIT · Models: reduced-mass hydrogen and Fraunhofer diffraction")
         details.setObjectName("secondary")
         details.setWordWrap(True)
         details.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -140,26 +139,8 @@ class AboutDialog(QDialog):
         self.settings.setValue("about/profile_picture", str(destination))
         self._load_profile()
 
-    def _make_logo(self):
-        picture = QPixmap(58, 58)
-        picture.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(picture)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor("#45c5cf"), 2.0))
-        for angle in (-55, 5, 65):
-            painter.save()
-            painter.translate(29, 29)
-            painter.rotate(angle)
-            painter.drawEllipse(-23, -10, 46, 20)
-            painter.restore()
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#ffc86c"))
-        painter.drawEllipse(24, 24, 10, 10)
-        painter.end()
-        return picture
-
     def _repo_url(self):
-        return self.settings.value("about/repository_url", "", type=str).strip()
+        return "https://github.com/Onimee58/QuantumScope"
 
     def _update_repo_button(self):
         url = QUrl(self._repo_url())
@@ -189,18 +170,175 @@ class AboutDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"QuantumScope {__version__} — Hydrogen Explorer")
+        self.setWindowTitle(f"QuantumScope {__version__} — Quantum Visualization Studio")
+        self.setWindowIcon(QIcon(str(files("quantumscope").joinpath("assets/quantumscope.png"))))
         self.resize(1420, 920)
         self.atom = HydrogenAtom()
         self.axis = self.density = self.psi = self.state = None
+        self.compare_axis = self.compare_density = self.compare_psi = self.compare_state = None
+        # Signals from dependent quantum-number controls may fire during UI construction.
+        # Do not render until all widgets and plotters have been initialized.
+        self._ui_ready = False
+        self._syncing_camera = False
+        self._rendering = False
         self._build_ui()
-        self._build_menu()
+        self._ui_ready = True
+        self._build_workspace()
         self.refresh()
 
-    def _build_menu(self):
-        help_menu = self.menuBar().addMenu("&Help")
-        about_action = help_menu.addAction("&About QuantumScope")
-        about_action.triggered.connect(self.show_about)
+    def _experiment_menu(self, parent):
+        """Single extensible experiment catalog shared by header and tab bar."""
+        menu = QMenu(parent)
+        menu.setObjectName("experimentMenu")
+        menu.addSection("ATOMIC PHYSICS")
+        menu.addAction("Hydrogen Explorer", lambda: self.workspace.setCurrentIndex(0))
+        menu.addAction("Hydrogen Dynamics 2D", self.show_dynamics)
+        menu.addAction("Hydrogen Dynamics 3D", self.show_dynamics_3d)
+        menu.addSection("QUANTUM PHENOMENA")
+        menu.addAction("Double-Slit Experiment", self._launch_double_slit)
+        return menu
+
+    def _show_settings(self):
+        """Small, honest preferences panel; more settings can be added later."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("QuantumScope Settings")
+        dialog.setMinimumWidth(370)
+        dialog.setWindowIcon(self.windowIcon())
+        layout = QVBoxLayout(dialog)
+        heading = QLabel("Appearance")
+        heading.setStyleSheet("font-weight: 700; font-size: 16px;")
+        layout.addWidget(heading)
+        layout.addWidget(QLabel("Interface theme"))
+        themes = QComboBox(dialog)
+        themes.addItems(["Dark", "Light"])
+        settings = QSettings("QuantumScope", "QuantumScope")
+        themes.setCurrentIndex(1 if settings.value("appearance/theme", "dark") == "light" else 0)
+        layout.addWidget(themes)
+        note = QLabel("Theme changes apply immediately and are saved for your next launch.")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.accept)
+        layout.addWidget(buttons)
+        def set_theme(index):
+            from quantumscope.gui.theme import STYLESHEET, LIGHT_STYLESHEET
+            choice = "light" if index == 1 else "dark"
+            settings.setValue("appearance/theme", choice)
+            QApplication.instance().setStyleSheet(LIGHT_STYLESHEET if choice == "light" else STYLESHEET)
+        themes.currentIndexChanged.connect(set_theme)
+        dialog.exec()
+
+    def _header_button(self, label, tooltip, action):
+        button = QToolButton(self)
+        button.setObjectName("headerTool")
+        button.setText(label)
+        button.setToolTip(tooltip)
+        button.setAccessibleName(tooltip)
+        button.clicked.connect(action)
+        return button
+
+    def _build_workspace(self):
+        """Host every experiment in the same extensible, closable tab workspace."""
+        explorer = self.takeCentralWidget()
+        shell = QWidget(self)
+        shell.setObjectName("workspaceShell")
+        outer = QVBoxLayout(shell)
+        outer.setContentsMargins(15, 12, 15, 12)
+        outer.setSpacing(10)
+        self.menuBar().hide()  # Native menu retained internally but not shown.
+        header = QWidget()
+        header.setObjectName("workspaceHeader")
+        row = QHBoxLayout(header)
+        row.setContentsMargins(15, 10, 15, 10)
+        mark = QLabel()
+        mark.setObjectName("brandMark")
+        mark.setPixmap(QPixmap(str(files("quantumscope").joinpath("assets/quantumscope.png"))).scaled(
+            44, 44, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        mark.setFixedSize(50, 50)
+        row.addWidget(mark)
+        titles = QVBoxLayout()
+        titles.setSpacing(1)
+        name = QLabel("QuantumScope")
+        name.setObjectName("brandTitle")
+        titles.addWidget(name)
+        caption = QLabel("QUANTUM VISUALIZATION STUDIO  /  v0.2.0")
+        caption.setObjectName("brandCaption")
+        titles.addWidget(caption)
+        row.addLayout(titles)
+        row.addStretch()
+        new_button = QToolButton(self)
+        new_button.setObjectName("newExperiment")
+        new_button.setText("+ New Experiment  ▾")
+        new_button.setToolTip("Open or switch to an experiment")
+        new_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        new_button.setMenu(self._experiment_menu(new_button))
+        row.addWidget(new_button)
+        row.addWidget(self._header_button("⚙", "Settings", self._show_settings))
+        row.addWidget(self._header_button("ⓘ", "About QuantumScope", self.show_about))
+        outer.addWidget(header)
+        self.workspace = QTabWidget()
+        self.workspace.setObjectName("experimentWorkspace")
+        self.workspace.setTabsClosable(True)
+        self.workspace.setMovable(False)
+        self.workspace.setDocumentMode(True)
+        self.workspace.tabCloseRequested.connect(self._close_workspace_tab)
+        self.workspace.addTab(explorer, QIcon(str(files("quantumscope").joinpath("assets/quantumscope-24.png"))), "Hydrogen Explorer")
+        self.workspace.tabBar().setTabButton(0, self.workspace.tabBar().ButtonPosition.RightSide, None)
+        plus = QToolButton(self.workspace)
+        plus.setObjectName("tabAddButton")
+        plus.setText("+")
+        plus.setToolTip("New experiment")
+        plus.setAccessibleName("New experiment")
+        plus.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        plus.setMenu(self._experiment_menu(plus))
+        self.workspace.setCornerWidget(plus, Qt.Corner.TopRightCorner)
+        outer.addWidget(self.workspace, 1)
+        self.setCentralWidget(shell)
+        self._open_experiments = {}
+        self.statusBar().showMessage("Ready  ·  Choose an experiment or explore hydrogen orbitals")
+
+    def _open_experiment(self, key, label, constructor):
+        """One live instance per experiment; switching tabs preserves its state."""
+        if key in self._open_experiments:
+            widget = self._open_experiments[key]
+            index = self.workspace.indexOf(widget)
+            if index >= 0:
+                self.workspace.setCurrentIndex(index)
+                return
+            del self._open_experiments[key]
+        widget = constructor(self.workspace)
+        # QDialog is also a QWidget. Embed its original UI rather than
+        # rewriting its functioning plots, physics bindings, and exports.
+        widget.setWindowFlags(Qt.WindowType.Widget)
+        widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        icon_name = {"double_slit": "◫", "dynamics_2d": "∿", "dynamics_3d": "⬡"}.get(key, "◈")
+        index = self.workspace.addTab(widget, f"{icon_name}  {label.strip()}")
+        self._open_experiments[key] = widget
+        self.workspace.setCurrentIndex(index)
+        self.statusBar().showMessage(f"Opened {label.strip()}", 3500)
+
+    def _close_workspace_tab(self, index):
+        if index == 0 or index < 0:
+            return  # The Hydrogen Explorer anchors the workspace.
+        widget = self.workspace.widget(index)
+        self.workspace.removeTab(index)
+        for key, active in list(self._open_experiments.items()):
+            if active is widget:
+                del self._open_experiments[key]
+        widget.close()  # Stops animation timers and releases 3D plotters.
+        widget.deleteLater()
+
+    def _launch_double_slit(self):
+        from quantumscope.gui.double_slit_dialog import DoubleSlitDialog
+        self._open_experiment("double_slit", "  Double-Slit Experiment  ", DoubleSlitDialog)
+
+    def show_dynamics(self):
+        from quantumscope.gui.dynamics_dialog import HydrogenDynamicsDialog
+        self._open_experiment("dynamics_2d", "  Hydrogen Dynamics 2D  ", HydrogenDynamicsDialog)
+
+    def show_dynamics_3d(self):
+        from quantumscope.gui.dynamics_3d_dialog import HydrogenDynamics3DDialog
+        self._open_experiment("dynamics_3d", "  Hydrogen Dynamics 3D  ", HydrogenDynamics3DDialog)
 
     def show_about(self):
         AboutDialog(self).exec()
@@ -214,8 +352,8 @@ class MainWindow(QMainWindow):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setMinimumWidth(265)
-        scroll.setMaximumWidth(420)
+        scroll.setMinimumWidth(410)
+        scroll.setMaximumWidth(820)
         options = QWidget()
         controls = QVBoxLayout(options)
         controls.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -223,6 +361,7 @@ class MainWindow(QMainWindow):
 
         state_box = QGroupBox("Hydrogen quantum state")
         state_form = QFormLayout(state_box)
+        state_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.n = QSpinBox()
         self.n.setRange(1, 4)
         self.l = QComboBox()
@@ -232,10 +371,35 @@ class MainWindow(QMainWindow):
         state_form.addRow("Principal n", self.n)
         state_form.addRow("Angular l", self.l)
         state_form.addRow("Magnetic m", self.m)
+        self.basis = QComboBox()
+        self.basis.addItems(["Complex Y(l,m)", "Real cosine", "Real sine"])
+        state_form.addRow("Orbital basis", self.basis)
         controls.addWidget(state_box)
+
+        compare_box = QGroupBox("Side-by-side comparison")
+        compare_form = QFormLayout(compare_box)
+        compare_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.compare_enable = QCheckBox("Enable second 3D viewer")
+        self.compare_n = QSpinBox()
+        self.compare_n.setRange(1, 4)
+        self.compare_n.setValue(2)
+        self.compare_l = QComboBox()
+        self.compare_m = QComboBox()
+        self.compare_basis = QComboBox()
+        self.compare_basis.addItems(["Complex Y(l,m)", "Real cosine", "Real sine"])
+        self.compare_n.valueChanged.connect(lambda: self._update_compare_l())
+        self.compare_l.currentIndexChanged.connect(lambda: self._update_compare_m())
+        compare_form.addRow(self.compare_enable)
+        compare_form.addRow("Compare n", self.compare_n)
+        compare_form.addRow("Compare l", self.compare_l)
+        compare_form.addRow("Compare m", self.compare_m)
+        compare_form.addRow("Compare basis", self.compare_basis)
+        controls.addWidget(compare_box)
+        self._update_compare_l()
 
         view_box = QGroupBox("Visualization")
         vf = QFormLayout(view_box)
+        vf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.mode = QComboBox()
         self.mode.addItems(["Density cloud", "Probability enclosure", "Real(psi)", "Imag(psi)"])
         self.resolution = QSpinBox()
@@ -258,17 +422,20 @@ class MainWindow(QMainWindow):
 
         graphics_box = QGroupBox("Graphics")
         gf = QFormLayout(graphics_box)
+        gf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.renderer = QComboBox()
         self.renderer.addItems(["Auto (GPU preferred)", "GPU", "CPU"])
-        gf.addRow("Volume renderer", self.renderer)
-        note = QLabel("VTK uses OpenGL GPU/VRAM when supported. Auto falls back to CPU. "
-                      "Large grids require more memory.")
+        gf.addRow("Volume rendering method", self.renderer)
+        note = QLabel("This selects the VTK density-cloud mapper, NOT the physical GPU. "
+                      "The active Intel/NVIDIA graphics device is selected at application startup. "
+                      "Surface rendering is independent of this setting.")
         note.setWordWrap(True)
         gf.addRow(note)
         controls.addWidget(graphics_box)
 
         camera_box = QGroupBox("Camera & scientific display")
         cf = QFormLayout(camera_box)
+        cf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.camera_view = QComboBox()
         self.camera_view.addItems(["Perspective", "+X", "+Y", "+Z"])
         self.zoom_factor = QDoubleSpinBox()
@@ -277,10 +444,13 @@ class MainWindow(QMainWindow):
         self.zoom_factor.setValue(1.3)
         self.phase_color = QCheckBox("Color enclosure by wavefunction phase")
         self.show_grid = QCheckBox("Show axes and coordinates (a_mu)")
+        self.sync_cameras = QCheckBox("Synchronize comparison cameras")
+        self.sync_cameras.setChecked(True)
         cf.addRow("View", self.camera_view)
         cf.addRow("Magnification", self.zoom_factor)
         cf.addRow(self.phase_color)
         cf.addRow(self.show_grid)
+        cf.addRow(self.sync_cameras)
         controls.addWidget(camera_box)
         self.camera_view.currentIndexChanged.connect(self._change_camera)
         self.zoom_factor.valueChanged.connect(self._change_camera)
@@ -294,8 +464,18 @@ class MainWindow(QMainWindow):
         inspect_button = QPushButton("Refresh renderer information")
         inspect_button.clicked.connect(self._update_gpu_diagnostics)
         df.addWidget(inspect_button)
+        if sys.platform.startswith("linux"):
+            restart_gpu = QPushButton("Restart using NVIDIA (Linux)")
+            restart_gpu.setToolTip("Restart using XCB/GLX and NVIDIA PRIME offloading")
+            restart_gpu.clicked.connect(self._restart_on_nvidia)
+            df.addWidget(restart_gpu)
         controls.addWidget(diagnostic_box)
 
+        self.export_scale = QSpinBox()
+        self.export_scale.setRange(1, 4)
+        self.export_scale.setValue(2)
+        controls.addWidget(QLabel("PNG export scale (1–4×)"))
+        controls.addWidget(self.export_scale)
         self.auto_render = QCheckBox("Update when changing state/mode")
         controls.addWidget(self.auto_render)
         render_btn = QPushButton("Render state")
@@ -312,6 +492,8 @@ class MainWindow(QMainWindow):
         controls.addWidget(data_btn)
 
         details_box = QGroupBox("Scientific information")
+        details_box.setCheckable(True)
+        details_box.setChecked(True)
         detail_layout = QVBoxLayout(details_box)
         self.details = QLabel()
         self.details.setWordWrap(True)
@@ -319,25 +501,69 @@ class MainWindow(QMainWindow):
         detail_layout.addWidget(self.details)
         controls.addWidget(details_box)
         controls.addStretch()
+        # Allow long setting labels to wrap instead of creating horizontal scrolling.
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        options.setMinimumWidth(398)
         scroll.setWidget(options)
         splitter.addWidget(scroll)
 
+        self.viewer_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.plotter = QtInteractor(central)
-        splitter.addWidget(self.plotter)
-        splitter.setSizes([330, 1070])
+        self.compare_plotter = QtInteractor(central)
+        self.primary_panel = QWidget()
+        primary_layout = QVBoxLayout(self.primary_panel)
+        primary_layout.setContentsMargins(0, 0, 0, 0)
+        primary_layout.setSpacing(2)
+        self.primary_label = QLabel("Primary orbital")
+        primary_layout.addWidget(self.primary_label)
+        primary_layout.addWidget(self.plotter, stretch=1)
+        self.viewer_splitter.addWidget(self.primary_panel)
+        self.compare_panel = QWidget()
+        compare_layout = QVBoxLayout(self.compare_panel)
+        compare_layout.setContentsMargins(0, 0, 0, 0)
+        compare_layout.setSpacing(2)
+        self.compare_label = QLabel("Comparison orbital")
+        compare_layout.addWidget(self.compare_label)
+        compare_layout.addWidget(self.compare_plotter, stretch=1)
+        self.viewer_splitter.addWidget(self.compare_panel)
+        self.compare_panel.hide()
+        self.plotter.camera.AddObserver("ModifiedEvent", lambda *_: self._mirror_camera(self.plotter, self.compare_plotter))
+        self.compare_plotter.camera.AddObserver("ModifiedEvent", lambda *_: self._mirror_camera(self.compare_plotter, self.plotter))
+        # Make the left sidebar span the full content height.
+        # The compact radial plot belongs below the 3D viewers on the RIGHT only.
+        viewer_column = QWidget()
+        viewer_layout = QVBoxLayout(viewer_column)
+        viewer_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_layout.setSpacing(6)
+        viewer_layout.addWidget(self.viewer_splitter, stretch=1)
+        splitter.addWidget(viewer_column)
+        splitter.setSizes([455, 965])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
 
         bottom = QGroupBox("Radial probability  P(r) = r² |Rₙₗ(r)|²")
+        bottom.setCheckable(True)
+        bottom.setChecked(True)
+        self.radial_group = bottom
         blayout = QVBoxLayout(bottom)
         self.radial_plot = pg.PlotWidget()
         self.radial_plot.setBackground("#101820")
         self.radial_plot.setLabel("bottom", "r", units="a_mu")
         self.radial_plot.setLabel("left", "P(r)", units="a_mu^-1")
         self.radial_plot.showGrid(x=True, y=True, alpha=0.2)
-        self.radial_plot.setMinimumHeight(180)
+        self.radial_plot.setMinimumHeight(95)
         blayout.addWidget(self.radial_plot)
-        layout.addWidget(bottom, stretch=1)
+        bottom.setMinimumHeight(125)
+        bottom.setMaximumHeight(170)
+        bottom.toggled.connect(self._toggle_radial_plot)
+        viewer_layout.addWidget(bottom, stretch=0)
         self.statusBar().showMessage("Nonrelativistic isolated hydrogen • reduced-mass Coulomb model")
         self._update_l()
+        for ctrl in (self.basis, self.compare_enable, self.compare_n, self.compare_l,
+                     self.compare_m, self.compare_basis):
+            signal = (ctrl.stateChanged if isinstance(ctrl, QCheckBox) else
+                      ctrl.valueChanged if isinstance(ctrl, QSpinBox) else ctrl.currentIndexChanged)
+            signal.connect(self._auto_refresh)
         for ctrl, signal in ((self.n, self.n.valueChanged),
                              (self.l, self.l.currentIndexChanged),
                              (self.m, self.m.currentIndexChanged),
@@ -350,7 +576,63 @@ class MainWindow(QMainWindow):
                              (self.show_grid, self.show_grid.stateChanged)):
             signal.connect(self._auto_refresh)
 
+    def _toggle_radial_plot(self, shown):
+        self.radial_plot.setVisible(shown)
+        self.radial_group.setMaximumHeight(170 if shown else 35)
+
+    def _mirror_camera(self, source, destination):
+        """Keep both cameras in matching world coordinates without recursive updates."""
+        if (not self._ui_ready or self._syncing_camera or self._rendering or
+                not self.compare_enable.isChecked() or not self.sync_cameras.isChecked()):
+            return
+        self._syncing_camera = True
+        try:
+            src, dst = source.camera, destination.camera
+            dst.SetPosition(*src.GetPosition())
+            dst.SetFocalPoint(*src.GetFocalPoint())
+            dst.SetViewUp(*src.GetViewUp())
+            dst.SetParallelProjection(src.GetParallelProjection())
+            dst.SetParallelScale(src.GetParallelScale())
+            dst.SetViewAngle(src.GetViewAngle())
+            destination.reset_camera_clipping_range()
+            destination.render()
+        finally:
+            self._syncing_camera = False
+
+    def _update_compare_l(self):
+        old = self.compare_l.currentData()
+        self.compare_l.blockSignals(True)
+        self.compare_l.clear()
+        for l in range(self.compare_n.value()):
+            self.compare_l.addItem(str(l), l)
+        self.compare_l.setCurrentIndex(min(old if old is not None else 0,
+                                           self.compare_n.value()-1))
+        self.compare_l.blockSignals(False)
+        self._update_compare_m()
+
+    def _update_compare_m(self):
+        l = self.compare_l.currentData()
+        if l is None:
+            return
+        old = self.compare_m.currentData()
+        self.compare_m.blockSignals(True)
+        self.compare_m.clear()
+        for m in range(-l, l + 1):
+            self.compare_m.addItem(str(m), m)
+        self.compare_m.setCurrentIndex((old if old is not None and abs(old) <= l else 0)+l)
+        self.compare_m.blockSignals(False)
+        self._auto_refresh()
+
+    def _make_state(self, n, l, m, basis):
+        if basis == "Complex Y(l,m)":
+            return self.atom.state(n, l, m)
+        order = abs(m)
+        kind = "sin" if basis == "Real sine" and order else "cos"
+        return RealHydrogenState(n, l, order, kind)
+
     def _auto_refresh(self, *_):
+        if not self._ui_ready:
+            return
         if self.auto_render.isChecked():
             self.refresh()
 
@@ -383,6 +665,37 @@ class MainWindow(QMainWindow):
         set_camera_view(self.plotter, probability_radius(self.axis, self.density),
                         self.camera_view.currentText(), self.zoom_factor.value())
         self.plotter.render()
+        if self.compare_enable.isChecked() and self.compare_density is not None:
+            set_camera_view(self.compare_plotter,
+                            probability_radius(self.compare_axis, self.compare_density),
+                            self.camera_view.currentText(), self.zoom_factor.value())
+            self.compare_plotter.render()
+
+    def _restart_on_nvidia(self):
+        """GPU selection is process-wide: a new Qt/OpenGL context is required."""
+        if not sys.platform.startswith("linux"):
+            return
+        choice = QMessageBox.question(
+            self, "Restart on NVIDIA",
+            "This closes QuantumScope and restarts it with NVIDIA PRIME offloading.\n"
+            "Unsaved visualization settings will be reset. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return
+        env = os.environ.copy()
+        env.update({"QT_QPA_PLATFORM": "xcb", "QT_XCB_GL_INTEGRATION": "xcb_glx",
+                    "__NV_PRIME_RENDER_OFFLOAD": "1", "__GLX_VENDOR_LIBRARY_NAME": "nvidia"})
+        # Use the current interpreter (source installation) or executable (packaged build).
+        command = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "quantumscope"]
+        try:
+            subprocess.Popen(command, env=env, start_new_session=True,
+                             cwd=str(Path.home()), close_fds=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "NVIDIA launch failed", str(exc))
+            return
+        self.close()
 
     def _update_gpu_diagnostics(self):
         """Query the *current VTK GL context*; environment hints aren't proof."""
@@ -408,17 +721,40 @@ class MainWindow(QMainWindow):
             self._change_camera()
 
     def refresh(self):
+        self._rendering = True
         try:
             self.statusBar().showMessage("Rendering…")
-            self.state = self.atom.state(self.n.value(), self.l.currentData(), self.m.currentData())
+            self.state = self._make_state(self.n.value(), self.l.currentData(),
+                                          self.m.currentData(), self.basis.currentText())
             self.axis, self.density, self.psi = density_grid(
                 self.state, resolution=self.resolution.value())
+            self.primary_label.setText("Primary: " + getattr(self.state, "label", f"n={self.state.n}, l={self.state.l}, m={self.state.m}"))
             backend, radius = draw_orbital(
                 self.plotter, self.axis, self.density, self.psi,
                 self.mode.currentText(), self.enclosed.value(),
                 self.renderer.currentText(), self.opacity.value(),
                 self.phase_color.isChecked(), self.show_grid.isChecked(),
                 self.camera_view.currentText(), self.zoom_factor.value())
+            self.compare_panel.setVisible(self.compare_enable.isChecked())
+            if self.compare_enable.isChecked():
+                self.compare_state = self._make_state(
+                    self.compare_n.value(), self.compare_l.currentData(),
+                    self.compare_m.currentData(), self.compare_basis.currentText())
+                self.compare_label.setText("Comparison: " + getattr(self.compare_state, "label", f"n={self.compare_state.n}, l={self.compare_state.l}, m={self.compare_state.m}"))
+                self.compare_axis, self.compare_density, self.compare_psi = density_grid(
+                    self.compare_state, resolution=self.resolution.value())
+                draw_orbital(self.compare_plotter, self.compare_axis,
+                             self.compare_density, self.compare_psi,
+                             self.mode.currentText(), self.enclosed.value(),
+                             self.renderer.currentText(), self.opacity.value(),
+                             self.phase_color.isChecked(), self.show_grid.isChecked(),
+                             self.camera_view.currentText(), self.zoom_factor.value())
+            else:
+                self.compare_axis = self.compare_density = self.compare_psi = self.compare_state = None
+            self._rendering = False
+            if self.compare_enable.isChecked() and self.sync_cameras.isChecked():
+                # Ensure both begin with the same orientation after a refresh.
+                self._mirror_camera(self.plotter, self.compare_plotter)
             r = np.linspace(0, max(30, 10*self.state.n*self.state.n), 1000)
             probability = self.state.radial_probability(r)
             self.radial_plot.clear()
@@ -430,9 +766,12 @@ class MainWindow(QMainWindow):
             self.radial_plot.setYRange(0, float(max(probability)) * 1.12, padding=0)
             captured = captured_probability(self.axis, self.density)
             orbital = "spdf"[self.state.l]
+            state_name = getattr(self.state, "label", f"{self.state.n}{orbital} (m={self.state.m})")
             self.details.setText(
-                f"<b>Orbital:</b> {self.state.n}{orbital} (m={self.state.m})<br>"
+                f"<b>Orbital:</b> {state_name}<br>"
                 f"<b>Energy:</b> {self.state.energy_ev:.6f} eV<br>"
+                f"<b>Basis:</b> {self.basis.currentText()}<br>"
+                f"<b>Comparison:</b> {getattr(self.compare_state, 'label', 'active' if self.compare_state else 'off')}<br>"
                 f"<b>Bohr radius (reduced mass):</b> {A_MU_METERS * 1e12:.4f} pm<br>"
                 f"<b>Grid:</b> ±{self.axis[-1]:g} a_mu per axis<br>"
                 f"<b>Grid probability:</b> {captured:.6f} (numerical estimate)<br>"
@@ -445,6 +784,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Render complete • {backend}")
             self._update_gpu_diagnostics()
         except Exception as exc:
+            self._rendering = False
             self.statusBar().showMessage("Render failed")
             QMessageBox.critical(self, "Rendering error", f"{exc}\n\n{traceback.format_exc()}")
 
@@ -452,7 +792,8 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Export 3D image", "orbital.png", "PNG (*.png)")
         if path:
             try:
-                self.plotter.screenshot(str(Path(path).with_suffix(".png")))
+                self.plotter.screenshot(str(Path(path).with_suffix(".png")),
+                                        scale=self.export_scale.value())
             except Exception as exc:
                 QMessageBox.critical(self, "Export error", str(exc))
 
@@ -467,10 +808,12 @@ class MainWindow(QMainWindow):
                                     psi_a_mu_minus3_over2=self.psi,
                                     n=self.state.n, l=self.state.l, m=self.state.m,
                                     energy_ev=self.state.energy_ev,
+                                    orbital_basis=self.basis.currentText(),
                                     reduced_bohr_radius_m=A_MU_METERS)
             except Exception as exc:
                 QMessageBox.critical(self, "Export error", str(exc))
 
     def closeEvent(self, event):
         self.plotter.close()
+        self.compare_plotter.close()
         super().closeEvent(event)

@@ -1,5 +1,17 @@
 # QuantumScope
 
+**QuantumScope v0.2.0 — Quantum Visualization Studio** is an open-source Python/PySide6 desktop application for scientifically grounded, interactive quantum visualizations on Linux and Windows.
+
+The v0.2.0 workspace includes hydrogen orbitals, coherent hydrogen-state dynamics in 2D and 3D, and an interactive double-slit experiment. Experiments open as tabs inside one window; the physics packages remain independent of the GUI.
+
+## Workspace and experiments (v0.2.0)
+
+- Modern dark interface with a persistent Hydrogen Explorer tab and closable experiment tabs.
+- Reopen an active experiment from the top shortcuts or Experiments menu to focus its existing tab without resetting parameters.
+- Hydrogen Dynamics 2D: coherent state superpositions, evolving density and export tools.
+- Hydrogen Dynamics 3D: animated superposition density and available export tools.
+- Double-Slit Experiment: source/slit/detector schematic with illustrative animated wavefronts, Fraunhofer probability curve, sampled detection histogram, event visualization and CSV export.
+- **Scientific interpretation:** the source/slit/detector drawing is schematic and not to scale; the wavefront rings depict illustrative phase fronts, not individual particle trajectories. Detection events follow the model's sampled far-field probability distribution.
 **QuantumScope** is a free, open-source desktop application for exploring quantum physics through interactive, scientifically grounded visualizations. It runs on **Linux and Windows** and currently focuses on hydrogen atomic states.
 
 **Latest downloads:** [GitHub Releases](https://github.com/Onimee58/QuantumScope/releases/latest)  
@@ -23,6 +35,7 @@
 
 Screenshots will be added here. For contributions, screenshots of the 3D orbital viewer and side-by-side comparison are particularly helpful.
 
+## Windows setup
 ## Download and install
 
 Download the appropriate ZIP from the [latest release](https://github.com/Onimee58/QuantumScope/releases/latest) and **extract it fully before launching**. The automatically built packages are unsigned preview builds.
@@ -139,10 +152,55 @@ This roadmap expresses goals rather than promised delivery dates.
 
 Bug reports, scientific validation checks, documentation improvements and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md), or open a [GitHub issue](https://github.com/Onimee58/QuantumScope/issues). Please include tests and document physical assumptions when changing the physics backend.
 
+## v0.1.4 update: Windows source distribution
 ## License and developer
 
 QuantumScope is released under the **MIT License**; see [LICENSE](LICENSE).
 
 Developed by **Md. Saif Hassan Onim, PhD** — [developer website](https://people.smu.edu/monim).
 
+See [PACKAGING.md](PACKAGING.md) for automated GitHub Actions builds of runnable Windows and Linux releases.
+
+
+## v0.1.4: Real orbital basis and comparisons
+
+- Select **Complex Y(l,m)**, **Real cosine**, or **Real sine** orbital bases. The real choices use `|m|`, with the conventional relative global phase not physically observable. `m=0` has only a cosine choice; sine is mapped to cosine in the GUI.
+- Enable **Side-by-side comparison** to render two independent hydrogen states at once. Both viewers share representation, resolution, camera orientation, and color options; each computes its own state. Memory usage rises with grid resolution.
+- **PNG export scale** supports 1–4× resolution for the main 3D viewer.
+- The older probability enclosure is a constant-density isosurface threshold chosen from sampled grid mass. It is not an exact probability-enclosing mesh because voxel rankings and mesh interpolation are approximate.
+- Phase coloring applies to the wavefunction, not its density; angular real-orbital colors differ by sign (0 or π), subject to the arbitrary overall sign convention.
+- All builds should be validated with Windows and Linux GUI launch smoke tests after downloading CI artifacts.
+
+
+## v0.1.5 visualization controls
+
+- Drag the divider to resize the sidebar and 3D comparison panels.
+- Enable **Synchronize comparison cameras** to rotate both orbital viewers together.
+- Uncheck **Radial probability** to collapse the plot temporarily.
+- Uncheck **Scientific information** to collapse detailed state metadata.
+- Phase colors use a cyclic colormap; near-zero wavefunction magnitudes are masked because phase is undefined at nodes.
+- Linux users can restart on NVIDIA PRIME from the graphics diagnostics panel; selecting a GPU volume mapper does not select a physical graphics device.
+
+
+### Hydrogen Dynamics (v0.1.6)
+Choose **Experiments → Hydrogen Dynamics (superposition)...** for time-dependent coherent superpositions of two bound states. See [DYNAMICS.md](DYNAMICS.md) for model assumptions, animation controls, and data interpretation.
+
+
+## Quantum Phenomena Lab (v0.2.0)
+
+**Experiments → Quantum Phenomena — Double-Slit Experiment** opens a coherent far-field double-slit model. The theoretical curve is the normalized Fraunhofer diffraction envelope multiplied by the two-slit interference factor. The detector controls sample independent outcomes from that curve. This is a **paraxial, monochromatic, idealized model**; no particle paths or time-dependent wave propagation are simulated. Results and sampled detections can be exported as CSV.
+
+### Double-slit apparatus (v0.2.0)
+
+The Double-Slit Experiment dialog now includes an animated, **not-to-scale** apparatus showing a source, two apertures, and a detector. The arcs illustrate coherent wavefronts, **not individual particle paths** or a time-dependent propagation calculation. The detector marks are drawn from the exact sampled hit positions used for the original histogram. Uncheck **Animate illustrative wavefronts** to freeze the diagram. Adjusting experiment parameters clears accumulated detections, consistent with the underlying probability plot. The Fraunhofer physics model, CSV export, and other experiments are unchanged.
+
+## Project
+
+Source, issues and contributions: https://github.com/Onimee58/QuantumScope
+
+QuantumScope is MIT-licensed. Models use the nonrelativistic hydrogen approximation and an idealized paraxial Fraunhofer double-slit approximation; neither includes full experimental apparatus or environment modeling.
+
+## Native installers (v0.2.0)
+
+The `.github/workflows/release.yml` pipeline prepares installable `quantumscope_0.2.0_amd64.deb` and `QuantumScope-0.2.0-Setup.exe` files. See [PACKAGING.md](PACKAGING.md) for how to build, install, and verify these releases. The source download is **not** a compiled installer.
 *QuantumScope — Visualizing Quantum Physics Through Scientific Computation.*
