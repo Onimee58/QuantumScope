@@ -1,5 +1,6 @@
 """QuantumScope Hydrogen Explorer Qt desktop UI."""
 from pathlib import Path
+from importlib.resources import files
 import traceback
 import os
 import subprocess
@@ -8,11 +9,11 @@ import sys
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QSettings, QUrl
-from PySide6.QtGui import QDesktopServices, QPixmap, QPainter, QPen, QColor
+from PySide6.QtGui import QDesktopServices, QPixmap, QPainter, QPen, QColor, QIcon
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
     QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QDoubleSpinBox,
-    QSplitter, QVBoxLayout, QWidget, QFileDialog, QDialog, QDialogButtonBox, QFrame, QInputDialog,
+    QSplitter, QVBoxLayout, QWidget, QFileDialog, QDialog, QDialogButtonBox, QFrame, QInputDialog, QTabWidget, QSizePolicy, QToolButton, QMenu, QApplication,
 )
 from pyvistaqt import QtInteractor
 from quantumscope import __version__
@@ -22,14 +23,14 @@ from quantumscope.visualization.orbitals import draw_orbital, set_camera_view, p
 
 
 class AboutDialog(QDialog):
-    """GlassBalance-inspired QuantumScope project and developer dialog."""
+    """Project information and developer credits."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About QuantumScope")
         self.setModal(True)
-        self.setMinimumSize(380, 545)
-        self.resize(400, 575)
+        self.setMinimumSize(430, 560)
+        self.resize(470, 590)
         self.settings = QSettings("QuantumScope", "QuantumScope")
         self.setStyleSheet("""
             QDialog { background: #15263b; color: #f0f6ff; }
@@ -59,7 +60,7 @@ class AboutDialog(QDialog):
 
         logo = QLabel()
         logo.setFixedSize(58, 58)
-        logo.setPixmap(self._make_logo())
+        logo.setPixmap(QPixmap(str(files("quantumscope").joinpath("assets/quantumscope.png"))).scaled(58, 58, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         layout.addWidget(logo, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         title = QLabel(f"QuantumScope v{__version__}")
@@ -68,9 +69,9 @@ class AboutDialog(QDialog):
         layout.addWidget(title)
 
         for value in (
-            "Hydrogen Explorer · Open-source quantum visualization",
-            "Created and maintained by Md. Saif Hassan Onim, PhD",
-            "Scientific visualization of the nonrelativistic hydrogen atom",
+            "Open-source quantum visualization studio · Windows & Linux",
+            "Developed and maintained by Md. Saif Hassan Onim",
+            "Hydrogen orbitals · 2D/3D dynamics · Double-slit interference",
         ):
             label = QLabel(value)
             label.setObjectName("secondary")
@@ -87,9 +88,6 @@ class AboutDialog(QDialog):
         self.repo_button = QPushButton("GitHub project ↗")
         self.repo_button.clicked.connect(self._open_repo)
         layout.addWidget(self.repo_button)
-        set_repo = QPushButton("Set GitHub repository URL")
-        set_repo.clicked.connect(self._set_repo)
-        layout.addWidget(set_repo)
         self._update_repo_button()
 
         rule = QFrame()
@@ -97,7 +95,7 @@ class AboutDialog(QDialog):
         layout.addWidget(rule)
 
         details = QLabel("Built with Python · PySide6 · PyVista · VTK · NumPy · SciPy\n"
-                         "License: MIT · Scientific model: reduced-mass hydrogen")
+                         "License: MIT · Models: reduced-mass hydrogen and Fraunhofer diffraction")
         details.setObjectName("secondary")
         details.setWordWrap(True)
         details.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -141,26 +139,8 @@ class AboutDialog(QDialog):
         self.settings.setValue("about/profile_picture", str(destination))
         self._load_profile()
 
-    def _make_logo(self):
-        picture = QPixmap(58, 58)
-        picture.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(picture)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor("#45c5cf"), 2.0))
-        for angle in (-55, 5, 65):
-            painter.save()
-            painter.translate(29, 29)
-            painter.rotate(angle)
-            painter.drawEllipse(-23, -10, 46, 20)
-            painter.restore()
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#ffc86c"))
-        painter.drawEllipse(24, 24, 10, 10)
-        painter.end()
-        return picture
-
     def _repo_url(self):
-        return self.settings.value("about/repository_url", "", type=str).strip()
+        return "https://github.com/Onimee58/QuantumScope"
 
     def _update_repo_button(self):
         url = QUrl(self._repo_url())
@@ -190,7 +170,8 @@ class AboutDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"QuantumScope {__version__} — Hydrogen Explorer")
+        self.setWindowTitle(f"QuantumScope {__version__} — Quantum Visualization Studio")
+        self.setWindowIcon(QIcon(str(files("quantumscope").joinpath("assets/quantumscope.png"))))
         self.resize(1420, 920)
         self.atom = HydrogenAtom()
         self.axis = self.density = self.psi = self.state = None
@@ -202,28 +183,162 @@ class MainWindow(QMainWindow):
         self._rendering = False
         self._build_ui()
         self._ui_ready = True
-        self._build_menu()
+        self._build_workspace()
         self.refresh()
 
-    def _build_menu(self):
-        experiments = self.menuBar().addMenu("&Experiments")
-        launch = experiments.addAction("Hydrogen Dynamics (superposition)...")
-        launch.triggered.connect(self.show_dynamics)
-        launch_3d = experiments.addAction("Hydrogen Dynamics — 3D animation...")
-        launch_3d.triggered.connect(self.show_dynamics_3d)
-        help_menu = self.menuBar().addMenu("&Help")
-        about_action = help_menu.addAction("&About QuantumScope")
-        about_action.triggered.connect(self.show_about)
+    def _experiment_menu(self, parent):
+        """Single extensible experiment catalog shared by header and tab bar."""
+        menu = QMenu(parent)
+        menu.setObjectName("experimentMenu")
+        menu.addSection("ATOMIC PHYSICS")
+        menu.addAction("Hydrogen Explorer", lambda: self.workspace.setCurrentIndex(0))
+        menu.addAction("Hydrogen Dynamics 2D", self.show_dynamics)
+        menu.addAction("Hydrogen Dynamics 3D", self.show_dynamics_3d)
+        menu.addSection("QUANTUM PHENOMENA")
+        menu.addAction("Double-Slit Experiment", self._launch_double_slit)
+        return menu
+
+    def _show_settings(self):
+        """Small, honest preferences panel; more settings can be added later."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("QuantumScope Settings")
+        dialog.setMinimumWidth(370)
+        dialog.setWindowIcon(self.windowIcon())
+        layout = QVBoxLayout(dialog)
+        heading = QLabel("Appearance")
+        heading.setStyleSheet("font-weight: 700; font-size: 16px;")
+        layout.addWidget(heading)
+        layout.addWidget(QLabel("Interface theme"))
+        themes = QComboBox(dialog)
+        themes.addItems(["Dark", "Light"])
+        settings = QSettings("QuantumScope", "QuantumScope")
+        themes.setCurrentIndex(1 if settings.value("appearance/theme", "dark") == "light" else 0)
+        layout.addWidget(themes)
+        note = QLabel("Theme changes apply immediately and are saved for your next launch.")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.accept)
+        layout.addWidget(buttons)
+        def set_theme(index):
+            from quantumscope.gui.theme import STYLESHEET, LIGHT_STYLESHEET
+            choice = "light" if index == 1 else "dark"
+            settings.setValue("appearance/theme", choice)
+            QApplication.instance().setStyleSheet(LIGHT_STYLESHEET if choice == "light" else STYLESHEET)
+        themes.currentIndexChanged.connect(set_theme)
+        dialog.exec()
+
+    def _header_button(self, label, tooltip, action):
+        button = QToolButton(self)
+        button.setObjectName("headerTool")
+        button.setText(label)
+        button.setToolTip(tooltip)
+        button.setAccessibleName(tooltip)
+        button.clicked.connect(action)
+        return button
+
+    def _build_workspace(self):
+        """Host every experiment in the same extensible, closable tab workspace."""
+        explorer = self.takeCentralWidget()
+        shell = QWidget(self)
+        shell.setObjectName("workspaceShell")
+        outer = QVBoxLayout(shell)
+        outer.setContentsMargins(15, 12, 15, 12)
+        outer.setSpacing(10)
+        self.menuBar().hide()  # Native menu retained internally but not shown.
+        header = QWidget()
+        header.setObjectName("workspaceHeader")
+        row = QHBoxLayout(header)
+        row.setContentsMargins(15, 10, 15, 10)
+        mark = QLabel()
+        mark.setObjectName("brandMark")
+        mark.setPixmap(QPixmap(str(files("quantumscope").joinpath("assets/quantumscope.png"))).scaled(
+            44, 44, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        mark.setFixedSize(50, 50)
+        row.addWidget(mark)
+        titles = QVBoxLayout()
+        titles.setSpacing(1)
+        name = QLabel("QuantumScope")
+        name.setObjectName("brandTitle")
+        titles.addWidget(name)
+        caption = QLabel("QUANTUM VISUALIZATION STUDIO  /  v0.2.0")
+        caption.setObjectName("brandCaption")
+        titles.addWidget(caption)
+        row.addLayout(titles)
+        row.addStretch()
+        new_button = QToolButton(self)
+        new_button.setObjectName("newExperiment")
+        new_button.setText("+ New Experiment  ▾")
+        new_button.setToolTip("Open or switch to an experiment")
+        new_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        new_button.setMenu(self._experiment_menu(new_button))
+        row.addWidget(new_button)
+        row.addWidget(self._header_button("⚙", "Settings", self._show_settings))
+        row.addWidget(self._header_button("ⓘ", "About QuantumScope", self.show_about))
+        outer.addWidget(header)
+        self.workspace = QTabWidget()
+        self.workspace.setObjectName("experimentWorkspace")
+        self.workspace.setTabsClosable(True)
+        self.workspace.setMovable(False)
+        self.workspace.setDocumentMode(True)
+        self.workspace.tabCloseRequested.connect(self._close_workspace_tab)
+        self.workspace.addTab(explorer, QIcon(str(files("quantumscope").joinpath("assets/quantumscope-24.png"))), "Hydrogen Explorer")
+        self.workspace.tabBar().setTabButton(0, self.workspace.tabBar().ButtonPosition.RightSide, None)
+        plus = QToolButton(self.workspace)
+        plus.setObjectName("tabAddButton")
+        plus.setText("+")
+        plus.setToolTip("New experiment")
+        plus.setAccessibleName("New experiment")
+        plus.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        plus.setMenu(self._experiment_menu(plus))
+        self.workspace.setCornerWidget(plus, Qt.Corner.TopRightCorner)
+        outer.addWidget(self.workspace, 1)
+        self.setCentralWidget(shell)
+        self._open_experiments = {}
+        self.statusBar().showMessage("Ready  ·  Choose an experiment or explore hydrogen orbitals")
+
+    def _open_experiment(self, key, label, constructor):
+        """One live instance per experiment; switching tabs preserves its state."""
+        if key in self._open_experiments:
+            widget = self._open_experiments[key]
+            index = self.workspace.indexOf(widget)
+            if index >= 0:
+                self.workspace.setCurrentIndex(index)
+                return
+            del self._open_experiments[key]
+        widget = constructor(self.workspace)
+        # QDialog is also a QWidget. Embed its original UI rather than
+        # rewriting its functioning plots, physics bindings, and exports.
+        widget.setWindowFlags(Qt.WindowType.Widget)
+        widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        icon_name = {"double_slit": "◫", "dynamics_2d": "∿", "dynamics_3d": "⬡"}.get(key, "◈")
+        index = self.workspace.addTab(widget, f"{icon_name}  {label.strip()}")
+        self._open_experiments[key] = widget
+        self.workspace.setCurrentIndex(index)
+        self.statusBar().showMessage(f"Opened {label.strip()}", 3500)
+
+    def _close_workspace_tab(self, index):
+        if index == 0 or index < 0:
+            return  # The Hydrogen Explorer anchors the workspace.
+        widget = self.workspace.widget(index)
+        self.workspace.removeTab(index)
+        for key, active in list(self._open_experiments.items()):
+            if active is widget:
+                del self._open_experiments[key]
+        widget.close()  # Stops animation timers and releases 3D plotters.
+        widget.deleteLater()
+
+    def _launch_double_slit(self):
+        from quantumscope.gui.double_slit_dialog import DoubleSlitDialog
+        self._open_experiment("double_slit", "  Double-Slit Experiment  ", DoubleSlitDialog)
 
     def show_dynamics(self):
         from quantumscope.gui.dynamics_dialog import HydrogenDynamicsDialog
-        dialog = HydrogenDynamicsDialog(self)
-        dialog.exec()
+        self._open_experiment("dynamics_2d", "  Hydrogen Dynamics 2D  ", HydrogenDynamicsDialog)
 
     def show_dynamics_3d(self):
         from quantumscope.gui.dynamics_3d_dialog import HydrogenDynamics3DDialog
-        dialog = HydrogenDynamics3DDialog(self)
-        dialog.exec()
+        self._open_experiment("dynamics_3d", "  Hydrogen Dynamics 3D  ", HydrogenDynamics3DDialog)
 
     def show_about(self):
         AboutDialog(self).exec()

@@ -1,3 +1,21 @@
+## v0.2.0 — workspace redesign (stable-release candidate)
+
+- Introduced a cohesive modern dark Qt application theme and a top experiment-launch bar.
+- Replaced separate modal experiment windows with closable, state-preserving workspace tabs for Hydrogen Dynamics 2D, Hydrogen Dynamics 3D, and Double-Slit Experiment.
+- Kept the Hydrogen Explorer anchored as the primary tab and preserved all physics modules, experiment controls, plots, and exports.
+- Refreshed About details and linked directly to https://github.com/Onimee58/QuantumScope.
+- Updated documentation to reflect the full v0.2.0 scope rather than the older Hydrogen-only release.
+- Physics tests: 40 passing. GUI requires desktop verification with PySide6/VTK.
+
+## 0.2.0 — First stable release candidate
+
+- Double-Slit Experiment: normalized Fraunhofer interference with sampled detection events.
+- Added an animated apparatus schematic (source, double-slit barrier, and detector) with detector marks tied to sampled events; optional animation toggle.
+- Retained the original probability-density plot, histogram, parameter controls, and CSV export.
+- Consistent tag-based artifact filenames and source version 0.2.0.
+- Existing hydrogen explorer and 2D/3D dynamics preserved.
+- First labeled stable release, subject to packaged GUI verification on Windows and Linux.
+
 ## v0.1.7 — 3D Hydrogen Dynamics and layout repair
 
 - Added 3D dynamics experiment with time evolution, density cloud, isosurface, and 3D GIF export.
@@ -70,3 +88,16 @@
 - Clarified VTK volume mapper versus physical GPU choice.
 - Added a Linux restart-on-NVIDIA action using the previously verified XCB/GLX PRIME environment; the active GPU is reported by graphics diagnostics.
 - Scientific calculations and Windows/Linux packaging workflows retained.
+
+### v0.2.0 — Installer and branding preparation
+- Adopted the Modern Q / Wave icon in the main window, About dialog, and native application metadata.
+- Added reusable SVG, PNG, and ICO branding resources.
+- Added GitHub Actions builds for Ubuntu/Debian `.deb` and Windows Inno Setup `Setup.exe` installers.
+- Kept existing tabbed experiment UI and numerical physics modules unchanged.
+
+### v0.2.0 — stable UI polish (pre-release)
+- Replaced the legacy Experiments/Help menu bar and three quick-launch buttons with a unified New Experiment dropdown.
+- Added the same experiment catalog to the tab-bar + control, organized for future expansion.
+- Applied the official QuantumScope Q/Wave icon in the workspace header and Hydrogen Explorer tab.
+- Added header Settings and About buttons, including a persistent dark/light interface preference.
+- Kept native window decoration, the existing dock/taskbar application icon, and the .deb/Windows installer configurations.

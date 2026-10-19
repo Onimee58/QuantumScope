@@ -1,8 +1,17 @@
 # QuantumScope
 
-**QuantumScope — Hydrogen Explorer** is an open-source, Windows-and-Linux desktop tool for physically grounded quantum-state visualization.
+**QuantumScope v0.2.0 — Quantum Visualization Studio** is an open-source Python/PySide6 desktop application for scientifically grounded, interactive quantum visualizations on Linux and Windows.
 
-The initial release calculates *analytical, nonrelativistic* bound-state hydrogen wavefunctions and renders their probability densities in interactive 3D.
+The v0.2.0 workspace includes hydrogen orbitals, coherent hydrogen-state dynamics in 2D and 3D, and an interactive double-slit experiment. Experiments open as tabs inside one window; the physics packages remain independent of the GUI.
+
+## Workspace and experiments (v0.2.0)
+
+- Modern dark interface with a persistent Hydrogen Explorer tab and closable experiment tabs.
+- Reopen an active experiment from the top shortcuts or Experiments menu to focus its existing tab without resetting parameters.
+- Hydrogen Dynamics 2D: coherent state superpositions, evolving density and export tools.
+- Hydrogen Dynamics 3D: animated superposition density and available export tools.
+- Double-Slit Experiment: source/slit/detector schematic with illustrative animated wavefronts, Fraunhofer probability curve, sampled detection histogram, event visualization and CSV export.
+- **Scientific interpretation:** the source/slit/detector drawing is schematic and not to scale; the wavefront rings depict illustrative phase fronts, not individual particle trajectories. Detection events follow the model's sampled far-field probability distribution.
 
 ## Features
 
@@ -15,7 +24,7 @@ The initial release calculates *analytical, nonrelativistic* bound-state hydroge
 - PNG screenshot and `.npz` scientific data export
 - Separate, independently testable physics package
 
-## Windows setup (new in v0.1.4)
+## Windows setup
 
 On Windows 10/11 (64-bit), install Python 3.12 (recommended) and extract this repository into a writable folder. Double-click **`install_and_run_windows.bat`** to create `.venv`, install dependencies, and launch the GUI. For subsequent launches, double-click **`run_windows.bat`**. No Linux commands or CUDA are required. See [WINDOWS.md](WINDOWS.md) for Windows GPU selection and troubleshooting.
 
@@ -167,3 +176,22 @@ See [PACKAGING.md](PACKAGING.md) for automated GitHub Actions builds of runnable
 
 ### Hydrogen Dynamics (v0.1.6)
 Choose **Experiments → Hydrogen Dynamics (superposition)...** for time-dependent coherent superpositions of two bound states. See [DYNAMICS.md](DYNAMICS.md) for model assumptions, animation controls, and data interpretation.
+
+
+## Quantum Phenomena Lab (v0.2.0)
+
+**Experiments → Quantum Phenomena — Double-Slit Experiment** opens a coherent far-field double-slit model. The theoretical curve is the normalized Fraunhofer diffraction envelope multiplied by the two-slit interference factor. The detector controls sample independent outcomes from that curve. This is a **paraxial, monochromatic, idealized model**; no particle paths or time-dependent wave propagation are simulated. Results and sampled detections can be exported as CSV.
+
+### Double-slit apparatus (v0.2.0)
+
+The Double-Slit Experiment dialog now includes an animated, **not-to-scale** apparatus showing a source, two apertures, and a detector. The arcs illustrate coherent wavefronts, **not individual particle paths** or a time-dependent propagation calculation. The detector marks are drawn from the exact sampled hit positions used for the original histogram. Uncheck **Animate illustrative wavefronts** to freeze the diagram. Adjusting experiment parameters clears accumulated detections, consistent with the underlying probability plot. The Fraunhofer physics model, CSV export, and other experiments are unchanged.
+
+## Project
+
+Source, issues and contributions: https://github.com/Onimee58/QuantumScope
+
+QuantumScope is MIT-licensed. Models use the nonrelativistic hydrogen approximation and an idealized paraxial Fraunhofer double-slit approximation; neither includes full experimental apparatus or environment modeling.
+
+## Native installers (v0.2.0)
+
+The `.github/workflows/release.yml` pipeline prepares installable `quantumscope_0.2.0_amd64.deb` and `QuantumScope-0.2.0-Setup.exe` files. See [PACKAGING.md](PACKAGING.md) for how to build, install, and verify these releases. The source download is **not** a compiled installer.

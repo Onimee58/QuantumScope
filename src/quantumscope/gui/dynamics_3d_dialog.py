@@ -17,7 +17,7 @@ class HydrogenDynamics3DDialog(QDialog):
     """Nonrelativistic two-state dynamics; a visualization, not electron trajectories."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('QuantumScope — Hydrogen Dynamics 3D (v0.1.7)')
+        self.setWindowTitle('QuantumScope — Hydrogen Dynamics 3D (v0.2.0)')
         self.resize(1310, 820)
         self.atom = HydrogenAtom()
         self.model = None

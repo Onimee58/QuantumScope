@@ -25,7 +25,7 @@ class HydrogenDynamicsDialog(QDialog):
     """Animates a physical 2D cross-section; never implies a classical trajectory."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("QuantumScope — Hydrogen Dynamics (v0.1.6)")
+        self.setWindowTitle("QuantumScope — Hydrogen Dynamics")
         self.resize(1120, 730)
         self.atom = HydrogenAtom()
         self.model = None
