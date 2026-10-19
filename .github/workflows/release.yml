@@ -47,7 +47,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             echo "PACKAGE_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
           else
-            echo "PACKAGE_VERSION=v0.1.4-dev" >> "$GITHUB_ENV"
+            echo "PACKAGE_VERSION=v0.1.7-dev" >> "$GITHUB_ENV"
           fi
       - name: Create downloadable ZIP
         shell: python
