@@ -1,0 +1,19 @@
+QuantumScope v0.3.0 - Task 1 GUI test candidate
+
+Changes: Circuit workspace is vertically scrollable; the circuit table
+reserves ten default-height rows of canvas, but draws wires only for active
+qubits. No canvas scrollbars; existing pan, zoom and Fit Circuit remain.
+No simulator or file-format changes. Version unchanged.
+
+Manual verification on Ubuntu / Windows:
+1. Start the app, open Quantum Circuits -> Gate Circuit Simulator.
+2. Check default Bell example: only active wires visible; blank space below.
+3. Set qubit count to 10: q0 through q9 must all be reachable in canvas.
+4. Reduce window height: scroll the WHOLE workspace to reach remaining controls.
+5. Confirm there are no visible scrollbars within the circuit table.
+6. Check gate drag/drop, click placement, middle/Shift-drag pan,
+   Ctrl+wheel zoom, Fit Circuit, stepping, Bloch displays and measurements.
+7. Switch qubit count back to 2: lower canvas remains blank.
+
+Automated test: PYTHONPATH=src python -m pytest -q -> 77 passed.
+GUI behavior requires manual testing; PySide6 was not available here.

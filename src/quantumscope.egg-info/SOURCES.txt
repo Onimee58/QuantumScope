@@ -53,6 +53,7 @@ tests/test_dynamics.py
 tests/test_dynamics_export.py
 tests/test_gate_entanglement.py
 tests/test_hydrogen.py
+tests/test_measurement_marginal_task1.py
 tests/test_phase_mask.py
 tests/test_qubits.py
 tests/test_real_orbitals.py

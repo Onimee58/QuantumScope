@@ -160,3 +160,27 @@ def parse_qasm(text):
         raise ValueError('Unsupported OpenQASM statement: '+s)
     if not header or n is None: raise ValueError('Missing OPENQASM 2.0 or qreg')
     return n,gates
+
+
+def measurement_marginal(probabilities, n, measured, counts=None):
+    """Marginalize q0-first computational-basis distributions to selected wires.
+
+    Returns (theoretical probabilities, sampled counts or None). This does not
+    collapse a state and is intended for terminal measurements only.
+    """
+    measured=tuple(sorted(measured))
+    if not measured or len(set(measured))!=len(measured) or any(q<0 or q>=n for q in measured):
+        raise ValueError('Choose distinct valid measured qubits')
+    probs=np.asarray(probabilities,dtype=float)
+    if probs.shape!=(1<<n,):raise ValueError('Invalid state probability vector length')
+    if counts is not None:
+        counts=np.asarray(counts)
+        if counts.shape!=probs.shape:raise ValueError('Invalid counts vector length')
+    marginal=np.zeros(1<<len(measured),dtype=float)
+    sampled=np.zeros(1<<len(measured),dtype=int) if counts is not None else None
+    for index,prob in enumerate(probs):
+        outcome=0
+        for q in measured:outcome=(outcome<<1)|((index>>(n-1-q))&1)
+        marginal[outcome]+=prob
+        if sampled is not None:sampled[outcome]+=int(counts[index])
+    return marginal,sampled
