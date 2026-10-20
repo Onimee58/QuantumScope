@@ -40,3 +40,20 @@ def test_sample_matches_probabilities():
     draws=m.sample_detections(50000, seed=11)
     assert abs(np.mean(draws)) < .25
     assert abs(np.std(draws)-np.sqrt(np.trapezoid(x*x*p,x))) < .4
+
+
+def test_which_path_no_interference_and_normalizes():
+    model = DoubleSlit()
+    x, coherent = model.distribution()
+    _, observed = model.distribution(which_path=True)
+    assert np.isclose(np.trapezoid(observed, x), 1)
+    assert not np.allclose(observed, coherent)
+    # A single-slit envelope has its global maximum at the center.
+    assert observed[len(x)//2] == pytest.approx(max(observed))
+
+
+def test_which_path_sampling():
+    model = DoubleSlit()
+    a = model.sample_detections(300, seed=42, which_path=True)
+    b = model.sample_detections(300, seed=42, which_path=True)
+    assert np.array_equal(a,b)

@@ -40,6 +40,13 @@ class DoubleSlitDialog(QDialog):
             ctrl.valueChanged.connect(self._update)
         self.batch = QSpinBox(); self.batch.setRange(1, 5000); self.batch.setValue(250)
         form.addRow('Detections / batch', self.batch)
+        self.which_path = QCheckBox('Which-path detectors at the slits')
+        self.which_path.setToolTip('Ideal path information destroys two-slit interference; does not trace trajectories.')
+        self.which_path.toggled.connect(self._update)
+        form.addRow('Observation', self.which_path)
+        self.path_note = QLabel('OFF: path information unavailable; interference fringes.')
+        self.path_note.setWordWrap(True)
+        form.addRow(self.path_note)
         self.add = QPushButton('Detect particles (+batch)')
         self.add.clicked.connect(self._add_detections); form.addRow(self.add)
         self.reset = QPushButton('Clear detections')
@@ -83,13 +90,16 @@ class DoubleSlitDialog(QDialog):
         try:
             model = DoubleSlit(self.wavelength.value(), self.width.value(),
                 self.separation.value(), self.distance.value(), self.halfwidth.value())
-            x, y = model.distribution()
+            x, y = model.distribution(which_path=self.which_path.isChecked())
         except ValueError as exc:
             self.model = None
             self.info.setText('Invalid setup: ' + str(exc))
             self.add.setEnabled(False)
             return
         self.model = model; self.x = x; self.y = y
+        observing = self.which_path.isChecked()
+        self.path_note.setText('ON: ideal which-path information; incoherent single-slit envelope (not always exactly two bands).' if observing else 'OFF: coherent two-slit interference fringes.')
+        self.apparatus.set_which_path(observing)
         self.add.setEnabled(True)
         self.info.setText(f'Central fringe spacing (small angle): '
             f'{model.wavelength_nm*1e-9*model.screen_distance_m/(model.slit_separation_um*1e-6)*1e3:.3g} mm')
@@ -99,7 +109,7 @@ class DoubleSlitDialog(QDialog):
 
     def _add_detections(self):
         if self.model is None: return
-        new = self.model.sample_detections(self.batch.value())
+        new = self.model.sample_detections(self.batch.value(), which_path=self.which_path.isChecked())
         self.samples = np.concatenate([self.samples, new])
         self._render_hist()
 
@@ -126,6 +136,7 @@ class DoubleSlitDialog(QDialog):
         try:
             with open(path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
+                writer.writerow([f'# Which-path detectors: {self.which_path.isChecked()}'])
                 writer.writerow(['screen_x_mm', 'probability_density_per_mm',
                                  'simulated_detection_x_mm'])
                 length = max(len(self.x), len(self.samples))

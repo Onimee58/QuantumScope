@@ -24,6 +24,7 @@ class DoubleSlitApparatus(QWidget):
         self._separation_um = 100.0
         self._width_um = 20.0
         self._animated = True
+        self._which_path = False
         self._timer = QTimer(self)
         self._timer.setInterval(50)
         self._timer.timeout.connect(self._tick)
@@ -34,6 +35,10 @@ class DoubleSlitApparatus(QWidget):
         self._separation_um = model.slit_separation_um
         self._width_um = model.slit_width_um
         self._samples = np.asarray(samples, dtype=float).copy()
+        self.update()
+
+    def set_which_path(self, enabled):
+        self._which_path = bool(enabled)
         self.update()
 
     def set_animated(self, enabled):
@@ -90,6 +95,14 @@ class DoubleSlitApparatus(QWidget):
         for a, b in ((0, 1), (2, 3), (4, 5)):
             painter.drawRoundedRect(QRectF(barrier - 5, boundaries[a], 10,
                                             boundaries[b] - boundaries[a]), 2, 2)
+        # The markers represent an idealized path-distinguishing interaction
+        # occurring at the apertures, not an upstream position measurement.
+        if self._which_path:
+            painter.setPen(QPen(QColor('#efaa55'), 2))
+            painter.setBrush(QColor('#efaa55'))
+            for slit_y in slit_ys:
+                painter.drawEllipse(QPointF(barrier + 13, slit_y), 5, 5)
+            painter.drawText(QRectF(338, 35, 165, 24), 'PATH DETECTORS ON')
         # Two sets of expanding circular phase fronts from the apertures.
         # Clip the rings to the right side of the barrier and within the frame.
         painter.save()
@@ -125,5 +138,5 @@ class DoubleSlitApparatus(QWidget):
         painter.setPen(QColor('#91a8b5'))
         painter.setFont(QFont('Sans Serif', 9))
         painter.drawText(QRectF(25, 274, 650, 20), Qt.AlignmentFlag.AlignCenter,
-                         'Schematic, not to scale  |  Rings = illustrative phase fronts; dots = sampled detections')
+                         'Schematic, not to scale | Path markers = ideal measurement; dots = detections' if self._which_path else 'Schematic, not to scale | Rings = illustrative phase fronts; dots = detections')
         painter.end()

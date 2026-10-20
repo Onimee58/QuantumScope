@@ -8,13 +8,14 @@ import sys
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QSettings, QUrl
+from PySide6.QtCore import Qt, QSettings, QUrl, QStandardPaths, QTimer
 from PySide6.QtGui import QDesktopServices, QPixmap, QPainter, QPen, QColor, QIcon
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
     QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QDoubleSpinBox,
     QSplitter, QVBoxLayout, QWidget, QFileDialog, QDialog, QDialogButtonBox, QFrame, QInputDialog, QTabWidget, QSizePolicy, QToolButton, QMenu, QApplication,
 )
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from pyvistaqt import QtInteractor
 from quantumscope import __version__
 from quantumscope.physics import HydrogenAtom, density_grid
@@ -23,149 +24,81 @@ from quantumscope.visualization.orbitals import draw_orbital, set_camera_view, p
 
 
 class AboutDialog(QDialog):
-    """Project information and developer credits."""
+    """Branded, accessible project credits; GitHub avatar is cached offline."""
+    AVATAR_URL = 'https://avatars.githubusercontent.com/u/50075168?s=256&v=4'
 
-    def __init__(self, parent=None):
+    def __init__(self,parent=None):
         super().__init__(parent)
-        self.setWindowTitle("About QuantumScope")
-        self.setModal(True)
-        self.setMinimumSize(430, 560)
-        self.resize(470, 590)
-        self.settings = QSettings("QuantumScope", "QuantumScope")
-        self.setStyleSheet("""
-            QDialog { background: #15263b; color: #f0f6ff; }
-            QLabel { color: #e6efff; }
-            QLabel#secondary { color: #adc4df; }
-            QPushButton { background: #223a55; color: #f2f7ff;
-                border: 1px solid #34516d; border-radius: 7px;
-                padding: 9px 12px; min-height: 19px; font-weight: 600; }
-            QPushButton:hover { background: #2b4b6d; }
-            QPushButton:disabled { color: #8796a8; }
-            QFrame#divider { background: #344b65; max-height: 1px; }
-        """)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 16, 14, 15)
-        layout.setSpacing(9)
-
-        self.photo = QLabel()
-        self.photo.setFixedSize(78, 78)
+        self.setWindowTitle('About QuantumScope')
+        self.resize(510,580)
+        self.setMinimumWidth(440)
+        self.setStyleSheet("""QDialog {background:#0d1828;color:#eaf4ff;}
+            QLabel {color:#eaf4ff;} QLabel#muted {color:#aac2d7;}
+            QPushButton {background:#203a56;color:#eaf5ff;border:1px solid #355a78;
+            border-radius:8px;padding:9px 13px;font-weight:600;}
+            QPushButton:hover {background:#285474;border-color:#59cce6;}
+            QFrame#divider {background:#2f4d69;max-height:1px;}""")
+        layout=QVBoxLayout(self);layout.setContentsMargins(28,20,28,20);layout.setSpacing(10)
+        logo=QLabel();logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo.setPixmap(QPixmap(str(files('quantumscope').joinpath('assets/quantumscope-128.png'))).scaled(76,76,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+        layout.addWidget(logo)
+        title=QLabel('QuantumScope');title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet('font-size:25px;font-weight:800;');layout.addWidget(title)
+        subtitle=QLabel(f'Quantum Visualization Studio  •  v{__version__}')
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter);subtitle.setObjectName('muted');layout.addWidget(subtitle)
+        tagline=QLabel('Explore  •  Visualize  •  Simulate');tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tagline.setStyleSheet('color:#5ad1e9;font-size:12px;');layout.addWidget(tagline)
+        divider=QFrame();divider.setObjectName('divider');layout.addWidget(divider)
+        dev=QHBoxLayout();dev.setSpacing(17);layout.addLayout(dev)
+        self.photo=QLabel('GitHub avatar');self.photo.setFixedSize(90,90)
         self.photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.photo.setStyleSheet("background:#233d58; border-radius:7px; color:#b6cce5;")
-        layout.addWidget(self.photo, alignment=Qt.AlignmentFlag.AlignHCenter)
-        self._load_profile()
+        self.photo.setStyleSheet('background:#1d3852;border-radius:12px;color:#aac3d8;')
+        dev.addWidget(self.photo)
+        identity=QVBoxLayout();identity.setSpacing(4);dev.addLayout(identity,1)
+        name=QLabel('Md. Saif Hassan Onim, PhD');name.setStyleSheet('font-size:15px;font-weight:700;');identity.addWidget(name)
+        for line in ('Developer & maintainer','Postdoctoral Fellow','Southern Methodist University, Dallas'):
+            label=QLabel(line);label.setObjectName('muted');label.setWordWrap(True);identity.addWidget(label)
+        self._load_avatar()
+        desc=QLabel('Open-source scientific software for hydrogen orbitals, quantum principles, and interactive quantum circuits.')
+        desc.setWordWrap(True);desc.setAlignment(Qt.AlignmentFlag.AlignCenter);layout.addWidget(desc)
+        features=QLabel('Hydrogen Explorer & Dynamics  •  Double Slit  •  Superposition & Entanglement  •  Circuit Simulator  •  QASM Converter')
+        features.setObjectName('muted');features.setWordWrap(True)
+        features.setAlignment(Qt.AlignmentFlag.AlignCenter);layout.addWidget(features)
+        links=QHBoxLayout();layout.addLayout(links)
+        for text,url in (('GitHub repository','https://github.com/Onimee58/QuantumScope'),('Developer profile','https://github.com/Onimee58'),('SMU page','https://people.smu.edu/monim')):
+            btn=QPushButton(text+' ↗');btn.clicked.connect(lambda checked=False,u=url:QDesktopServices.openUrl(QUrl(u)))
+            links.addWidget(btn)
+        footer=QLabel('MIT licensed  •  Python / PySide6 / NumPy / VTK  •  Idealized educational simulations')
+        footer.setObjectName('muted');footer.setWordWrap(True);footer.setAlignment(Qt.AlignmentFlag.AlignCenter);layout.addWidget(footer)
+        layout.addStretch()
+        close=QPushButton('Close');close.clicked.connect(self.accept);layout.addWidget(close)
 
-        photo_button = QPushButton("Change profile picture (local)")
-        photo_button.clicked.connect(self._choose_photo)
-        layout.addWidget(photo_button)
+    def _load_avatar(self):
+        directory=Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)) / 'QuantumScope'
+        directory.mkdir(parents=True,exist_ok=True)
+        self._avatar_path=directory/'github-avatar.png'
+        if self._avatar_path.exists():
+            self._display_avatar(self._avatar_path.read_bytes())
+        self._network=QNetworkAccessManager(self)
+        request=QNetworkRequest(QUrl(self.AVATAR_URL))
+        self._reply=self._network.get(request)
+        self._reply.finished.connect(self._avatar_received)
 
-        logo = QLabel()
-        logo.setFixedSize(58, 58)
-        logo.setPixmap(QPixmap(str(files("quantumscope").joinpath("assets/quantumscope.png"))).scaled(58, 58, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        layout.addWidget(logo, alignment=Qt.AlignmentFlag.AlignHCenter)
+    def _display_avatar(self,data):
+        pix=QPixmap()
+        if pix.loadFromData(data):
+            self.photo.setText('')
+            self.photo.setPixmap(pix.scaled(90,90,Qt.AspectRatioMode.KeepAspectRatioByExpanding,Qt.TransformationMode.SmoothTransformation))
+            return True
+        return False
 
-        title = QLabel(f"QuantumScope v{__version__}")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 16px; font-weight: 700;")
-        layout.addWidget(title)
-
-        for value in (
-            "Open-source quantum visualization studio · Windows & Linux",
-            "Developed and maintained by Md. Saif Hassan Onim",
-            "Hydrogen orbitals · 2D/3D dynamics · Double-slit interference",
-        ):
-            label = QLabel(value)
-            label.setObjectName("secondary")
-            label.setWordWrap(True)
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(label)
-
-        website = QLabel('<a href="https://people.smu.edu/monim" style="color:#76d6ce;">Developer website ↗</a>')
-        website.setTextFormat(Qt.TextFormat.RichText)
-        website.setOpenExternalLinks(True)
-        website.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(website)
-
-        self.repo_button = QPushButton("GitHub project ↗")
-        self.repo_button.clicked.connect(self._open_repo)
-        layout.addWidget(self.repo_button)
-        self._update_repo_button()
-
-        rule = QFrame()
-        rule.setObjectName("divider")
-        layout.addWidget(rule)
-
-        details = QLabel("Built with Python · PySide6 · PyVista · VTK · NumPy · SciPy\n"
-                         "License: MIT · Models: reduced-mass hydrogen and Fraunhofer diffraction")
-        details.setObjectName("secondary")
-        details.setWordWrap(True)
-        details.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(details)
-        layout.addStretch(1)
-
-        close = QPushButton("Close")
-        close.clicked.connect(self.accept)
-        layout.addWidget(close)
-
-    def _load_profile(self):
-        path = self.settings.value("about/profile_picture", "", type=str)
-        pixmap = QPixmap(path) if path else QPixmap()
-        if pixmap.isNull():
-            self.photo.setText("Your photo")
-            self.photo.setPixmap(QPixmap())
-        else:
-            self.photo.setText("")
-            self.photo.setPixmap(pixmap.scaled(78, 78,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation))
-
-    def _choose_photo(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select profile picture", "", "Images (*.png *.jpg *.jpeg *.webp)")
-        if not path:
-            return
-        image = QPixmap(path)
-        if image.isNull():
-            QMessageBox.warning(self, "Invalid image", "Could not open the selected image.")
-            return
-        # Store a local copy so the profile remains available even if the source moves.
-        from PySide6.QtCore import QStandardPaths
-        directory = Path(QStandardPaths.writableLocation(
-            QStandardPaths.StandardLocation.AppConfigLocation)) / "QuantumScope"
-        directory.mkdir(parents=True, exist_ok=True)
-        destination = directory / "profile.png"
-        if not image.save(str(destination), "PNG"):
-            QMessageBox.warning(self, "Save failed", "Could not save the profile picture.")
-            return
-        self.settings.setValue("about/profile_picture", str(destination))
-        self._load_profile()
-
-    def _repo_url(self):
-        return "https://github.com/Onimee58/QuantumScope"
-
-    def _update_repo_button(self):
-        url = QUrl(self._repo_url())
-        valid = url.isValid() and url.scheme() == "https" and url.host().lower() == "github.com" and bool(url.path().strip("/"))
-        self.repo_button.setEnabled(valid)
-        self.repo_button.setToolTip("Configure the repository URL first" if not valid else self._repo_url())
-
-    def _set_repo(self):
-        value, ok = QInputDialog.getText(self, "GitHub repository", "Repository URL:",
-                                         text=self._repo_url())
-        if not ok:
-            return
-        url = QUrl(value.strip())
-        if value.strip() and not (url.isValid() and url.scheme() == "https" and
-                                   url.host().lower() == "github.com" and
-                                   len(url.path().strip("/").split("/")) >= 2):
-            QMessageBox.warning(self, "Invalid URL", "Enter a GitHub repository URL such as https://github.com/user/QuantumScope")
-            return
-        self.settings.setValue("about/repository_url", value.strip())
-        self._update_repo_button()
-
-    def _open_repo(self):
-        if self.repo_button.isEnabled():
-            QDesktopServices.openUrl(QUrl(self._repo_url()))
-
+    def _avatar_received(self):
+        if self._reply.error()==self._reply.NetworkError.NoError:
+            data=bytes(self._reply.readAll())
+            if self._display_avatar(data):
+                try:self._avatar_path.write_bytes(data)
+                except OSError:pass
+        self._reply.deleteLater()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -186,16 +119,24 @@ class MainWindow(QMainWindow):
         self._build_workspace()
         self.refresh()
 
-    def _experiment_menu(self, parent):
+    def _experiment_menu(self, parent, category=None):
         """Single extensible experiment catalog shared by header and tab bar."""
         menu = QMenu(parent)
         menu.setObjectName("experimentMenu")
-        menu.addSection("ATOMIC PHYSICS")
-        menu.addAction("Hydrogen Explorer", lambda: self.workspace.setCurrentIndex(0))
-        menu.addAction("Hydrogen Dynamics 2D", self.show_dynamics)
-        menu.addAction("Hydrogen Dynamics 3D", self.show_dynamics_3d)
-        menu.addSection("QUANTUM PHENOMENA")
-        menu.addAction("Double-Slit Experiment", self._launch_double_slit)
+        if category in (None,"hydrogen"):
+            menu.addSection("ATOMIC PHYSICS")
+            menu.addAction("Hydrogen Explorer", self._show_hydrogen)
+            menu.addAction("Hydrogen Dynamics 2D", self.show_dynamics)
+            menu.addAction("Hydrogen Dynamics 3D", self.show_dynamics_3d)
+        if category in (None,"principles"):
+            menu.addSection("QUANTUM PRINCIPLES")
+            menu.addAction("Double-Slit Experiment", self._launch_double_slit)
+            menu.addAction("Quantum Superposition (spin-½)", self._launch_superposition)
+            menu.addAction("Quantum Entanglement (electron spins)", self._launch_entanglement)
+        if category in (None,"circuits"):
+            menu.addSection("QUANTUM CIRCUITS")
+            menu.addAction("Gate Circuit Simulator", self._launch_circuits)
+            menu.addAction("QASM Converter", self._launch_converter)
         return menu
 
     def _show_settings(self):
@@ -261,7 +202,7 @@ class MainWindow(QMainWindow):
         name = QLabel("QuantumScope")
         name.setObjectName("brandTitle")
         titles.addWidget(name)
-        caption = QLabel("QUANTUM VISUALIZATION STUDIO  /  v0.2.0")
+        caption = QLabel("QUANTUM VISUALIZATION STUDIO  /  v0.3.0")
         caption.setObjectName("brandCaption")
         titles.addWidget(caption)
         row.addLayout(titles)
@@ -276,61 +217,110 @@ class MainWindow(QMainWindow):
         row.addWidget(self._header_button("⚙", "Settings", self._show_settings))
         row.addWidget(self._header_button("ⓘ", "About QuantumScope", self.show_about))
         outer.addWidget(header)
-        self.workspace = QTabWidget()
-        self.workspace.setObjectName("experimentWorkspace")
-        self.workspace.setTabsClosable(True)
-        self.workspace.setMovable(False)
-        self.workspace.setDocumentMode(True)
-        self.workspace.tabCloseRequested.connect(self._close_workspace_tab)
+        self.categories = QTabWidget()
+        self.categories.setObjectName("categoryWorkspace")
+        self.categories.setDocumentMode(True)
+        self.workspaces = {}
+        for category, title in (("hydrogen", "⚛  Hydrogen"),
+                                ("principles", "◈  Quantum Principles"),
+                                ("circuits", "▦  Quantum Circuits")):
+            tabs = QTabWidget()
+            tabs.setObjectName("experimentWorkspace")
+            tabs.setTabsClosable(True)
+            tabs.setDocumentMode(True)
+            tabs.tabCloseRequested.connect(lambda idx, cat=category: self._close_workspace_tab(cat, idx))
+            plus = QToolButton(tabs)
+            plus.setObjectName("tabAddButton")
+            plus.setText("+")
+            plus.setToolTip("New experiment")
+            plus.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            plus.setMenu(self._experiment_menu(plus,category))
+            tabs.setCornerWidget(plus, Qt.Corner.TopRightCorner)
+            self.categories.addTab(tabs, title)
+            self.workspaces[category] = tabs
+        self.workspace = self.workspaces["hydrogen"]
         self.workspace.addTab(explorer, QIcon(str(files("quantumscope").joinpath("assets/quantumscope-24.png"))), "Hydrogen Explorer")
         self.workspace.tabBar().setTabButton(0, self.workspace.tabBar().ButtonPosition.RightSide, None)
-        plus = QToolButton(self.workspace)
-        plus.setObjectName("tabAddButton")
-        plus.setText("+")
-        plus.setToolTip("New experiment")
-        plus.setAccessibleName("New experiment")
-        plus.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        plus.setMenu(self._experiment_menu(plus))
-        self.workspace.setCornerWidget(plus, Qt.Corner.TopRightCorner)
-        outer.addWidget(self.workspace, 1)
+        from quantumscope.gui.circuit_workspace import CircuitWorkspace
+        self.circuit_widget = CircuitWorkspace(self.workspaces["circuits"])
+        self.workspaces["circuits"].addTab(self.circuit_widget, "Gate Circuit Simulator")
+        self.workspaces["circuits"].tabBar().setTabButton(0, self.workspaces["circuits"].tabBar().ButtonPosition.RightSide, None)
+        from quantumscope.gui.qasm_converter import QasmConverter
+        self.converter_widget = QasmConverter(self._load_converted_circuit, self.workspaces["circuits"])
+        self.workspaces["circuits"].addTab(self.converter_widget,"QASM Converter")
+        outer.addWidget(self.categories, 1)
         self.setCentralWidget(shell)
         self._open_experiments = {}
+        self._launch_double_slit()
+        self._select_category("hydrogen")
         self.statusBar().showMessage("Ready  ·  Choose an experiment or explore hydrogen orbitals")
 
+    def _select_category(self, category):
+        tabs=self.workspaces[category]
+        self.categories.setCurrentWidget(tabs)
+        return tabs
+
     def _open_experiment(self, key, label, constructor):
-        """One live instance per experiment; switching tabs preserves its state."""
+        """One persistent experiment tab in the appropriate category."""
+        category = "hydrogen" if key.startswith("dynamics_") else "principles"
+        tabs=self._select_category(category)
         if key in self._open_experiments:
-            widget = self._open_experiments[key]
-            index = self.workspace.indexOf(widget)
-            if index >= 0:
-                self.workspace.setCurrentIndex(index)
+            widget=self._open_experiments[key]
+            index=tabs.indexOf(widget)
+            if index>=0:
+                tabs.setCurrentIndex(index)
                 return
             del self._open_experiments[key]
-        widget = constructor(self.workspace)
-        # QDialog is also a QWidget. Embed its original UI rather than
-        # rewriting its functioning plots, physics bindings, and exports.
+        widget=constructor(tabs)
         widget.setWindowFlags(Qt.WindowType.Widget)
-        widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        icon_name = {"double_slit": "◫", "dynamics_2d": "∿", "dynamics_3d": "⬡"}.get(key, "◈")
-        index = self.workspace.addTab(widget, f"{icon_name}  {label.strip()}")
-        self._open_experiments[key] = widget
-        self.workspace.setCurrentIndex(index)
-        self.statusBar().showMessage(f"Opened {label.strip()}", 3500)
+        widget.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Expanding)
+        icon_name={"double_slit":"◫","dynamics_2d":"∿","dynamics_3d":"⬡"}.get(key,"◈")
+        index=tabs.addTab(widget,f"{icon_name}  {label.strip()}")
+        self._open_experiments[key]=widget
+        tabs.setCurrentIndex(index)
+        self.statusBar().showMessage(f"Opened {label.strip()}",3500)
 
-    def _close_workspace_tab(self, index):
-        if index == 0 or index < 0:
-            return  # The Hydrogen Explorer anchors the workspace.
-        widget = self.workspace.widget(index)
-        self.workspace.removeTab(index)
-        for key, active in list(self._open_experiments.items()):
-            if active is widget:
-                del self._open_experiments[key]
-        widget.close()  # Stops animation timers and releases 3D plotters.
+    def _close_workspace_tab(self,category,index):
+        tabs=self.workspaces[category]
+        if index<=0 or category=="circuits":return
+        widget=tabs.widget(index)
+        tabs.removeTab(index)
+        for key,active in list(self._open_experiments.items()):
+            if active is widget:del self._open_experiments[key]
+        widget.close()
         widget.deleteLater()
+
+    def _launch_circuits(self):
+        tabs=self._select_category("circuits")
+        tabs.setCurrentWidget(self.circuit_widget)
+
+    def _launch_converter(self):
+        tabs=self._select_category("circuits")
+        tabs.setCurrentWidget(self.converter_widget)
+
+    def _load_converted_circuit(self,n,gates,measured=()):
+        self.circuit_widget.set_circuit(n,gates)
+        col=max((c for _,c in self.circuit_widget.gates),default=-1)+1
+        self.circuit_widget.measurements={q:col for q in measured}
+        self.circuit_widget._expand_columns(col)
+        self.circuit_widget.refresh()
+        self._launch_circuits()
+
+    def _show_hydrogen(self):
+        tabs=self._select_category("hydrogen")
+        tabs.setCurrentIndex(0)
 
     def _launch_double_slit(self):
         from quantumscope.gui.double_slit_dialog import DoubleSlitDialog
         self._open_experiment("double_slit", "  Double-Slit Experiment  ", DoubleSlitDialog)
+
+    def _launch_superposition(self):
+        from quantumscope.gui.quantum_principles import SuperpositionDialog
+        self._open_experiment("superposition", "Quantum Superposition", SuperpositionDialog)
+
+    def _launch_entanglement(self):
+        from quantumscope.gui.quantum_principles import EntanglementDialog
+        self._open_experiment("entanglement", "Quantum Entanglement", EntanglementDialog)
 
     def show_dynamics(self):
         from quantumscope.gui.dynamics_dialog import HydrogenDynamicsDialog
