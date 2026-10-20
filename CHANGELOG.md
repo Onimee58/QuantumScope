@@ -1,3 +1,11 @@
+## v0.2.0 — Interactive principles update (post-release candidate)
+
+- Added **Quantum Superposition**: pure spin-½ state, Bloch-sphere schematic, selectable measurement basis, Born probabilities, collapse demonstration, and repeated preparations.
+- Added **Quantum Entanglement**: animated electron-spin singlet schematic, independent Alice/Bob measurement controls, joint probabilities, simulated correlation statistics, and ideal CHSH reference.
+- Added optional ideal which-path marking at the slits in the Double-Slit Experiment. The probability curve and detector samples now switch between coherent fringes and an incoherent single-slit envelope.
+- Kept all original Hydrogen Explorer, 2D/3D dynamics, tab workspace, export support, and installer build configuration.
+- Distinguish illustrations and ideal-model statistical predictions from real trajectories, real hardware data, and physical signaling.
+
 ## v0.2.0 — workspace redesign (stable-release candidate)
 
 - Introduced a cohesive modern dark Qt application theme and a top experiment-launch bar.
@@ -101,3 +109,25 @@
 - Applied the official QuantumScope Q/Wave icon in the workspace header and Hydrogen Explorer tab.
 - Added header Settings and About buttons, including a persistent dark/light interface preference.
 - Kept native window decoration, the existing dock/taskbar application icon, and the .deb/Windows installer configurations.
+
+### Quantum principles interaction refinements (v0.2.0 development update)
+- Bloch sphere uses a drag-rotatable 3D orthographic projection with three great circles and state vector.
+- Superposition state and measurement angles, plus Alice/Bob axes, have synchronized sliders and degree boxes.
+- Entanglement electrons are clickable to measure after separation; changing measurement angles no longer restarts their travel animation.
+- Previous shot/correlation statistics clear on parameter changes to avoid confusion with the current theoretical prediction.
+- After one electron is measured, changing an axis requires preparing a new pair, avoiding mixing incompatible measurement settings.
+
+### Interactive entanglement preparation station (v0.2.0 development update)
+- Entanglement demonstration now begins with separately adjustable Alice and Bob spin states (polar angle and phase for each).
+- Animated electron symbols move into a schematic H(A) then CNOT(A,B) preparation station and emerge as a joint two-qubit state.
+- Displays input product-state amplitudes, output joint-state amplitudes, and pure-state concurrence (0–1).
+- Default |up,up> input produces maximally entangled Bell |Phi+>; other inputs can produce partially entangled or separable states.
+- After preparation, each electron is clickable for its own local projective spin measurement; sequential measurements condition the same joint state.
+- Changing measurement axes does not restart electron motion. Altering initial preparation requires reset and preparation of a new pair.
+- Batch statistics use the generated joint state and current measurement axes, not an assumed singlet for every input.
+
+### Quantum Circuit Workspace update (v0.2.0 development)
+
+- Organized the interface into three top-level workspaces: Hydrogen, Quantum Principles, and Quantum Circuits. Experiments retain their individual tabs within each workspace.
+- Added an ideal statevector quantum gate simulator with an editor, gate palette, two-qubit controls, Bloch previews of reduced single-qubit states at every step, sample measurement counts, and OpenQASM 2 subset import/export.
+- Interactive circuit limit: 10 qubits; explicitly reject unsupported OpenQASM operations.

@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: quantumscope
-Version: 0.2.0
+Version: 0.3.0
 Summary: Cross-platform, scientifically grounded quantum visualization studio
 Author: QuantumScope contributors
 License-Expression: MIT
@@ -18,6 +18,8 @@ Provides-Extra: dev
 Requires-Dist: pytest>=8; extra == "dev"
 Requires-Dist: ruff>=0.6; extra == "dev"
 Dynamic: license-file
+
+> **Development milestone:** QuantumScope v0.3.0 adds workspaces, a circuit editor, and OpenQASM 2 ↔ `.qscope` conversion. The v0.2.0 release remains the published stable version until this build is verified.
 
 # QuantumScope
 
@@ -216,3 +218,12 @@ QuantumScope is MIT-licensed. Models use the nonrelativistic hydrogen approximat
 ## Native installers (v0.2.0)
 
 The `.github/workflows/release.yml` pipeline prepares installable `quantumscope_0.2.0_amd64.deb` and `QuantumScope-0.2.0-Setup.exe` files. See [PACKAGING.md](PACKAGING.md) for how to build, install, and verify these releases. The source download is **not** a compiled installer.
+
+
+### Interactive quantum principles (v0.2.0 update)
+
+- **Superposition**: prepare a pure spin-½ state, adjust polar/phase angles, inspect a Bloch-sphere schematic, choose measurement axis, measure individual spins, and collect repeated-shot statistics.
+- **Entanglement**: prepare an ideal two-electron spin singlet, watch schematic electron separation, measure Alice or Bob independently, and compare theoretical correlations with repeated-pair statistics; ideal CHSH settings are provided for reference.
+- **Double slit — which-path**: switch ideal path information on or off **at the slits**. ON removes two-slit fringes in favor of the single-slit envelope; OFF restores interference. The detector dots are Monte Carlo samples from the chosen model.
+
+These are **ideal teaching models**, not simulated physical electron trajectories, actual measuring devices, or tests on quantum hardware. The incoherent profile may resemble two broadened bands depending on geometry, but it is not generally *exactly two* bands.

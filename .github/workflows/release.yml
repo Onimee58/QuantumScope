@@ -39,7 +39,7 @@ jobs:
       - name: Build Debian installer
         if: runner.os == 'Linux'
         shell: bash
-        run: bash packaging/build_deb.sh 0.2.0
+        run: bash packaging/build_deb.sh 0.3.0
       - name: Install Inno Setup
         if: runner.os == 'Windows'
         shell: pwsh
@@ -50,12 +50,12 @@ jobs:
         run: |
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (!(Test-Path $compiler)) { throw "Inno Setup compiler missing: $compiler" }
-          & $compiler /DMyAppVersion=0.2.0 packaging\QuantumScope.iss
+          & $compiler /DMyAppVersion=0.3.0 packaging\QuantumScope.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload installers as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: QuantumScope-0.2.0-${{ matrix.platform }}-installer
+          name: QuantumScope-0.3.0-${{ matrix.platform }}-installer
           path: dist/installers/*
           if-no-files-found: error
       - name: Publish installers with tagged release

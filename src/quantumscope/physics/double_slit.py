@@ -25,7 +25,7 @@ class DoubleSlit:
         if self.slit_separation_um < self.slit_width_um:
             raise ValueError('Slit separation must not be smaller than slit width')
 
-    def distribution(self, points=2001):
+    def distribution(self, points=2001, which_path=False):
         """Return screen x [mm] and normalized density [1/mm].
 
         Uses sin(theta) approximately equal to x/L (paraxial assumption).
@@ -40,17 +40,19 @@ class DoubleSlit:
         d = self.slit_separation_um * 1e-6
         envelope = np.sinc(a * theta / lam) ** 2
         fringes = np.cos(np.pi * d * theta / lam) ** 2
-        intensity = envelope * fringes
+        # A fully distinguishing which-path measurement removes the cross term.
+        # In the far field, incoherent paths yield the single-slit envelope.
+        intensity = envelope if which_path else envelope * fringes
         area = float(np.trapezoid(intensity, x))
         if not np.isfinite(area) or area <= 0:
             raise ValueError('Degenerate sampled diffraction pattern; change parameters')
         return x, intensity / area
 
-    def sample_detections(self, count, seed=None, points=4001):
+    def sample_detections(self, count, seed=None, points=4001, which_path=False):
         """Draw independent screen hits via inverse-CDF sampling [mm]."""
         if not isinstance(count, int) or count < 0 or count > 200000:
             raise ValueError('count must be an integer from 0 to 200000')
-        x, density = self.distribution(points)
+        x, density = self.distribution(points, which_path=which_path)
         dx = np.diff(x)
         cdf = np.concatenate(([0.0], np.cumsum((density[:-1] + density[1:]) * dx / 2)))
         cdf /= cdf[-1]
