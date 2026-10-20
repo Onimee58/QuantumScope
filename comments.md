@@ -1,0 +1,1 @@
+- **Export the double-slit experiment as a quantum circuit and visualize the same interference pattern to establish the link between quantum physics and computation.**
