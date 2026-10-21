@@ -21,11 +21,13 @@ src/quantumscope/assets/quantumscope.ico
 src/quantumscope/assets/quantumscope.png
 src/quantumscope/assets/quantumscope.svg
 src/quantumscope/gui/__init__.py
+src/quantumscope/gui/circuit_pdf.py
 src/quantumscope/gui/circuit_workspace.py
 src/quantumscope/gui/double_slit_apparatus.py
 src/quantumscope/gui/double_slit_dialog.py
 src/quantumscope/gui/dynamics_3d_dialog.py
 src/quantumscope/gui/dynamics_dialog.py
+src/quantumscope/gui/gate_explorer.py
 src/quantumscope/gui/main_window.py
 src/quantumscope/gui/qasm_converter.py
 src/quantumscope/gui/quantum_principles.py
@@ -38,6 +40,7 @@ src/quantumscope/physics/circuits.py
 src/quantumscope/physics/double_slit.py
 src/quantumscope/physics/dynamics.py
 src/quantumscope/physics/dynamics_export.py
+src/quantumscope/physics/gate_education.py
 src/quantumscope/physics/hydrogen.py
 src/quantumscope/physics/qubits.py
 src/quantumscope/visualization/__init__.py
@@ -51,8 +54,10 @@ tests/test_circuits.py
 tests/test_double_slit.py
 tests/test_dynamics.py
 tests/test_dynamics_export.py
+tests/test_gate_education.py
 tests/test_gate_entanglement.py
 tests/test_hydrogen.py
+tests/test_measurement_marginal_task1.py
 tests/test_phase_mask.py
 tests/test_qubits.py
 tests/test_real_orbitals.py

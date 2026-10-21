@@ -1,15 +1,17 @@
 """Interactive gate circuit editor and exact simulator."""
 import math
+import html
 import numpy as np
-from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer
-from PySide6.QtGui import QColor, QPainter, QPen, QDrag, QFont, QBrush, QWheelEvent
+from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer, QRectF
+from PySide6.QtGui import QColor, QPainter, QPen, QDrag, QFont, QBrush, QWheelEvent, QPdfWriter, QPageSize
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
     QLabel, QPushButton, QListWidget, QTableWidget, QTableWidgetItem, QSpinBox,
-    QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton)
+    QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton, QSizePolicy, QDialog, QDialogButtonBox, QLineEdit, QTabWidget, QApplication)
 from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured
 from quantumscope.physics.circuit_verification import verify_example, inspect_basis
+from quantumscope.physics.gate_education import parse_angle, gate_information, transformation_rows
 from quantumscope.physics.circuits import (MAX_QUBITS, Gate, ALL, DUAL, TRIPLE, evolution,
-    bloch, sample, parse_qasm, distribution)
+    bloch, sample, parse_qasm, distribution, measurement_marginal)
 
 
 class Palette(QListWidget):
@@ -31,7 +33,10 @@ class Grid(QTableWidget):
         self.viewport().setAcceptDrops(True)
         self.viewport().installEventFilter(self)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
+        # Editing is exclusively through the gate parameter dialog, never the Qt cell editor.
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._pan_origin=None
+        self._move_origin=None
         self._zoom=1.0
         self.setToolTip("Middle-drag or Shift+drag empty space to pan; Ctrl+wheel to zoom")
     def paintEvent(self,event):
@@ -83,6 +88,30 @@ class Grid(QTableWidget):
                 p.setPen(QColor('#effaff'))
                 p.setFont(QFont('Sans',10,QFont.Weight.DemiBold))
                 p.drawText(box,Qt.AlignmentFlag.AlignCenter,g.name)
+        # Draw incomplete multi-qubit placement as a preview, not a committed gate.
+        pending = getattr(self.owner, '_pending_gate', None)
+        if pending:
+            name, col, ids = pending
+            if 0 <= col < self.columnCount() and ids:
+                anchor = self.visualRect(self.model().index(ids[0], col))
+                if anchor.isValid():
+                    x = anchor.center().x()
+                    ys = [self.visualRect(self.model().index(q,col)).center().y() for q in ids]
+                    p.setPen(QPen(QColor('#d38a20') if QApplication.instance().property('quantumscope_light') else QColor('#ffe19a'), 2, Qt.PenStyle.DashLine))
+                    if len(ys)>1:p.drawLine(x,min(ys),x,max(ys))
+                    for i,q in enumerate(ids):
+                        cy = ys[i]
+                        p.setBrush(QColor('#226783'))
+                        p.setPen(QPen(QColor('#ffcf73'), 2))
+                        if (name in ('CX','CCX') and i == 0):
+                            p.drawEllipse(QPoint(x,cy),11,11)
+                            p.drawLine(x-7,cy,x+7,cy);p.drawLine(x,cy-7,x,cy+7)
+                        elif name in ('SWAP','CSWAP') and (name=='SWAP' or i<=1):
+                            p.drawLine(x-8,cy-8,x+8,cy+8);p.drawLine(x-8,cy+8,x+8,cy-8)
+                        else:
+                            p.drawEllipse(QPoint(x,cy),5,5)
+                    p.setPen(QColor('#e8a548') if QApplication.instance().property('quantumscope_light') else QColor('#ffe7af'))
+                    p.drawText(anchor.adjusted(12,-22,60,-8),Qt.AlignmentFlag.AlignLeft, f'{name} preview')
         # Terminal measurement indicators are annotations, not unitary gates.
         for row,col in getattr(self.owner,'measurements',{}).items():
             if row>=rows or col>=self.columnCount(): continue
@@ -98,6 +127,9 @@ class Grid(QTableWidget):
     def mousePressEvent(self,event):
         if event.button()==Qt.MouseButton.MiddleButton or (event.button()==Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
             self._pan_origin=event.position().toPoint();self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor);event.accept();return
+        if event.button()==Qt.MouseButton.LeftButton:
+            idx=self.indexAt(event.position().toPoint())
+            self._move_origin=(idx.row(),idx.column(),event.position().toPoint()) if idx.isValid() and self.owner.operation_at(idx.row(),idx.column()) else None
         super().mousePressEvent(event)
     def mouseMoveEvent(self,event):
         if self._pan_origin is not None:
@@ -105,54 +137,82 @@ class Grid(QTableWidget):
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value()-delta.x())
             self.verticalScrollBar().setValue(self.verticalScrollBar().value()-delta.y())
             event.accept();return
+        if self._move_origin is not None and (event.buttons() & Qt.MouseButton.LeftButton):
+            row,col,origin=self._move_origin
+            if (event.position().toPoint()-origin).manhattanLength()>=QApplication.startDragDistance():
+                self._move_origin=None
+                operation=self.owner.operation_at(row,col)
+                if operation:
+                    drag=QDrag(self)
+                    mime=QMimeData();mime.setText(f'QS_MOVE:{row}:{col}')
+                    drag.setMimeData(mime)
+                    drag.exec(Qt.DropAction.MoveAction)
+                    event.accept();return
         super().mouseMoveEvent(event)
     def mouseReleaseEvent(self,event):
         if self._pan_origin is not None:
             self._pan_origin=None;self.viewport().unsetCursor();event.accept();return
+        self._move_origin=None
         super().mouseReleaseEvent(event)
     def wheelEvent(self,event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.zoom_by(1.12 if event.angleDelta().y()>0 else 1/1.12)
             event.accept();return
-        super().wheelEvent(event)
+        # The surrounding workspace owns ordinary vertical scrolling.
+        # Keep Ctrl+wheel exclusively for circuit zoom.
+        event.ignore()
     def zoom_by(self,multiplier):
         self._zoom=max(0.55,min(2.5,self._zoom*multiplier))
         self.horizontalHeader().setDefaultSectionSize(round(82*self._zoom))
         self.verticalHeader().setDefaultSectionSize(round(54*self._zoom))
         self.owner.inline_blochs.update()
     def fit_view(self):
-        # Fit occupied columns where practical, but never distort text.
-        occupied=max((c for _,c in self.owner.gates),default=5)+2
-        occupied=max(6,min(occupied,30))
-        width=max(45,min(115,self.viewport().width()//occupied))
-        height=max(37,min(78,self.viewport().height()//max(1,self.owner.n)))
+        # Fit the circuit when practical while retaining legible gates on long circuits.
+        # For longer circuits the viewport shows a readable subset; users pan to the rest.
+        occupied=max((c for _,c in self.owner.gates),default=0)+2
+        occupied=max(2,occupied)
+        width=max(64,min(115,self.viewport().width()//occupied))
+        height=max(45,min(78,self.viewport().height()//max(1,self.owner.n)))
         self.horizontalHeader().setDefaultSectionSize(width)
         self.verticalHeader().setDefaultSectionSize(height)
         self._zoom=width/82
         self.owner.inline_blochs.update()
 
+    def reset_zoom(self):
+        self._zoom=1.0
+        self.horizontalHeader().setDefaultSectionSize(82)
+        self.verticalHeader().setDefaultSectionSize(54)
+        self.owner.inline_blochs.update()
+
     def eventFilter(self,obj,event):
         if obj is self.viewport() and event.type() in (QEvent.Type.DragEnter,QEvent.Type.DragMove,QEvent.Type.Drop):
-            if event.mimeData().text().startswith('QS_GATE:'):
+            if event.mimeData().text().startswith(('QS_GATE:', 'QS_MOVE:')):
                 if event.type()==QEvent.Type.Drop:
                     idx=self.indexAt(event.position().toPoint())
-                    if idx.isValid():self.owner.place(event.mimeData().text().split(':',1)[1],idx.row(),idx.column())
+                    if idx.isValid():self._handle_drop(event.mimeData().text(),idx.row(),idx.column())
                 event.acceptProposedAction()
                 return True
         return super().eventFilter(obj,event)
     def dragEnterEvent(self,event):
-        if event.mimeData().text().startswith('QS_GATE:'):event.acceptProposedAction()
+        if event.mimeData().text().startswith(('QS_GATE:', 'QS_MOVE:')):event.acceptProposedAction()
         else:super().dragEnterEvent(event)
     def dragMoveEvent(self,event):
-        if event.mimeData().text().startswith('QS_GATE:'):event.acceptProposedAction()
+        if event.mimeData().text().startswith(('QS_GATE:', 'QS_MOVE:')):event.acceptProposedAction()
         else:super().dragMoveEvent(event)
     def dropEvent(self,event):
         txt=event.mimeData().text()
-        if txt.startswith('QS_GATE:'):
+        if txt.startswith(('QS_GATE:', 'QS_MOVE:')):
             idx=self.indexAt(event.position().toPoint())
-            if idx.isValid():self.owner.place(txt.split(':',1)[1],idx.row(),idx.column())
+            if idx.isValid():self._handle_drop(txt,idx.row(),idx.column())
             event.acceptProposedAction()
         else:super().dropEvent(event)
+
+    def _handle_drop(self, text, row, col):
+        if text.startswith('QS_MOVE:'):
+            _, r, c = text.split(':')
+            self.owner.move_operation(int(r),int(c),row,col)
+        elif text.startswith('QS_GATE:'):
+            self.owner.place(text.split(':',1)[1],row,col)
 
 
 class BlochPanel(QWidget):
@@ -216,7 +276,7 @@ class ProbabilityBars(QWidget):
     """Compact vertical histogram with paired theoretical and sampled bars."""
     def __init__(self,parent=None):
         super().__init__(parent)
-        self.theory=[];self.counts=None;self.n=1
+        self.theory=[];self.counts=None;self.n=1;self.title="Full quantum-state probabilities (before measurement) · cyan: theory"
         self.setMinimumHeight(180)
     def set_data(self,state,n,counts=None):
         probs=distribution(state);self.n=n
@@ -228,11 +288,21 @@ class ProbabilityBars(QWidget):
         self.theory=[(format(i,f'0{n}b'),float(probs[i])) for i in selected]
         self.counts={format(i,f'0{n}b'):float(counts[i]/max(1,counts.sum())) for i in selected} if counts is not None else None
         self.update()
+    def set_probabilities(self,probs,n,counts=None):
+        self.n=n
+        scores=np.array(probs,dtype=float)
+        if counts is not None:scores=np.maximum(scores,counts/max(1,counts.sum()))
+        inds=np.argsort(scores)[::-1]
+        selected=[int(i) for i in inds if scores[i]>1e-9][:10] or [0]
+        self.theory=[(format(i,f'0{n}b'),float(probs[i])) for i in selected]
+        self.counts={format(i,f'0{n}b'):float(counts[i]/max(1,counts.sum())) for i in selected} if counts is not None else None
+        self.update()
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w,h=self.width(),self.height()
-        p.setFont(QFont('Sans',9));p.setPen(QColor('#dceeff'))
-        p.drawText(12,16,'Basis-state probabilities  •  cyan: theory  •  orange: measured shots')
+        ink = QColor('#233e54') if QApplication.instance().property('quantumscope_light') else QColor('#dceeff')
+        p.setFont(QFont('Sans',9));p.setPen(ink)
+        p.drawText(12,16,self.title)
         left,right,top,bottom=48,12,34,37
         pw=max(1,w-left-right);ph=max(1,h-top-bottom)
         p.setPen(QPen(QColor('#547089'),1));p.drawLine(left,top,left,top+ph);p.drawLine(left,top+ph,left+pw,top+ph)
@@ -245,7 +315,7 @@ class ProbabilityBars(QWidget):
             if self.counts is not None:
                 v=self.counts[name]
                 p.fillRect(int(center+1),int(top+ph*(1-v)),int(bw),max(1,int(ph*v)),QColor('#f6b05e'))
-            p.setPen(QColor('#dceeff'))
+            p.setPen(ink)
             text=name if len(name)<=5 else (name[:3]+'…'+name[-2:])
             p.drawText(int(center-gap*.46),top+ph+5,int(gap*.92),17,Qt.AlignmentFlag.AlignCenter,text)
             p.drawText(int(center-gap*.46),max(top+2,int(top+ph*(1-max(val,self.counts[name] if self.counts is not None else 0))-18)),int(gap*.92),15,Qt.AlignmentFlag.AlignCenter,f'{val*100:.0f}%')
@@ -253,16 +323,24 @@ class ProbabilityBars(QWidget):
 
 class CircuitWorkspace(QWidget):
     def __init__(self,parent=None):
-        super().__init__(parent);self.n=3;self.columns=10;self.gates={};self.measurements={};self._syncing=False;self.undo_stack=[];self.redo_stack=[];self._restoring=False;self.current_path=None;self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
-        outer=QVBoxLayout(self);outer.setSpacing(8)
-        heading=QLabel('QUANTUM CIRCUITS  ·  Drag a gate to a wire, or click a cell with a gate selected')
+        super().__init__(parent);self.n=3;self.columns=2;self._reserved_columns=2;self._pending_gate=None;self.gates={};self.measurements={};self._syncing=False;self.undo_stack=[];self.redo_stack=[];self._restoring=False;self.current_path=None;self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
+        page_layout=QVBoxLayout(self)
+        page_layout.setContentsMargins(0,0,0,0)
+        self.page_scroll=QScrollArea(self)
+        self.page_scroll.setWidgetResizable(True)
+        self.page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        page_layout.addWidget(self.page_scroll)
+        page=QWidget()
+        self.page_scroll.setWidget(page)
+        outer=QVBoxLayout(page);outer.setSpacing(8)
+        heading=QLabel('QUANTUM CIRCUITS  ·  Drag gates from the palette onto empty cells; click a placed gate to select it')
         outer.addWidget(heading)
         top=QHBoxLayout();outer.addLayout(top)
         top.addWidget(QLabel('Qubits'))
         self.qubits=QSpinBox();self.qubits.setRange(1,MAX_QUBITS);self.qubits.setValue(self.n);top.addWidget(self.qubits)
         top.addWidget(QLabel('Gate'))
         self.gate=QComboBox();self.gate.addItems(list(ALL)+['M']);top.addWidget(self.gate)
-        top.addWidget(QLabel('Rotation (°)'))
+        self.rotation_label=QLabel('New gate angle (°)');top.addWidget(self.rotation_label)
         self.angle=QSpinBox();self.angle.setRange(-360,360);self.angle.setValue(90);top.addWidget(self.angle)
         self.phi=QSpinBox();self.phi.setRange(-360,360);self.phi.setValue(0);self.phi.setPrefix('φ ');self.phi.setToolTip('U gate phase φ in degrees');top.addWidget(self.phi)
         self.lam=QSpinBox();self.lam.setRange(-360,360);self.lam.setValue(0);self.lam.setPrefix('λ ');self.lam.setToolTip('U gate phase λ in degrees');top.addWidget(self.lam)
@@ -272,8 +350,11 @@ class CircuitWorkspace(QWidget):
         self.target3=QSpinBox();self.target3.setRange(0,self.n-1);self.target3.setValue(2);self.target3.setToolTip('CCX: third qubit is the target; CSWAP: third qubit is the second swap operand.')
         top.addWidget(self.third_label);top.addWidget(self.target3)
         self.gate.currentTextChanged.connect(self._update_operand_labels)
+        self.gate.hide()
+        self.target.hide();self.target3.hide();self.second_label.hide();self.third_label.hide()
         self._update_operand_labels(self.gate.currentText())
-        for text,cb in [('Clear',self.clear),('Bell example',self.example),('Import QASM 2',self.load_qasm),('Export QASM',self.export_qasm),('Open .qscope',self.load_native),('Save .qscope',self.save_native)]:
+        self.gate.hide();self.target.hide();self.target3.hide();self.second_label.hide();self.third_label.hide()
+        for text,cb in [('Clear',self.clear),('Bell example',self.example),('Import QASM 2',self.load_qasm),('Export QASM',self.export_qasm),('Export PDF',self.export_pdf),('Open .qscope',self.load_native),('Save .qscope',self.save_native)]:
             btn=QPushButton(text);btn.clicked.connect(cb);top.addWidget(btn)
         edits=QHBoxLayout();outer.addLayout(edits)
         for text,cb in [('Undo',self.undo),('Redo',self.redo)]:
@@ -281,34 +362,46 @@ class CircuitWorkspace(QWidget):
         self.show_blochs=QCheckBox('Show Bloch spheres beside wires');self.show_blochs.setChecked(True);edits.addWidget(self.show_blochs)
         self.examples=QComboBox();self.examples.addItems(['Examples…','Bell pair','GHZ','Half adder (a=1,b=1)','Half subtractor (a=1,b=1)','2-bit ripple-carry adder (1+1)']);self.examples.currentIndexChanged.connect(self.load_example);edits.addWidget(self.examples)
         edits.addStretch()
-        split=QSplitter(Qt.Orientation.Horizontal);outer.addWidget(split,4)
+        split=QSplitter(Qt.Orientation.Horizontal)
+        # A whole-page scroll area, not a shrinking circuit editor, handles
+        # limited vertical space on Windows and older Ubuntu releases.
+        outer.addWidget(split)
         self.palette=Palette();self.palette.addItems(list(ALL)+['M']);self.palette.setMinimumWidth(85);self.palette.setMaximumWidth(130)
-        self.palette.itemClicked.connect(lambda item:self.gate.setCurrentText(item.text()))
-        self.palette.setToolTip('Drag onto a qubit wire, or select a gate and click a circuit position')
-        self.palette.setStyleSheet('''QListWidget {background:#101e31; border:1px solid #304c66; border-radius:9px; padding:5px; spacing:4px; color:#dfecfb; font-size:12px;} QListWidget::item {background:#203750; border:1px solid #3b5975; border-radius:5px; padding:7px 4px; min-height:19px;} QListWidget::item:selected {background:#155b80; border:1px solid #55c8e5; color:white;} QListWidget::item:hover {background:#2a4c6a;}''')
+        # Palette clicks only select palette entries; they never place or replace gates.
+        self.palette.setToolTip('Drag to place a gate; double-click for the Gate Explorer')
+        self.palette.itemDoubleClicked.connect(lambda item:self.show_gate_explorer(item.text()))
         split.addWidget(self.palette)
         center=QWidget();v=QVBoxLayout(center);split.addWidget(center)
         self.grid=Grid(self);self.grid.setRowCount(self.n);self.grid.setColumnCount(self.columns)
         self.grid.setHorizontalHeaderLabels([f'{i+1}' for i in range(self.columns)]);self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(self.n)])
         self.grid.verticalHeader().setDefaultSectionSize(54);self.grid.horizontalHeader().setDefaultSectionSize(82)
+        # Reserve room for ten wires at the default scale.  The model still
+        # contains only active qubits, leaving the remaining canvas blank.
+        # Keep the circuit's panning/zoom mechanics, but no internal scrollbars.
+        self.grid.setFixedHeight(10 * 54 + self.grid.horizontalHeader().height()
+                                 + 2 * self.grid.frameWidth() + 12)
+        self.grid.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.grid.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.grid.setShowGrid(False)
         self.grid.setAlternatingRowColors(False)
-        self.grid.setStyleSheet('''QTableWidget {background:#101c2c; color:#cce6f7; border:1px solid #304962; selection-background-color:#224661;} QTableWidget::item {background:#101c2c; border:0;} QHeaderView::section {background:#1b3047; color:#d9eeff; border:0; border-right:1px solid #34516d; padding:5px;} QTableCornerButton::section {background:#1b3047;}''')
-        self.grid.setToolTip('Click to place gates. Middle-drag to pan, Ctrl+wheel to zoom.')
-        self.grid.cellClicked.connect(self.cell_click)
+        self.grid.setToolTip('Drag gates onto empty cells; click to select. Middle-drag to pan, Ctrl+wheel to zoom.')
         nav=QHBoxLayout();v.addLayout(nav)
-        for label,callback in [('− Zoom',lambda:self.grid.zoom_by(1/1.15)),('+ Zoom',lambda:self.grid.zoom_by(1.15)),('Fit Circuit',lambda:self.grid.fit_view())]:
+        for label,callback in [('− Zoom',lambda:self.grid.zoom_by(1/1.15)),('+ Zoom',lambda:self.grid.zoom_by(1.15)),('Fit Circuit',lambda:self.grid.fit_view()),('Reset Zoom',lambda:self.grid.reset_zoom())]:
             b=QPushButton(label);b.clicked.connect(callback);nav.addWidget(b)
         nav.addStretch()
         self.grid.horizontalHeader().sectionClicked.connect(lambda col:self.step.setValue(col+1))
-        wires=QHBoxLayout();v.addLayout(wires,2);wires.addWidget(self.grid,1)
+        self.grid.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.grid.horizontalHeader().customContextMenuRequested.connect(self.header_menu)
+        wires=QHBoxLayout();v.addLayout(wires);wires.addWidget(self.grid,1)
         self.inline_blochs=InlineBlochs(self.grid);wires.addWidget(self.inline_blochs)
         self.show_blochs.toggled.connect(self.inline_blochs.setVisible)
         self.grid.verticalScrollBar().valueChanged.connect(lambda _:self.inline_blochs.update())
-        helptext=QLabel('Two-qubit gates: place on control wire and select the second qubit above. Right-click to remove a gate. Up to 10 qubits; ideal statevector (no hardware noise).')
+        helptext=QLabel('Drag a multi-qubit gate to its first operand, then click remaining qubits in the same column. Right-click to remove a gate. Up to 10 qubits; ideal statevector.')
         helptext.setWordWrap(True);v.addWidget(helptext)
         self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.grid.customContextMenuRequested.connect(self.remove_at)
+        self.grid.customContextMenuRequested.connect(self.gate_context_menu)
+        self.grid.cellDoubleClicked.connect(self.edit_gate_at)
+        self.grid.cellClicked.connect(self.cell_click)
         self.status=QLabel('Ready');v.addWidget(self.status)
         playback=QHBoxLayout();v.addLayout(playback)
         self.prev_step=QPushButton('◀');self.prev_step.clicked.connect(lambda:self.step.setValue(max(0,self.step.value()-1)));playback.addWidget(self.prev_step)
@@ -343,7 +436,12 @@ class CircuitWorkspace(QWidget):
         v.addWidget(self.verify_panel)
         shots=QHBoxLayout();v.addLayout(shots);shots.addWidget(QLabel('Shots'))
         self.shots=QSpinBox();self.shots.setRange(1,100000);self.shots.setValue(1024);shots.addWidget(self.shots)
-        run=QPushButton('Measure all (fresh preparations)');run.clicked.connect(self.measure);shots.addWidget(run)
+        run=QPushButton('Run measurement shots');run.clicked.connect(self.measure);shots.addWidget(run)
+        # Maintain the complete ten-wire canvas even when the host tab is short.
+        # The page scrolls instead of allowing the splitter to compress it.
+        center.setMinimumHeight(center.sizeHint().height())
+        split.setMinimumHeight(center.minimumHeight() + 8)
+        split.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         split.setStretchFactor(1,1)
         self.qubits.valueChanged.connect(self.resize_qubits);self.step.valueChanged.connect(self.show_step)
         self.active_example=None
@@ -367,22 +465,23 @@ class CircuitWorkspace(QWidget):
 
     def snapshot(self):
         if not self._restoring:
-            self.undo_stack.append((self.n,self.columns,dict(self.gates),dict(self.measurements)))
+            self.undo_stack.append((self.n,self._reserved_columns,dict(self.gates),dict(self.measurements)))
             self.undo_stack=self.undo_stack[-80:];self.redo_stack.clear()
     def _restore(self,record):
         n,columns,gates,measurements=record
+        self._reserved_columns=columns
         self._restoring=True
         self.n=n;self.columns=columns;self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
         self.target.setRange(0,n-1);self.target3.setRange(0,n-1);self.grid.setRowCount(n);self.grid.setColumnCount(columns)
         self.grid.setHorizontalHeaderLabels([str(i+1) for i in range(columns)])
         self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)])
-        self.gates=dict(gates);self.measurements=dict(measurements);self.refresh();self._restoring=False
+        self.gates=dict(gates);self.measurements=dict(measurements);self._sync_columns();self.refresh();self._restoring=False
     def undo(self):
         if self.undo_stack:
-            self.redo_stack.append((self.n,self.columns,dict(self.gates),dict(self.measurements)));self._restore(self.undo_stack.pop())
+            self.redo_stack.append((self.n,self._reserved_columns,dict(self.gates),dict(self.measurements)));self._restore(self.undo_stack.pop())
     def redo(self):
         if self.redo_stack:
-            self.undo_stack.append((self.n,self.columns,dict(self.gates),dict(self.measurements)));self._restore(self.redo_stack.pop())
+            self.undo_stack.append((self.n,self._reserved_columns,dict(self.gates),dict(self.measurements)));self._restore(self.redo_stack.pop())
     def resize_qubits(self,n):
         if n<self.n and any(any(q>=n for q in g.targets) for g in self.gates.values()):
             choice=QMessageBox.question(self,'Remove qubits?',
@@ -395,56 +494,237 @@ class CircuitWorkspace(QWidget):
         self.measurements={q:c for q,c in self.measurements.items() if q<n}
         self.n=n;self.target.setRange(0,n-1);self.target3.setRange(0,n-1);self.grid.setRowCount(n)
         self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)]);self.refresh()
-    def clear(self):self.snapshot();self.active_example=None;self.gates={};self.measurements={};self.refresh()
+    def clear(self):self.snapshot();self.active_example=None;self.gates={};self.measurements={};self._reserved_columns=2;self._sync_columns();self.refresh()
     def example(self):
         if self.n<2:self.qubits.setValue(2)
-        self.snapshot();self.active_example='Bell pair';self.gates={(0,0):Gate('H',(0,)),(0,1):Gate('CX',(0,1))};self.measurements={};self.refresh()
+        self.snapshot();self.active_example='Bell pair';self.gates={(0,0):Gate('H',(0,)),(0,1):Gate('CX',(0,1))};self.measurements={};self._sync_columns();self.refresh()
+    def _sync_columns(self):
+        """Keep precisely one trailing empty operation slot (two when empty)."""
+        last=max([c for _,c in self.gates]+list(self.measurements.values()),default=-1)
+        needed=max(2,last+2,self._reserved_columns)
+        if needed!=self.columns:
+            offset=self.grid.horizontalScrollBar().value()
+            self.columns=needed
+            self.grid.setColumnCount(needed)
+            self.grid.setHorizontalHeaderLabels([str(i+1) for i in range(needed)])
+            self.grid.horizontalScrollBar().setValue(offset)
+
     def _expand_columns(self,needed):
-        if needed<self.columns-1:return
-        self.columns=min(500,max(self.columns+10,needed+10))
-        self.grid.setColumnCount(self.columns)
-        self.grid.setHorizontalHeaderLabels([str(i+1) for i in range(self.columns)])
-    def place(self,name,row,col):
+        # Retained for existing load/import callers; the model decides size.
+        self._sync_columns()
+    def operation_at(self,row,col):
+        for key,gate in self.gates.items():
+            if key[1]==col and row in gate.targets:
+                return ('gate', key, gate)
+        if self.measurements.get(row)==col:
+            return ('measurement',(row,col),None)
+        return None
+
+    def move_operation(self,src_row,src_col,dst_row,dst_col):
+        found=self.operation_at(src_row,src_col)
+        if not found or (src_row,src_col)==(dst_row,dst_col):return
+        if not(0<=dst_row<self.n and 0<=dst_col<self.columns):return
+        kind,key,gate=found
+        if kind=='gate':
+            delta=dst_row-src_row
+            targets=tuple(q+delta for q in gate.targets)
+            if any(q<0 or q>=self.n for q in targets):
+                self.status.setText('Cannot move operation outside available qubits');return
+            others={k:v for k,v in self.gates.items() if k!=key}
+            if any(c==dst_col and set(v.targets)&set(targets) for (_,c),v in others.items()):
+                self.status.setText('Destination occupied by another operation');return
+            measurements=self.measurements
+            if any(q in measurements for q in targets) or (measurements and dst_col>=min(measurements.values())):
+                self.status.setText('Cannot move unitary past terminal measurements');return
+            moved=Gate(gate.name,targets,gate.angle,gate.phi,gate.lam)
+            self.snapshot();self.gates.pop(key);self.gates[(targets[0],dst_col)]=moved
+        else:
+            if dst_row in self.measurements and dst_row!=src_row:
+                self.status.setText('Target qubit already measured');return
+            if any(c>=dst_col for (_,c) in self.gates):
+                self.status.setText('Measurement must follow all unitary columns');return
+            if any(c!=dst_col for q,c in self.measurements.items() if q!=src_row):
+                self.status.setText('Measurements must occupy a shared terminal column');return
+            self.snapshot();self.measurements.pop(src_row);self.measurements[dst_row]=dst_col
+        self.active_example=None;self._sync_columns();self.refresh()
+
+    def insert_column(self,index):
+        if not 0<=index<=self.columns:return
+        self.snapshot()
+        self.gates={(r,c+1 if c>=index else c):g for (r,c),g in self.gates.items()}
+        self.measurements={r:c+1 if c>=index else c for r,c in self.measurements.items()}
+        self._reserved_columns=max(self._reserved_columns+1,index+2)
+        self.active_example=None;self._sync_columns();self.refresh()
+
+    def delete_empty_column(self,index):
+        if not 0<=index<self.columns:return
+        if any(c==index for _,c in self.gates) or index in self.measurements.values():
+            self.status.setText('Delete the gates in this column first');return
+        self.snapshot()
+        self.gates={(r,c-1 if c>index else c):g for (r,c),g in self.gates.items()}
+        self.measurements={r:c-1 if c>index else c for r,c in self.measurements.items()}
+        self._reserved_columns=max(2,self._reserved_columns-1)
+        self.active_example=None;self._sync_columns();self.refresh()
+
+    def header_menu(self,point):
+        index=self.grid.horizontalHeader().logicalIndexAt(point)
+        if index<0:return
+        menu=QMenu(self)
+        before=menu.addAction('Insert column before')
+        after=menu.addAction('Insert column after')
+        delete=menu.addAction('Delete column (if empty)')
+        chosen=menu.exec(self.grid.horizontalHeader().mapToGlobal(point))
+        if chosen is before:self.insert_column(index)
+        elif chosen is after:self.insert_column(index+1)
+        elif chosen is delete:self.delete_empty_column(index)
+
+    def cancel_pending(self):
+        self._pending_gate=None
+        if hasattr(self,'status'):self.status.setText('Placement cancelled');self.grid.viewport().update()
+
+    def keyPressEvent(self,event):
+        if event.key()==Qt.Key.Key_Escape and self._pending_gate:
+            self.cancel_pending();event.accept();return
+        super().keyPressEvent(event)
+
+    def place(self,name,row,col,operands=None):
+        if not (0<=row<self.n and 0<=col<self.columns):return
+        if name in DUAL+TRIPLE and operands is None:
+            if self.n < (3 if name in TRIPLE else 2):
+                self.status.setText('Not enough qubits for this gate');return
+            if self.operation_at(row,col):
+                self.status.setText('Choose an empty cell for the first operand');return
+            self._pending_gate=(name,col,(row,))
+            self.status.setText(f'{name}: target anchored on q{row}; select remaining qubit(s) in column {col+1} (Esc to cancel)');self.grid.viewport().update()
+            return
+        if (row,col) in self.gates or self.measurements.get(row)==col:
+            self.status.setText('Cell occupied: select or remove the existing gate first')
+            return
         if name=='M':
+            if row in self.measurements:
+                self.status.setText('This qubit already has a terminal measurement');return
             if any(c>=col for (r,c),g in self.gates.items()):
                 self.status.setText('M must be terminal on its measured qubit');return
             if self.measurements and any(c!=col for c in self.measurements.values()):
                 self.status.setText('All measurement gates must be in the final circuit column');return
-            self.snapshot();self.measurements[row]=col;self._expand_columns(col);self.refresh();return
+            self.snapshot();self.measurements[row]=col;self._sync_columns();self.refresh();return
         if name not in ALL:return
+        if row in self.measurements:
+            self.status.setText('Remove this qubit’s terminal measurement before adding gates');return
         if self.measurements and col>=min(self.measurements.values()):
             self.status.setText('Unitary gates must be before terminal measurements');return
-        ids=(row,)
-        if name in DUAL or name in TRIPLE:
-            b=self.target.value()
-            if b==row:
-                b=(row+1)%self.n
-            if b==row:
-                self.status.setText('A two-qubit gate needs two different qubits');return
-            ids=(row,b)
-            if name in TRIPLE:
-                c=self.target3.value()
-                if c in ids:c=next((q for q in range(self.n) if q not in ids),-1)
-                if c<0:self.status.setText('Three distinct qubits required');return
-                ids=(row,b,c)
+        ids=tuple(operands) if operands is not None else (row,)
+        if len(ids)!=(3 if name in TRIPLE else 2 if name in DUAL else 1) or len(set(ids))!=len(ids):
+            self.status.setText('Select distinct operand qubits');return
         # Reject overlapping operations within a parallel column.
         for (r,c),gate in self.gates.items():
             if c==col and (r,c)!=(row,col) and set(gate.targets)&set(ids):
                 self.status.setText('Qubit collision in column; choose another column');return
         self.snapshot()
         self.active_example=None
-        self._expand_columns(col)
         self.gates[(row,col)]=Gate(name,ids,math.radians(self.angle.value()) if name in ('RX','RY','RZ','P','U') else 0.0,math.radians(self.phi.value()) if name=='U' else 0.0,math.radians(self.lam.value()) if name=='U' else 0.0)
+        self._sync_columns()
         self.refresh()
     def cell_click(self,r,c):
-        self.place(self.gate.currentText(),r,c)
+        if not self._pending_gate:return
+        name,col,ids=self._pending_gate
+        if c!=col:
+            self.status.setText(f'Select a qubit in column {col+1}, or press Esc');return
+        if r in ids:
+            self.status.setText('Choose another qubit');return
+        if self.operation_at(r,c):
+            self.status.setText('Qubit occupied in this column');return
+        ids=ids+(r,)
+        if len(ids)<(3 if name in TRIPLE else 2):
+            self._pending_gate=(name,col,ids)
+            self.status.setText(f'{name}: select final qubit in column {col+1}');self.grid.viewport().update();return
+        self._pending_gate=None
+        self.grid.viewport().update()
+        # CX/CCX are target-first in the editor, control-first in Gate.targets.
+        ordered = ids[1:]+ids[:1] if name in ('CX','CCX') else ids
+        self.place(name,ids[0],col,ordered)
+
     def remove_at(self,pos):
         idx=self.grid.indexAt(pos)
         if idx.isValid():
-            self.snapshot();self.active_example=None;self.gates.pop((idx.row(),idx.column()),None);self.measurements.pop(idx.row(),None) if self.measurements.get(idx.row())==idx.column() else None;self.refresh()
+            self.snapshot();self.active_example=None;self.gates.pop((idx.row(),idx.column()),None);self.measurements.pop(idx.row(),None) if self.measurements.get(idx.row())==idx.column() else None;self._sync_columns();self.refresh()
+    def edit_gate_at(self,row,col):
+        gate=self.gates.get((row,col))
+        if gate is None:
+            return
+        if gate.name not in ('RX','RY','RZ','P','U'):
+            return
+        dialog=QDialog(self)
+        dialog.setWindowTitle(f'Edit {gate.name} gate on q{row}')
+        layout=QFormLayout(dialog)
+        edits={}
+        params=[('angle','θ' if gate.name!='P' else 'λ')]
+        if gate.name=='U':params.extend([('phi','φ'),('lam','λ')])
+        for attr,label in params:
+            field=QLineEdit(f'{getattr(gate,attr):.12g}')
+            field.setToolTip('Angle in radians. Examples: pi/2, -pi/4, 2*pi')
+            layout.addRow(f'{label} (radians)',field)
+            edits[attr]=field
+        layout.addRow(QLabel('Use pi, arithmetic, and parentheses; angles are in radians.'))
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        layout.addRow(buttons)
+        buttons.rejected.connect(dialog.reject)
+        def commit():
+            try:
+                values={key:parse_angle(field.text()) for key,field in edits.items()}
+            except ValueError as exc:
+                QMessageBox.warning(dialog,'Invalid gate parameter',str(exc));return
+            self.snapshot()
+            self.active_example=None
+            self.gates[(row,col)]=Gate(gate.name,gate.targets,values['angle'],values.get('phi',gate.phi),values.get('lam',gate.lam))
+            self.refresh()
+            dialog.accept()
+        buttons.accepted.connect(commit)
+        dialog.exec()
+
+    def gate_context_menu(self,pos):
+        idx=self.grid.indexAt(pos)
+        if not idx.isValid():return
+        row,col=idx.row(),idx.column()
+        gate=self.gates.get((row,col))
+        if gate is None and self.measurements.get(row)!=col:return
+        menu=QMenu(self)
+        if self._pending_gate:
+            cancel=menu.addAction('Cancel multi-qubit placement')
+            if menu.exec(self.grid.viewport().mapToGlobal(pos)) is cancel:self.cancel_pending()
+            return
+        if gate is not None:
+            if gate.name in ('RX','RY','RZ','P','U'):
+                edit=menu.addAction('Edit parameters…')
+            else:edit=None
+            info=None
+        else:edit=info=None
+        delete=menu.addAction('Remove gate')
+        chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
+        if chosen is edit and edit is not None:self.edit_gate_at(row,col)
+        elif chosen is delete:self.remove_at(pos)
+
+    def show_gate_explorer(self,name):
+        from quantumscope.gui.gate_explorer import GateExplorer
+        dlg=GateExplorer(name,self)
+        dlg.exec()
+
+    def export_pdf(self):
+        path,_=QFileDialog.getSaveFileName(self,'Export circuit to PDF','circuit.pdf','PDF files (*.pdf)')
+        if not path:return
+        if not path.lower().endswith('.pdf'):path+='.pdf'
+        report=(QMessageBox.question(self,'PDF export contents','Include a summary of the final state probabilities?',QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)==QMessageBox.StandardButton.Yes)
+        try:
+            from quantumscope.gui.circuit_pdf import write_circuit_pdf
+            write_circuit_pdf(path,self.n,self.gates,self.measurements,
+                              include_report=report)
+        except Exception as exc:
+            QMessageBox.warning(self,'PDF export failed',str(exc))
+
     def ordered(self):
         return [g for (r,c),g in sorted(self.gates.items(),key=lambda x:(x[0][1],x[0][0]))]
     def refresh(self):
+        saved_offset=self.grid.horizontalScrollBar().value()
         self.grid.clearContents()
         self.grid.viewport().update()
         for row,col in self.measurements.items():
@@ -471,6 +751,7 @@ class CircuitWorkspace(QWidget):
         self.step.setRange(0,last+1)
         self.step.setValue(last+1)
         self.show_step(self.step.value())
+        self.grid.horizontalScrollBar().setValue(saved_offset)
         self.status.setText(f'{self.n} qubits • {len(self.gates)} gates • {len(self.occupied_columns)} occupied columns • exact ideal simulation')
     def _sync_timeline(self):
         self.inline_blochs.update()
@@ -487,14 +768,13 @@ class CircuitWorkspace(QWidget):
         completed=sum(1 for c in self.occupied_columns if c<k)
         state=self.column_states[completed]
         self.step_label.setText(f'Column {k}/{self.step.maximum()}  •  {completed} occupied layers executed')
-        # Highlight active column and scroll it into view without restarting playback.
-        if k>0 and k-1<self.grid.columnCount():
-            self.grid.horizontalScrollBar().setValue(max(0,(k-2)*self.grid.horizontalHeader().defaultSectionSize()))
+        # Do not pan as a side effect of stepping, placement, or refresh.
         for col in range(self.grid.columnCount()):
             self.grid.horizontalHeaderItem(col).setBackground(QColor('#1c6987' if col==k-1 else '#223648' if col<k-1 else '#29313c'))
         vectors=[bloch(state,self.n,q) for q in range(self.n)]
         self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
         self.bars.set_data(state,self.n)
+        self.bars.title='Full quantum-state probabilities (before measurement) · cyan: theory'
         probs=distribution(state);inds=np.argsort(probs)[-8:][::-1]
         self.result.setPlainText('At column '+str(k)+':  '+'  '.join(f'|{i:0{self.n}b}⟩ {probs[i]*100:.1f}%' for i in inds if probs[i]>1e-8))
     def _temporary_item(self,col):
@@ -502,18 +782,21 @@ class CircuitWorkspace(QWidget):
         if item is None:item=QTableWidgetItem('');self.grid.setItem(0,col,item)
         return item
     def measure(self):
-        counts=sample(self.states[-1],self.shots.value());self.bars.set_data(self.states[-1],self.n,counts);ids=np.argsort(counts)[-12:][::-1]
+        counts=sample(self.states[-1],self.shots.value())
         measured=sorted(self.measurements)
         if measured:
-            marginal={}
-            for index,count in enumerate(counts):
-                if count:
-                    bits=''.join(str((index>>(self.n-1-q))&1) for q in measured)
-                    marginal[bits]=marginal.get(bits,0)+int(count)
-            detail='   '.join(f'|{bits}⟩ {amount}' for bits,amount in sorted(marginal.items()))
-            self.result.setPlainText('Measured '+','.join('q'+str(q) for q in measured)+' (classical bits):\n'+detail+'\nFull state sample: '+' '.join(f'|{i:0{self.n}b}⟩ {counts[i]}' for i in ids if counts[i]))
+            theoretical,marginal=measurement_marginal(distribution(self.states[-1]),self.n,measured,counts)
+            self.bars.set_probabilities(theoretical,len(measured),marginal)
+            self.bars.title='Measured '+', '.join('q'+str(q) for q in measured)+' · cyan: theory · orange: shots'
+            self.bars.update()
+            detail='   '.join(f'|{i:0{len(measured)}b}⟩ {int(amount)}' for i,amount in enumerate(marginal) if amount)
+            self.result.setPlainText('Measured classical outcomes ('+', '.join('q'+str(q) for q in measured)+'):\n'+detail+'\nFull quantum state remains available in the simulation step view (before measurement).')
         else:
-            self.result.setPlainText('Preview only (no M gates): all-qubit sampling\n'+'   '.join(f'|{i:0{self.n}b}⟩ {counts[i]}' for i in ids if counts[i]))
+            self.bars.set_data(self.states[-1],self.n,counts)
+            self.bars.title='All-qubit diagnostic sampling (no M gates) · cyan: theory · orange: shots'
+            self.bars.update()
+            ids=np.argsort(counts)[-12:][::-1]
+            self.result.setPlainText('No M gates: diagnostic sampling of all qubits, not circuit measurement.\n'+'   '.join(f'|{i:0{self.n}b}⟩ {counts[i]}' for i in ids if counts[i]))
     def load_example(self,index):
         if index==0:return
         choice=self.examples.itemText(index)
@@ -542,14 +825,16 @@ class CircuitWorkspace(QWidget):
         self.n=n
         self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
         self.target.setRange(0,n-1);self.target3.setRange(0,n-1)
-        self.columns=max(10,len(ops)+3)
+        self.columns=max(2,len(ops)+1)
         self.grid.setRowCount(n)
         self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)])
         self.grid.setColumnCount(self.columns)
         self.grid.setHorizontalHeaderLabels([str(i+1) for i in range(self.columns)])
         self.gates={(g.targets[0],i):g for i,g in enumerate(ops)}
         self.measurements={}
+        self._sync_columns()
         self._restoring=False
+        self.grid.horizontalScrollBar().setValue(0)
         self.refresh()
     def verify_circuit(self):
         if self.active_example and self.active_example.startswith(('Half adder','Half subtractor','2-bit ripple-carry')):

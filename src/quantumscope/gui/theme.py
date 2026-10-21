@@ -49,6 +49,16 @@ QScrollBar:vertical { background: #111d2c; width: 10px; }
 QScrollBar::handle:vertical { background: #38536c; border-radius: 5px; min-height: 25px; }
 QScrollBar:horizontal { background: #111d2c; height: 10px; }
 QScrollBar::handle:horizontal { background: #38536c; border-radius: 5px; min-width: 25px; }
+
+/* Circuit palette, circuit grid, simulation readout and verification are theme-aware. */
+QListWidget { background:#112035; color:#dfeeff; border:1px solid #3b5975; border-radius:7px; }
+QListWidget::item { background:#213c56; color:#f2f7ff; border:1px solid #3b5975; border-radius:4px; padding:5px; }
+QListWidget::item:selected { background:#145c82; color:#ffffff; }
+QTableWidget { background:#101c2c; color:#deefff; gridline-color:#34516d; border:1px solid #304962; }
+QTableWidget::item { background:#101c2c; color:#deefff; }
+QTableWidget::item:selected { background:#245574; color:#ffffff; }
+QHeaderView::section { background:#1b3047; color:#e3f2ff; border:1px solid #34516d; padding:4px; }
+QTextEdit { background:#101c2c; color:#deefff; border:1px solid #304962; }
 """
 
 # Light appearance is an optional preference; the default remains QuantumScope dark.
@@ -72,4 +82,32 @@ QMenu { background: #ffffff; color: #243c50; border-color: #b8cfdf; }
 QMenu::item:selected { background: #ceeafa; }
 QToolButton#headerTool { background: #e4eef7; color: #226276; border-color: #b2cede; }
 QToolButton#tabAddButton { background: #e7f1fa; color: #17657d; border-color: #b2cede; }
+
+QListWidget { background:#f4f8fc; color:#19334b; border:1px solid #aac4d8; }
+QListWidget::item { background:#e4eff8; color:#1b4058; border:1px solid #c2d5e4; }
+QListWidget::item:selected { background:#1b6d91; color:#ffffff; }
+QTableWidget { background:#f5f9fe; color:#1b364e; gridline-color:#c3d5e5; border:1px solid #aac4d8; }
+QTableWidget::item { background:#f5f9fe; color:#1b364e; }
+QTableWidget::item:selected { background:#c8e6f5; color:#14344d; }
+QHeaderView::section { background:#dceaf5; color:#1b364e; border:1px solid #b4cada; padding:4px; }
+QTextEdit { background:#ffffff; color:#1b364e; border:1px solid #aac4d8; }
+QToolTip { background:#f7fbff; color:#183a54; border-color:#9ebbcf; }
+QCheckBox { color:#183a54; }
+"""
+
+# Explicit rules for nested tabs and dialogs: Qt styles do not automatically
+# translate the dark widget-specific selectors into a readable light palette.
+LIGHT_STYLESHEET += """
+QDialog, QDialog QWidget, QTabWidget, QTabWidget::pane { background:#f8fbff; color:#20374d; }
+QTabBar::tab { background:#e0ebf5; color:#26465d; border:1px solid #a9c3d5; padding:7px 12px; }
+QTabBar::tab:selected { background:#ffffff; color:#103850; border-bottom:2px solid #177eaa; }
+QTabBar::tab:hover { background:#d5e7f5; color:#143a54; }
+QLabel, QGroupBox, QGroupBox::title { color:#203c54; }
+QTableView, QTableWidget, QAbstractItemView { background:#f6faff; color:#203c54; alternate-background-color:#e9f1f8; selection-background-color:#c4e1f2; selection-color:#14334a; }
+QTableWidget::item, QTableView::item { background:#f6faff; color:#203c54; }
+QHeaderView::section { background:#dce9f3; color:#1d374e; }
+QScrollBar:vertical, QScrollBar:horizontal { background:#e5eef6; }
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background:#a4bbc9; }
+QTextBrowser, QPlainTextEdit { background:#ffffff; color:#20384c; }
+QToolButton { color:#1e4057; }
 """

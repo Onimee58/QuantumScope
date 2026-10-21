@@ -32,12 +32,6 @@ class AboutDialog(QDialog):
         self.setWindowTitle('About QuantumScope')
         self.resize(510,580)
         self.setMinimumWidth(440)
-        self.setStyleSheet("""QDialog {background:#0d1828;color:#eaf4ff;}
-            QLabel {color:#eaf4ff;} QLabel#muted {color:#aac2d7;}
-            QPushButton {background:#203a56;color:#eaf5ff;border:1px solid #355a78;
-            border-radius:8px;padding:9px 13px;font-weight:600;}
-            QPushButton:hover {background:#285474;border-color:#59cce6;}
-            QFrame#divider {background:#2f4d69;max-height:1px;}""")
         layout=QVBoxLayout(self);layout.setContentsMargins(28,20,28,20);layout.setSpacing(10)
         logo=QLabel();logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo.setPixmap(QPixmap(str(files('quantumscope').joinpath('assets/quantumscope-128.png'))).scaled(76,76,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
@@ -165,7 +159,10 @@ class MainWindow(QMainWindow):
             from quantumscope.gui.theme import STYLESHEET, LIGHT_STYLESHEET
             choice = "light" if index == 1 else "dark"
             settings.setValue("appearance/theme", choice)
+            QApplication.instance().setProperty("quantumscope_light", choice == "light")
             QApplication.instance().setStyleSheet(LIGHT_STYLESHEET if choice == "light" else STYLESHEET)
+            for widget in QApplication.instance().allWidgets():
+                widget.update()
         themes.currentIndexChanged.connect(set_theme)
         dialog.exec()
 
@@ -202,7 +199,7 @@ class MainWindow(QMainWindow):
         name = QLabel("QuantumScope")
         name.setObjectName("brandTitle")
         titles.addWidget(name)
-        caption = QLabel("QUANTUM VISUALIZATION STUDIO  /  v0.3.0")
+        caption = QLabel(f"QUANTUM VISUALIZATION STUDIO  /  v{__version__}")
         caption.setObjectName("brandCaption")
         titles.addWidget(caption)
         row.addLayout(titles)
