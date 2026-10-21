@@ -410,7 +410,7 @@ class EntanglementDialog(QWidget):
         for control in (self.back,self.next_step,self.replay):nav.addWidget(control)
         right.addLayout(nav)
         self.stage_description=QLabel();self.stage_description.setWordWrap(True)
-        self.stage_description.setStyleSheet('QLabel { font-size: 13px; color: #d8e9f5; padding: 4px 2px; }')
+        self.stage_description.setStyleSheet('QLabel { font-size: 13px;  padding: 4px 2px; }')
         right.addWidget(self.stage_description)
         self.stage_focus=0
         self.back.clicked.connect(lambda:self._focus_stage(self.stage_focus-1))
@@ -419,7 +419,7 @@ class EntanglementDialog(QWidget):
         self.scene=SpinScene('entanglement');right.addWidget(self.scene,3)
         self.scene.electron_clicked.connect(self._click_electron)
         self.joint=QLabel();self.joint.setWordWrap(True)
-        self.joint.setStyleSheet('QLabel {font-size: 14px; color: #b9ebfa; padding: 7px 3px;}')
+        self.joint.setStyleSheet('QLabel {font-size: 14px;  padding: 7px 3px;}')
         right.addWidget(self.joint)
         self.prediction=QLabel();self.prediction.setWordWrap(True);right.addWidget(self.prediction)
         self.stats=QLabel('');self.stats.setWordWrap(True);right.addWidget(self.stats)

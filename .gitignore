@@ -1,10 +1,25 @@
+# Python compiled files
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.ruff_cache/
+*$py.class
+
+# Virtual environments
 .venv/
-*.egg-info/
+venv/
+env/
+
+# Testing and build caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 build/
 dist/
-*.npz
-!.github/**
+*.egg-info/
+
+# IDE files
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
