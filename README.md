@@ -1,208 +1,175 @@
-> **Development milestone:** QuantumScope v0.3.0 adds workspaces, a circuit editor, and OpenQASM 2 ↔ `.qscope` conversion. The v0.2.0 release remains the published stable version until this build is verified.
+<div align="center">
+  <img src="src/quantumscope/assets/quantumscope-128.png" alt="QuantumScope logo" width="96">
 
-# QuantumScope
+  # QuantumScope
 
-**QuantumScope v0.2.0 — Quantum Visualization Studio** is an open-source Python/PySide6 desktop application for scientifically grounded, interactive quantum visualizations on Linux and Windows.
+  **Explore quantum mechanics. Build quantum circuits. Visualize quantum states.**
 
-The v0.2.0 workspace includes hydrogen orbitals, coherent hydrogen-state dynamics in 2D and 3D, and an interactive double-slit experiment. Experiments open as tabs inside one window; the physics packages remain independent of the GUI.
+  An open-source, cross-platform quantum visualization and circuit simulation studio built with Python and PySide6.
 
-## Workspace and experiments (v0.2.0)
+  [![Version](https://img.shields.io/badge/version-v0.4.0-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
+  [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+  [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+  [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-555)](https://github.com/Onimee58/QuantumScope/releases)
 
-- Modern dark interface with a persistent Hydrogen Explorer tab and closable experiment tabs.
-- Reopen an active experiment from the top shortcuts or Experiments menu to focus its existing tab without resetting parameters.
-- Hydrogen Dynamics 2D: coherent state superpositions, evolving density and export tools.
-- Hydrogen Dynamics 3D: animated superposition density and available export tools.
-- Double-Slit Experiment: source/slit/detector schematic with illustrative animated wavefronts, Fraunhofer probability curve, sampled detection histogram, event visualization and CSV export.
-- **Scientific interpretation:** the source/slit/detector drawing is schematic and not to scale; the wavefront rings depict illustrative phase fronts, not individual particle trajectories. Detection events follow the model's sampled far-field probability distribution.
+  **[Download releases](https://github.com/Onimee58/QuantumScope/releases)** · **[Features](#what-you-can-explore)** · **[Getting started](#getting-started)** · **[Contributing](CONTRIBUTING.md)** · **[Report an issue](https://github.com/Onimee58/QuantumScope/issues)**
+</div>
 
-## Features
+---
 
-- Hydrogen eigenstates with selectable quantum numbers `n=1..4`, `l=0..n-1`, `m=-l..l`
-- Interactive 3D probability-density volume rendering
-- Density isosurface chosen to enclose a target fraction of **grid-captured** probability
-- Real/imaginary wavefunction amplitude isosurfaces
-- Radial probability plot and computed energy level
-- Finite-grid probability diagnostic
-- PNG screenshot and `.npz` scientific data export
-- Separate, independently testable physics package
+## What is QuantumScope?
 
-## Windows setup
+QuantumScope is a desktop application for exploring quantum phenomena *and* building quantum circuits in one environment. It connects wavefunctions, probability distributions, superposition and entanglement to gate-based quantum computation through interactive visualizations and an editable statevector circuit simulator.
 
-On Windows 10/11 (64-bit), install Python 3.12 (recommended) and extract this repository into a writable folder. Double-click **`install_and_run_windows.bat`** to create `.venv`, install dependencies, and launch the GUI. For subsequent launches, double-click **`run_windows.bat`**. No Linux commands or CUDA are required. See [WINDOWS.md](WINDOWS.md) for Windows GPU selection and troubleshooting.
+Use it for self-study, classroom demonstrations, coursework or experimenting with small ideal quantum circuits. No programming is required to use the graphical interface.
 
-This release provides source-based Windows installation, **not** a bundled or signed `.exe` installer. Windows GUI/GPU functionality requires local validation; automated physics tests run on Windows as well as Linux.
+## What you can explore
 
-## Ubuntu setup
+| Workspace | Experiments and tools |
+|---|---|
+| **Hydrogen** | Hydrogen Orbital Explorer; coherent-state Hydrogen Dynamics in 2D and 3D; probability density, amplitude and phase visualization; available image/data exports |
+| **Quantum Principles** | Double-Slit Experiment; interactive quantum superposition and Bloch sphere; quantum entanglement demonstrations |
+| **Quantum Circuits** | Drag-and-drop circuit editor, statevector simulation, simulation stepping, Bloch spheres beside wires, measurements, example circuits, verification, QASM Converter and PDF export |
 
-Install Python 3.11 or later, venv support, and the OpenGL/X11 runtime libraries. On Ubuntu, for example:
+### Quantum circuit studio
+
+- **Up to 10 simulated qubits**, with a dynamically expanding operation-column layout.
+- **Drag-and-drop gate placement** and movement of existing gates; multi-qubit placement with guided operand selection and temporary anchors.
+- **Edit parameters after placing gates** using the gate's dedicated parameter dialog. Expressions such as `pi/2` and `-pi/4` are supported.
+- **Undo/Redo**, column insertion and removal, canvas panning, Ctrl+wheel zoom, Fit Circuit and Reset Zoom.
+- **Step-by-step statevector inspection**, theoretical output probabilities, measurement sampling and Bloch sphere views.
+- **Terminal measurement (`M`) gates**: measured-qubit outcomes are distinguished from diagnostic sampling of the complete state.
+- **Circuit verification** and example circuits, including Bell/GHZ and reversible logic/arithmetic demonstrations.
+- **Save/open `.qscope` circuits**, import/export supported **OpenQASM 2** instructions, and **export circuit diagrams to PDF**.
+- **Quantum Gate Explorer**: double-click a gate in the *left palette* for its definition, circuit symbol, matrix/operation and basic state transformations. Double-clicking a placed parameterized gate opens its parameter editor instead.
+
+**Supported operations:** `H`, `X`, `Y`, `Z`, `S`, `T`, `Sdg`, `Tdg`, `SX`, `RX`, `RY`, `RZ`, `U`/`U3`, `P`, `CX`, `CZ`, `SWAP`, `CCX`, `CSWAP`, and terminal `M`.
+
+## What's new in v0.4.0?
+
+QuantumScope v0.4.0 builds on the v0.3.0 circuit studio with:
+
+- **Post-placement gate parameter editing** and mathematical angle expressions.
+- **PDF circuit export**, including an optional simulation summary.
+- **Gate Explorer** reference dialogs launched from the gate palette.
+- **Improved drag-and-drop editing** of existing gates, multi-qubit gate placement previews and column insertion.
+- **Fit Circuit improvements and Reset Zoom** for navigating long circuits.
+- **Light-theme contrast improvements** and consistent `v0.4.0` application labeling.
+- **macOS packaging in GitHub Actions** alongside existing Debian/Linux and Windows installer builds.
+
+**Release status:** macOS CI packaging has completed successfully, but the resulting app still needs hands-on testing on a Mac. The packages are not represented as signed or notarized. Some remaining small visual refinements, such as symbol contrast in light mode, may be addressed in later updates.
+
+## Screenshots
+
+Screenshots of the Hydrogen, Quantum Principles and Quantum Circuits workspaces will be added here. Contributions with platform-specific screenshots are welcome.
+
+## Getting started
+
+### Download a desktop package
+
+Check **[GitHub Releases](https://github.com/Onimee58/QuantumScope/releases)** for the latest available files. Package availability depends on whether the release artifacts have been published.
+
+| Platform | Package | Basic installation |
+|---|---|---|
+| **Ubuntu/Debian (x86-64)** | `.deb` | `sudo apt install ./<downloaded-file>.deb`, then launch QuantumScope |
+| **Windows** | `Setup.exe` | Run the setup wizard and launch QuantumScope from the Start Menu |
+| **macOS** | `.dmg` | Open the disk image, drag `QuantumScope.app` to Applications, then launch it |
+
+**macOS note:** The current DMG is unsigned/not notarized. macOS Gatekeeper may require explicit user approval under **System Settings → Privacy & Security**. Install only builds you trust. The successful macOS Actions build does **not** by itself confirm runtime or graphics compatibility.
+
+**Graphics note:** 3D rendering uses VTK/OpenGL and requires a compatible graphical environment and drivers; GPU availability and behavior differ by machine and operating system.
+
+### Run from source (Python 3.11+)
+
+Clone the repository and install the application in a virtual environment:
+
+```bash
+git clone https://github.com/Onimee58/QuantumScope.git
+cd QuantumScope
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+quantumscope
+```
+
+On **Windows PowerShell**, activate with `.venv\Scripts\Activate.ps1` and use `python` instead of `python3`. Alternatively, use the included `install_and_run_windows.bat` and `run_windows.bat` launchers. On Linux, `install_and_run.sh` and `run.sh` are also available.
+
+For Ubuntu, the following host packages may be necessary before installing Python dependencies:
 
 ```bash
 sudo apt update
 sudo apt install python3-venv python3-pip libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0
 ```
 
-From inside the repository:
+More setup details: [Windows guide](WINDOWS.md) · [Packaging and builds](PACKAGING.md).
+
+## Your first quantum circuit
+
+1. Launch QuantumScope and open **Quantum Circuits → Gate Circuit Simulator**.
+2. Choose **2 qubits** (or leave the current qubit count if already set).
+3. Drag **H** from the left palette onto `q0` in the first operation column.
+4. Drag **CX** into the next column, then choose its remaining operand as prompted. To prepare a Bell state, use `q0` as control and `q1` as target.
+5. Step through the circuit or play the simulation to inspect state probabilities and Bloch spheres.
+6. Optionally add terminal **M** gates and run measurement shots, or use **Export PDF** to save the circuit diagram.
+
+For the Bell state, the ideal output is `(|00⟩ + |11⟩)/√2`, with theoretical probabilities of **50%** for `00` and **50%** for `11` (up to the displayed bit-order convention). Finite-shot measurements will vary statistically.
+
+**Editor tips:** Drag from the palette to add a gate; click a placed gate to select it; double-click a placed parameterized gate to edit it. Double-click a palette gate to learn about it in the Gate Explorer. Use middle-drag or Shift+left-drag to pan, Ctrl+wheel to zoom, and **Reset Zoom** to restore a readable working size.
+
+## Files and interoperability
+
+| Format | Purpose |
+|---|---|
+| `.qscope` | QuantumScope's native circuit file |
+| `.qasm` / `.qasm2` | Import/export for the implemented **OpenQASM 2 subset** |
+| `.pdf` | Exported circuit diagram; optional simulation-related report content |
+
+OpenQASM support is **not** a complete implementation of all OpenQASM 2 features. Unsupported instructions must be handled explicitly rather than silently discarded. The current circuit simulator supports **terminal** measurements, not arbitrary mid-circuit measurement and feed-forward.
+
+## Scientific scope and limitations
+
+QuantumScope aims for scientifically meaningful *models*, but visual demonstrations should be understood within their documented assumptions:
+
+- **Circuit simulation:** ideal statevector evolution on at most 10 qubits; no physical hardware execution, hardware noise, or decoherence model in the current release.
+- **Measurements:** terminal measurement statistics are obtained from simulated quantum-state probabilities. Sampling error depends on shot count.
+- **Hydrogen:** nonrelativistic isolated-atom model; finite numerical grids approximate bounded portions of wavefunctions. Spin, relativistic and other advanced corrections are outside the current model.
+- **Double slit:** idealized far-field/Fraunhofer interference and diffraction model. The apparatus drawing and animated wavefronts are illustrative, not particle paths or a complete propagation simulation.
+- **Graphics:** screen representations (cloud brightness, phase coloring and rendered meshes) are visualization choices and should not be mistaken for additional physical observables.
+
+Explore the accompanying documentation: [Dynamics](DYNAMICS.md) · [Circuit simulator](CIRCUIT_SIMULATOR.md) · [Circuit verification](CIRCUIT_VERIFICATION_GUIDE.md) · [Entanglement demo](ENTANGLEMENT_DEMO.md).
+
+## For educators and students
+
+QuantumScope can support demonstrations of complex amplitudes, superposition, interference, Bloch-sphere rotations, entanglement, quantum gates, measurement, reversible computation and basic circuit design. The Gate Explorer and step-by-step simulator help connect mathematical descriptions with observable circuit outputs.
+
+**Planned future additions (not present in v0.4.0)** include more guided lessons, richer state/matrix inspection, additional quantum algorithms, noise/error-correction education and quantum kernel visualization. These are roadmap goals, not currently shipped features.
+
+## Tests and development
+
+Install development dependencies and run the regression suite:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
 python -m pip install -e '.[dev]'
 python -m pytest -q
-quantumscope
 ```
 
-Alternatively, launch with `python -m quantumscope`. A working desktop display and OpenGL implementation are required. On remote/headless machines, run physics tests only, or set up an appropriate graphical display.
+The v0.4.0 release-candidate source previously passed **95 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
 
-### Controls
-
-Set `n`, `l`, and `m`, choose a rendering mode, adjust the grid resolution or enclosed probability, then click **Render state**. Drag to rotate; use the mouse wheel to zoom. Save the current 3D view as PNG, or export arrays and metadata as `.npz`.
-
-## Physical model and limitations
-
-The physics backend solves the **isolated hydrogen atom** with a Coulomb potential in the nonrelativistic Schrödinger approximation. It uses the electron-proton **reduced mass**, not the bare electron mass, and ignores spin, relativistic corrections, fine/hyperfine splitting, Lamb shift, external fields, and interactions with other particles. Energies are approximately -13.6/n² eV.
-
-- `psi` has units `a_mu^-3/2`; `density = |psi|²` has units `a_mu^-3` with the supplied coordinates expressed in reduced-mass Bohr radii (`a_mu`).
-- The volume renderer uses `density / max(density)` **only for the color/opacity mapping**, not for any physics calculation.
-- Finite 3D grids do not cover the entire wavefunction. The displayed *grid integral* estimates captured probability using sampled point values and cell volume.
-- The enclosure control selects an isodensity cutoff using the fraction of probability **inside the sampled grid**. It does not guarantee the same percentage of the exact unbounded wavefunction, and surface geometry can cause discretization error.
-- `m ≠ 0` hydrogen spherical-harmonic eigenstates are generally complex. The real and imaginary part plots show signed amplitude, not electron trajectories. Classical-looking `p_x/p_y` real combinations are not included yet.
-- The nucleus marker is **illustrative** and not to physical scale.
-- `Imag(psi)` may be identically zero for some eigenstates (e.g. `m=0`), yielding no amplitude isosurface.
-
-## Numerical API
-
-```python
-from quantumscope.physics import HydrogenAtom
-atom = HydrogenAtom()
-state = atom.state(n=2, l=1, m=0)
-print(state.energy_ev)
-print(state.probability_density(0.0, 0.0, 2.0))
-```
-
-## Roadmap
-
-- **v0.2:** phase visualization, orbital comparisons, improved probability-enclosing algorithms
-- **v0.3:** time-dependent wavefunctions and quantum dynamics
-- **v0.4:** documented approximate multi-electron models
-- **v0.5–0.6:** qubits, Bloch sphere, quantum circuits
-- **v0.7–0.8:** QML, quantum noise
-- **v0.9–1.0:** extensibility and stable research tooling
+Build configuration and workflows live in `.github/workflows/`, and desktop packaging scripts live in `packaging/`. Please report reproducible errors with your OS version, installation method, screenshots or logs, and a short reproduction sequence.
 
 ## Contributing
 
-Contributions, bug reports and scientific validation cases are welcome via GitHub issues and pull requests. For scientific changes, please add tests and document physical assumptions.
+Issues, pull requests, documentation improvements, classroom exercises and scientific validation cases are welcome. Please keep physics calculations separate from UI logic, add regression tests for changed behavior, and document numerical and physical assumptions.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) or [open an issue](https://github.com/Onimee58/QuantumScope/issues).
 
 ## License
 
-MIT (see `LICENSE`).
+QuantumScope is distributed under the **MIT License**. See [LICENSE](LICENSE).
 
-## v0.1.1 update: visualization, layout, and hardware selection
+---
 
-- Probability-weighted camera framing focuses on the spatial region containing 99.5% of the **sampled** electron probability instead of the full rectangular simulation grid. This is only a camera choice; exported scientific data is unchanged.
-- Display intensities use `(density / maximum density) ** 0.35` to bring out dim radial structures. This is a **visual transfer function**, not a physically transformed probability density. Scientific `.npz` exports contain the original computed values.
-- Volume rendering offers **Auto (GPU preferred)** (VTK smart mapper), **GPU** (VTK GPU mapper), and **CPU** (fixed-point mapper). Auto may choose a CPU backend on machines where GPU rendering is unavailable. The displayed mapper preference is not proof of physical VRAM allocation.
-- Scrollable left control panel, clearer scientific readouts, radial plot framing, reset-camera button, adjustable cloud visibility, and optional auto-refresh.
-- The program does not require CUDA. OpenGL graphics/VTK runtime drivers still need to be available on the host.
-
-### Upgrade from v0.1.0
-
-Extract this version into a new folder (don't merge with the old repository files), then run:
-
-```bash
-chmod +x install_and_run.sh
-./install_and_run.sh
-```
-
-The shell script creates a virtual environment and installs the project's dependencies, then starts the GUI. It requests sudo access to install required system packages on Debian/Ubuntu.
-
-### Known limits
-
-The orbital volume renderer requires a machine with an actual graphical display and compatible OpenGL stack. This release's Qt / VTK window was not exercised in the automated headless build environment; numerical physics unit tests were run. VTK chooses the final OpenGL implementation; neither requested GPU mode nor a driver-reported GPU name guarantees the particular GPU is used. For a reliable driver diagnostic on Linux, use `glxinfo -B` (package `mesa-utils`).
-
-## About dialog
-
-Select **Help → About QuantumScope** to view the project description, developer credit, dependencies, scientific scope, and license.
-
-### About panel
-
-Open **Help → About QuantumScope** for version and developer credits. Use **Change profile picture (local)** to choose an image stored on your machine, and **Set GitHub repository URL** after creating your repository. The image stays local and is not bundled into exports.
-
-## v0.1.2 graphics and visualization
-
-After installing with `./install_and_run.sh`, use `./run.sh` for automatic
-NVIDIA preference on X11, `./run.sh nvidia` for the tested NVIDIA PRIME/GLX
-configuration, or `./run.sh default` for the system default GPU. A physical
-GPU change requires restarting the program. NVIDIA detection by `nvidia-smi`
-is not proof that the Qt rendering context selected NVIDIA: use **Graphics
-diagnostics** inside the application to inspect the active VTK OpenGL context.
-
-The **Probability enclosure** mode can now color its isosurface using complex
-wavefunction phase. This is a phase visualization, not a claim that probability
-density contains phase. Phase at low-amplitude points should not be interpreted
-as physically measurable, and global phase is arbitrary. Standard camera views,
-zoom, coordinate bounds in reduced-mass Bohr radii, and renderer diagnostics
-are also provided. The About dialog is unchanged in this release.
-
-## v0.1.4 update: Windows source distribution
-
-- Added `install_and_run_windows.bat`, `run_windows.bat`, and Windows setup guide.
-- Preserved Linux launchers (`run.sh`, `run_nvidia.sh`, `run_default.sh`).
-- Added Windows test matrix to GitHub Actions.
-- Native GUI/graphics validation remains pending on a Windows machine.
-
-## GitHub binary packages
-
-See [PACKAGING.md](PACKAGING.md) for automated GitHub Actions builds of runnable Windows and Linux releases.
-
-
-## v0.1.4: Real orbital basis and comparisons
-
-- Select **Complex Y(l,m)**, **Real cosine**, or **Real sine** orbital bases. The real choices use `|m|`, with the conventional relative global phase not physically observable. `m=0` has only a cosine choice; sine is mapped to cosine in the GUI.
-- Enable **Side-by-side comparison** to render two independent hydrogen states at once. Both viewers share representation, resolution, camera orientation, and color options; each computes its own state. Memory usage rises with grid resolution.
-- **PNG export scale** supports 1–4× resolution for the main 3D viewer.
-- The older probability enclosure is a constant-density isosurface threshold chosen from sampled grid mass. It is not an exact probability-enclosing mesh because voxel rankings and mesh interpolation are approximate.
-- Phase coloring applies to the wavefunction, not its density; angular real-orbital colors differ by sign (0 or π), subject to the arbitrary overall sign convention.
-- All builds should be validated with Windows and Linux GUI launch smoke tests after downloading CI artifacts.
-
-
-## v0.1.5 visualization controls
-
-- Drag the divider to resize the sidebar and 3D comparison panels.
-- Enable **Synchronize comparison cameras** to rotate both orbital viewers together.
-- Uncheck **Radial probability** to collapse the plot temporarily.
-- Uncheck **Scientific information** to collapse detailed state metadata.
-- Phase colors use a cyclic colormap; near-zero wavefunction magnitudes are masked because phase is undefined at nodes.
-- Linux users can restart on NVIDIA PRIME from the graphics diagnostics panel; selecting a GPU volume mapper does not select a physical graphics device.
-
-
-### Hydrogen Dynamics (v0.1.6)
-Choose **Experiments → Hydrogen Dynamics (superposition)...** for time-dependent coherent superpositions of two bound states. See [DYNAMICS.md](DYNAMICS.md) for model assumptions, animation controls, and data interpretation.
-
-
-## Quantum Phenomena Lab (v0.2.0)
-
-**Experiments → Quantum Phenomena — Double-Slit Experiment** opens a coherent far-field double-slit model. The theoretical curve is the normalized Fraunhofer diffraction envelope multiplied by the two-slit interference factor. The detector controls sample independent outcomes from that curve. This is a **paraxial, monochromatic, idealized model**; no particle paths or time-dependent wave propagation are simulated. Results and sampled detections can be exported as CSV.
-
-### Double-slit apparatus (v0.2.0)
-
-The Double-Slit Experiment dialog now includes an animated, **not-to-scale** apparatus showing a source, two apertures, and a detector. The arcs illustrate coherent wavefronts, **not individual particle paths** or a time-dependent propagation calculation. The detector marks are drawn from the exact sampled hit positions used for the original histogram. Uncheck **Animate illustrative wavefronts** to freeze the diagram. Adjusting experiment parameters clears accumulated detections, consistent with the underlying probability plot. The Fraunhofer physics model, CSV export, and other experiments are unchanged.
-
-## Project
-
-Source, issues and contributions: https://github.com/Onimee58/QuantumScope
-
-QuantumScope is MIT-licensed. Models use the nonrelativistic hydrogen approximation and an idealized paraxial Fraunhofer double-slit approximation; neither includes full experimental apparatus or environment modeling.
-
-## Native installers (v0.2.0)
-
-The `.github/workflows/release.yml` pipeline prepares installable `quantumscope_0.2.0_amd64.deb` and `QuantumScope-0.2.0-Setup.exe` files. See [PACKAGING.md](PACKAGING.md) for how to build, install, and verify these releases. The source download is **not** a compiled installer.
-
-
-### Interactive quantum principles (v0.2.0 update)
-
-- **Superposition**: prepare a pure spin-½ state, adjust polar/phase angles, inspect a Bloch-sphere schematic, choose measurement axis, measure individual spins, and collect repeated-shot statistics.
-- **Entanglement**: prepare an ideal two-electron spin singlet, watch schematic electron separation, measure Alice or Bob independently, and compare theoretical correlations with repeated-pair statistics; ideal CHSH settings are provided for reference.
-- **Double slit — which-path**: switch ideal path information on or off **at the slits**. ON removes two-slit fringes in favor of the single-slit envelope; OFF restores interference. The detector dots are Monte Carlo samples from the chosen model.
-
-These are **ideal teaching models**, not simulated physical electron trajectories, actual measuring devices, or tests on quantum hardware. The incoherent profile may resemble two broadened bands depending on geometry, but it is not generally *exactly two* bands.
+<div align="center">
+  <strong>QuantumScope</strong> — bringing quantum physics and quantum circuits together in one interactive desktop studio.
+</div>
