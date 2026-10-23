@@ -7,7 +7,7 @@
 
   An open-source, cross-platform quantum visualization and circuit simulation studio built with Python and PySide6.
 
-  [![Version](https://img.shields.io/badge/version-v0.4.1-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
+  [![Version](https://img.shields.io/badge/version-v0.4.2-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
   [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
   [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-555)](https://github.com/Onimee58/QuantumScope/releases)
@@ -44,6 +44,15 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 - **Quantum Gate Explorer**: double-click a gate in the *left palette* for its definition, circuit symbol, matrix/operation and basic state transformations. Double-clicking a placed parameterized gate opens its parameter editor instead.
 
 **Supported operations:** `H`, `X`, `Y`, `Z`, `S`, `T`, `Sdg`, `Tdg`, `SX`, `RX`, `RY`, `RZ`, `U`/`U3`, `P`, `CX`, `CZ`, `SWAP`, `CCX`, `CSWAP`, and terminal `M`.
+
+## What's new in v0.4.2?
+
+- **Readable Light Mode circuits:** gates, control dots, targets and results now use theme-aware colors that meet WCAG 2.1 AA contrast.
+- **Richer Gate Explorer:** full matrices (including multi-qubit gates), exact amplitudes, properties such as inverse, Clifford membership and eigenvalues, related gates, and angle fields that accept expressions like `pi/2`.
+- **More reliable releases:** every packaged app is launch-tested in CI on Linux, Windows and macOS.
+- Shell scripts work right after cloning, with no `chmod` needed.
+
+See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## What's new in v0.4.1?
 
@@ -165,7 +174,7 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-The v0.4.1 source passes **127 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
+The v0.4.2 source passes **353 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
 
 Build configuration and workflows live in `.github/workflows/`, and desktop packaging scripts live in `packaging/`. Please report reproducible errors with your OS version, installation method, screenshots or logs, and a short reproduction sequence.
 

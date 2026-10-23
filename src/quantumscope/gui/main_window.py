@@ -161,6 +161,8 @@ class MainWindow(QMainWindow):
             settings.setValue("appearance/theme", choice)
             QApplication.instance().setProperty("quantumscope_light", choice == "light")
             QApplication.instance().setStyleSheet(LIGHT_STYLESHEET if choice == "light" else STYLESHEET)
+            if hasattr(self, "circuit_widget"):
+                self.circuit_widget.apply_theme()
             for widget in QApplication.instance().allWidgets():
                 widget.update()
         themes.currentIndexChanged.connect(set_theme)

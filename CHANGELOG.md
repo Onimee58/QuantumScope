@@ -1,3 +1,21 @@
+## v0.4.2 — Light Mode, Gate Explorer and release checks
+
+- **Light Mode circuit canvas is readable.** Gate symbols, control dots, targets, measurement boxes, Bloch glyphs, probability charts, PASS/FAIL results and step highlights now use theme-aware colors instead of dark-theme colors painted onto the light canvas. Control dots went from 1.08:1 to 12.3:1 contrast. Every color pairing meets WCAG 2.1 AA (4.5:1 for text, 3:1 for graphics), enforced by automated tests. Switching themes recolors the circuit workspace immediately.
+- Fixed light-grey empty header areas in the dark circuit table.
+- Self-contained visualization panels (Bloch scene, entanglement, double slit, dynamics plots) intentionally keep their dark display background in both themes.
+- **Gate Explorer:**
+  - full matrices for every gate, including 4×4 and 8×8 matrices for multi-qubit gates, with basis-state labels;
+  - readable exact amplitudes (1/√2, i/2, …);
+  - a Properties section covering unitary, Hermitian, Clifford, inverse, eigenvalues, the Bloch vector of the gate applied to |0⟩, a useful identity and related gates;
+  - angle fields that accept exact expressions such as `pi/2`, plus φ and λ controls for U;
+  - fixed the "Overview _matrix" tab label.
+  - Every displayed identity and inverse is verified numerically by tests.
+- **Packaged-app launch check:** `quantumscope --self-test` starts Qt, the 3D libraries and the circuit workspace without opening a window. The release workflow now runs it on the packaged Linux, Windows and macOS apps before building installers.
+- **CI:** the test workflow now also runs on macOS.
+- **Shell scripts are executable** in the repository, so `./install_and_run.sh` and `./run.sh` work after a fresh clone without `chmod`.
+- Development notes moved from the repository root to `docs/dev-notes/`.
+- Automated tests: 353 passing (127 existing + 226 new).
+
 ## v0.4.1 — Circuit file integrity and import hardening
 
 - **Circuit layout is preserved on save and load.** `.qscope` files now store each operation's column, the terminal-measurement column and the total column count, so parallel gates, intentional empty columns and spare trailing columns survive a save/reopen. The new fields are optional: v0.4.0 can still open v0.4.1 files (ignoring the layout), and older files open in v0.4.1 with simultaneous gates packed into shared columns.

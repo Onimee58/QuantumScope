@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, Q
     QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton, QSizePolicy, QDialog, QDialogButtonBox, QLineEdit, QTabWidget, QApplication)
 from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured, from_native_layout, from_qasm_layout
 from quantumscope.physics.circuit_layout import pack_and_order
+from quantumscope.gui.theme import canvas_color
 from quantumscope.physics.circuit_examples import EXAMPLE_NAMES, example_circuit, has_specification
 from quantumscope.physics.circuit_verification import verify_example, inspect_basis
 from quantumscope.physics.gate_education import parse_angle, gate_information, transformation_rows
@@ -49,7 +50,7 @@ class Grid(QTableWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect=self.viewport().rect()
         rows=self.rowCount()
-        p.setPen(QPen(QColor('#567895'), 1.7))
+        p.setPen(QPen(canvas_color('wire'), 1.7))
         for row in range(rows):
             y=self.visualRect(self.model().index(row,0)).center().y()
             if 0 <= y <= rect.height():
@@ -61,22 +62,22 @@ class Grid(QTableWidget):
             x=cell.center().x()
             if len(g.targets)>1:
                 ys=[self.visualRect(self.model().index(q,col)).center().y() for q in g.targets]
-                p.setPen(QPen(QColor('#b3d0e7'),2.4))
+                p.setPen(QPen(canvas_color('connector'),2.4))
                 p.drawLine(x,min(ys),x,max(ys))
                 # A control dot and standard targets, including multi-controlled gates.
                 if g.name in ('CX','CZ','CCX','CSWAP'):
                     controls=g.targets[:-1] if g.name in ('CX','CZ','CCX') else g.targets[:1]
                     for q in controls:
                         cy=self.visualRect(self.model().index(q,col)).center().y()
-                        p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor('#d5f5ff'))
+                        p.setPen(Qt.PenStyle.NoPen);p.setBrush(canvas_color('control'))
                         p.drawEllipse(QPoint(x,cy),5,5)
-            p.setBrush(QColor('#193c56'))
-            p.setPen(QPen(QColor('#60bddb'),1.7))
+            p.setBrush(canvas_color('gate_fill'))
+            p.setPen(QPen(canvas_color('target_stroke'),1.9))
             box=cell.adjusted(9,6,-9,-6)
             if g.name in ('CX','CCX'):
                 target=g.targets[-1]
                 cy=self.visualRect(self.model().index(target,col)).center().y()
-                p.setBrush(QColor('#11283c'));p.drawEllipse(QPoint(x,cy),12,12)
+                p.setBrush(canvas_color('target_fill'));p.drawEllipse(QPoint(x,cy),12,12)
                 p.drawLine(x-8,cy,x+8,cy);p.drawLine(x,cy-8,x,cy+8)
             elif g.name=='SWAP' or g.name=='CSWAP':
                 for q in (g.targets if g.name=='SWAP' else g.targets[1:]):
@@ -84,10 +85,11 @@ class Grid(QTableWidget):
                     p.drawLine(x-7,cy-7,x+7,cy+7);p.drawLine(x-7,cy+7,x+7,cy-7)
             elif g.name=='CZ':
                 cy=self.visualRect(self.model().index(g.targets[-1],col)).center().y()
-                p.setBrush(QColor('#d5f5ff'));p.setPen(Qt.PenStyle.NoPen);p.drawEllipse(QPoint(x,cy),5,5)
+                p.setBrush(canvas_color('control'));p.setPen(Qt.PenStyle.NoPen);p.drawEllipse(QPoint(x,cy),5,5)
             else:
-                p.setBrush(QColor('#174865'));p.drawRoundedRect(box,5,5)
-                p.setPen(QColor('#effaff'))
+                p.setPen(QPen(canvas_color('gate_border'),1.7))
+                p.setBrush(canvas_color('gate_fill'));p.drawRoundedRect(box,5,5)
+                p.setPen(canvas_color('gate_text'))
                 p.setFont(QFont('Sans',10,QFont.Weight.DemiBold))
                 p.drawText(box,Qt.AlignmentFlag.AlignCenter,g.name)
         # Draw incomplete multi-qubit placement as a preview, not a committed gate.
@@ -99,12 +101,12 @@ class Grid(QTableWidget):
                 if anchor.isValid():
                     x = anchor.center().x()
                     ys = [self.visualRect(self.model().index(q,col)).center().y() for q in ids]
-                    p.setPen(QPen(QColor('#d38a20') if QApplication.instance().property('quantumscope_light') else QColor('#ffe19a'), 2, Qt.PenStyle.DashLine))
+                    p.setPen(QPen(canvas_color('preview_line'), 2, Qt.PenStyle.DashLine))
                     if len(ys)>1:p.drawLine(x,min(ys),x,max(ys))
                     for i,q in enumerate(ids):
                         cy = ys[i]
-                        p.setBrush(QColor('#226783'))
-                        p.setPen(QPen(QColor('#ffcf73'), 2))
+                        p.setBrush(canvas_color('preview_fill'))
+                        p.setPen(QPen(canvas_color('preview_stroke'), 2))
                         if (name in ('CX','CCX') and i == 0):
                             p.drawEllipse(QPoint(x,cy),11,11)
                             p.drawLine(x-7,cy,x+7,cy);p.drawLine(x,cy-7,x,cy+7)
@@ -112,7 +114,7 @@ class Grid(QTableWidget):
                             p.drawLine(x-8,cy-8,x+8,cy+8);p.drawLine(x-8,cy+8,x+8,cy-8)
                         else:
                             p.drawEllipse(QPoint(x,cy),5,5)
-                    p.setPen(QColor('#e8a548') if QApplication.instance().property('quantumscope_light') else QColor('#ffe7af'))
+                    p.setPen(canvas_color('preview_text'))
                     p.drawText(anchor.adjusted(12,-22,60,-8),Qt.AlignmentFlag.AlignLeft, f'{name} preview')
         # Terminal measurement indicators are annotations, not unitary gates.
         for row,col in getattr(self.owner,'measurements',{}).items():
@@ -120,9 +122,9 @@ class Grid(QTableWidget):
             cell=self.visualRect(self.model().index(row,col))
             if cell.isValid() and cell.right()>=0 and cell.left()<=rect.width():
                 box=cell.adjusted(9,6,-9,-6)
-                p.setPen(QPen(QColor('#ffd58e'),2));p.setBrush(QColor('#273747'))
+                p.setPen(QPen(canvas_color('measure_border'),2));p.setBrush(canvas_color('measure_fill'))
                 p.drawRoundedRect(box,5,5)
-                p.setPen(QColor('#ffe9bc'));p.setFont(QFont('Sans',11,QFont.Weight.Bold))
+                p.setPen(canvas_color('measure_text'));p.setFont(QFont('Sans',11,QFont.Weight.Bold))
                 p.drawText(box,Qt.AlignmentFlag.AlignCenter,'M')
         p.end()
 
@@ -238,16 +240,16 @@ class BlochPanel(QWidget):
         p.setFont(QFont('Sans',9))
         for k,(x,y,z) in enumerate(self.vecs):
             col,row=k%cols,k//cols; cx=(col+.5)*cellw;cy=row*cellh+cellh*.46
-            p.setPen(QPen(QColor('#6687a6'),1.4));p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(canvas_color('bloch_outline'),1.4));p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QPoint(int(cx),int(cy)),int(radius),int(radius))
             p.drawEllipse(int(cx-radius),int(cy-radius*.29),int(2*radius),int(radius*.58))
-            p.setPen(QPen(QColor('#4f6c89'),1));p.drawLine(int(cx-radius),int(cy),int(cx+radius),int(cy))
+            p.setPen(QPen(canvas_color('bloch_axis'),1));p.drawLine(int(cx-radius),int(cy),int(cx+radius),int(cy))
             p.drawLine(int(cx),int(cy-radius),int(cx),int(cy+radius))
             # Fixed isometric camera: x to right, y to upper-right, z vertical.
             endx=cx+radius*(.87*x+.34*y);endy=cy-radius*(z+.28*y)
-            p.setPen(QPen(QColor('#52d4df'),3));p.drawLine(int(cx),int(cy),int(endx),int(endy))
-            p.setBrush(QColor('#52d4df'));p.drawEllipse(QPoint(int(endx),int(endy)),4,4)
-            p.setPen(QColor('#ddefff'));p.drawText(int(cx-radius),int(cy+radius+12),int(2*radius),18,
+            p.setPen(QPen(canvas_color('bloch_vector'),3));p.drawLine(int(cx),int(cy),int(endx),int(endy))
+            p.setBrush(canvas_color('bloch_vector'));p.drawEllipse(QPoint(int(endx),int(endy)),4,4)
+            p.setPen(canvas_color('bloch_text'));p.drawText(int(cx-radius),int(cy+radius+12),int(2*radius),18,
                 Qt.AlignmentFlag.AlignCenter,f'q{k}  |r|={math.sqrt(x*x+y*y+z*z):.2f}')
         p.end()
 
@@ -265,12 +267,12 @@ class InlineBlochs(QWidget):
             ymid=header+q*self.grid.verticalHeader().defaultSectionSize()+23-self.grid.verticalScrollBar().value()
             if ymid<15 or ymid>self.height()-10:continue
             cx=36;r=16
-            p.setPen(QPen(QColor('#7b9eb7'),1));p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(canvas_color('bloch_outline'),1));p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QPoint(cx,int(ymid)),r,r)
             p.drawEllipse(cx-r,int(ymid-5),r*2,10)
-            p.setPen(QPen(QColor('#55d5df'),2.5))
+            p.setPen(QPen(canvas_color('bloch_vector'),2.5))
             p.drawLine(cx,int(ymid),int(cx+r*(.85*x+.25*y)),int(ymid-r*(z+.25*y)))
-            p.setPen(QColor('#d9f3ff'));p.setFont(QFont('Sans',8))
+            p.setPen(canvas_color('bloch_text'));p.setFont(QFont('Sans',8))
             p.drawText(56,int(ymid+4),f'{math.sqrt(x*x+y*y+z*z):.2f}')
         p.end()
 
@@ -302,21 +304,21 @@ class ProbabilityBars(QWidget):
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w,h=self.width(),self.height()
-        ink = QColor('#233e54') if QApplication.instance().property('quantumscope_light') else QColor('#dceeff')
+        ink = canvas_color('chart_text')
         p.setFont(QFont('Sans',9));p.setPen(ink)
         p.drawText(12,16,self.title)
         left,right,top,bottom=48,12,34,37
         pw=max(1,w-left-right);ph=max(1,h-top-bottom)
-        p.setPen(QPen(QColor('#547089'),1));p.drawLine(left,top,left,top+ph);p.drawLine(left,top+ph,left+pw,top+ph)
+        p.setPen(QPen(canvas_color('chart_axis'),1));p.drawLine(left,top,left,top+ph);p.drawLine(left,top+ph,left+pw,top+ph)
         p.drawText(6,top+10,'100%');p.drawText(16,top+ph,'0%')
         gap=pw/max(1,len(self.theory))
         for i,(name,val) in enumerate(self.theory):
             center=left+(i+.5)*gap
             bw=max(3,min(20,gap*.30))
-            p.fillRect(int(center-bw-1),int(top+ph*(1-val)),int(bw),max(1,int(ph*val)),QColor('#52c8e5'))
+            p.fillRect(int(center-bw-1),int(top+ph*(1-val)),int(bw),max(1,int(ph*val)),canvas_color('chart_theory'))
             if self.counts is not None:
                 v=self.counts[name]
-                p.fillRect(int(center+1),int(top+ph*(1-v)),int(bw),max(1,int(ph*v)),QColor('#f6b05e'))
+                p.fillRect(int(center+1),int(top+ph*(1-v)),int(bw),max(1,int(ph*v)),canvas_color('chart_sampled'))
             p.setPen(ink)
             text=name if len(name)<=5 else (name[:3]+'…'+name[-2:])
             p.drawText(int(center-gap*.46),top+ph+5,int(gap*.92),17,Qt.AlignmentFlag.AlignCenter,text)
@@ -766,14 +768,18 @@ class CircuitWorkspace(QWidget):
     def _advance(self):
         if self.step.value()>=self.step.maximum():self.toggle_play()
         else:self.step.setValue(self.step.value()+1)
+    def _color_header(self,k):
+        for col in range(self.grid.columnCount()):
+            item=self.grid.horizontalHeaderItem(col)
+            if item is not None:
+                item.setBackground(canvas_color('header_current' if col==k-1 else 'header_past' if col<k-1 else 'header_future'))
     def show_step(self,k):
         if not hasattr(self,'column_states'):return
         completed=sum(1 for c in self.occupied_columns if c<k)
         state=self.column_states[completed]
         self.step_label.setText(f'Column {k}/{self.step.maximum()}  •  {completed} occupied layers executed')
         # Do not pan as a side effect of stepping, placement, or refresh.
-        for col in range(self.grid.columnCount()):
-            self.grid.horizontalHeaderItem(col).setBackground(QColor('#1c6987' if col==k-1 else '#223648' if col<k-1 else '#29313c'))
+        self._color_header(k)
         vectors=[bloch(state,self.n,q) for q in range(self.n)]
         self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
         self.bars.set_data(state,self.n)
@@ -840,6 +846,16 @@ class CircuitWorkspace(QWidget):
         """Gates in simulation order with their columns, for saving."""
         items=sorted(self.gates.items(),key=lambda x:(x[0][1],x[0][0]))
         return [g for _,g in items],[c for (_,c),_ in items]
+    def apply_theme(self):
+        """Recolor theme-dependent content after an appearance change."""
+        for r in range(self.verify_table.rowCount()):
+            for c in range(self.verify_table.columnCount()):
+                item=self.verify_table.item(r,c)
+                if item is not None and item.data(Qt.ItemDataRole.UserRole) is not None:
+                    item.setForeground(canvas_color('pass' if item.data(Qt.ItemDataRole.UserRole) else 'fail'))
+        self._color_header(self.step.value())
+        for widget in (self.grid.viewport(),self.inline_blochs,self.blochs,self.bars):
+            widget.update()
     def _show_notes(self,title,notes):
         if notes:QMessageBox.information(self,title,'\n\n'.join(notes))
     def verify_circuit(self):
@@ -856,7 +872,8 @@ class CircuitWorkspace(QWidget):
             for j,value in enumerate(values):
                 item=QTableWidgetItem(value)
                 if row.passed is not None:
-                    item.setForeground(QColor('#77e6a1' if row.passed else '#ff8d87'))
+                    item.setData(Qt.ItemDataRole.UserRole,bool(row.passed))
+                    item.setForeground(canvas_color('pass' if row.passed else 'fail'))
                 self.verify_table.setItem(i,j,item)
         self.verify_status.setText(note + (f'  {sum(r.passed is True for r in rows)}/{len(rows)} PASS' if rows and rows[0].passed is not None else ''))
 
