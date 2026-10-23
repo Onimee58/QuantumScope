@@ -7,7 +7,9 @@ from PySide6.QtGui import QColor, QPainter, QPen, QDrag, QFont, QBrush, QWheelEv
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
     QLabel, QPushButton, QListWidget, QTableWidget, QTableWidgetItem, QSpinBox,
     QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton, QSizePolicy, QDialog, QDialogButtonBox, QLineEdit, QTabWidget, QApplication)
-from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured
+from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured, from_native_layout, from_qasm_layout
+from quantumscope.physics.circuit_layout import pack_and_order
+from quantumscope.physics.circuit_examples import EXAMPLE_NAMES, example_circuit, has_specification
 from quantumscope.physics.circuit_verification import verify_example, inspect_basis
 from quantumscope.physics.gate_education import parse_angle, gate_information, transformation_rows
 from quantumscope.physics.circuits import (MAX_QUBITS, Gate, ALL, DUAL, TRIPLE, evolution,
@@ -360,7 +362,7 @@ class CircuitWorkspace(QWidget):
         for text,cb in [('Undo',self.undo),('Redo',self.redo)]:
             button=QPushButton(text);button.clicked.connect(cb);edits.addWidget(button)
         self.show_blochs=QCheckBox('Show Bloch spheres beside wires');self.show_blochs.setChecked(True);edits.addWidget(self.show_blochs)
-        self.examples=QComboBox();self.examples.addItems(['Examples…','Bell pair','GHZ','Half adder (a=1,b=1)','Half subtractor (a=1,b=1)','2-bit ripple-carry adder (1+1)']);self.examples.currentIndexChanged.connect(self.load_example);edits.addWidget(self.examples)
+        self.examples=QComboBox();self.examples.addItems(['Examples…',*EXAMPLE_NAMES]);self.examples.currentIndexChanged.connect(self.load_example);edits.addWidget(self.examples)
         edits.addStretch()
         split=QSplitter(Qt.Orientation.Horizontal)
         # A whole-page scroll area, not a shrinking circuit editor, handles
@@ -444,7 +446,7 @@ class CircuitWorkspace(QWidget):
         split.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         split.setStretchFactor(1,1)
         self.qubits.valueChanged.connect(self.resize_qubits);self.step.valueChanged.connect(self.show_step)
-        self.active_example=None
+        self.active_example=None;self._example_ops=None
         self.example()
 
     def _update_operand_labels(self,name):
@@ -463,12 +465,14 @@ class CircuitWorkspace(QWidget):
         elif multi:
             self.second_label.setText('Target' if name in ('CX','CZ') else 'Swap partner')
 
+    def _record(self):
+        return (self.n,self._reserved_columns,dict(self.gates),dict(self.measurements),self.active_example,self._example_ops)
     def snapshot(self):
         if not self._restoring:
-            self.undo_stack.append((self.n,self._reserved_columns,dict(self.gates),dict(self.measurements)))
+            self.undo_stack.append(self._record())
             self.undo_stack=self.undo_stack[-80:];self.redo_stack.clear()
     def _restore(self,record):
-        n,columns,gates,measurements=record
+        n,columns,gates,measurements,self.active_example,self._example_ops=record
         self._reserved_columns=columns
         self._restoring=True
         self.n=n;self.columns=columns;self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
@@ -478,10 +482,10 @@ class CircuitWorkspace(QWidget):
         self.gates=dict(gates);self.measurements=dict(measurements);self._sync_columns();self.refresh();self._restoring=False
     def undo(self):
         if self.undo_stack:
-            self.redo_stack.append((self.n,self._reserved_columns,dict(self.gates),dict(self.measurements)));self._restore(self.undo_stack.pop())
+            self.redo_stack.append(self._record());self._restore(self.undo_stack.pop())
     def redo(self):
         if self.redo_stack:
-            self.undo_stack.append((self.n,self._reserved_columns,dict(self.gates),dict(self.measurements)));self._restore(self.redo_stack.pop())
+            self.undo_stack.append(self._record());self._restore(self.redo_stack.pop())
     def resize_qubits(self,n):
         if n<self.n and any(any(q>=n for q in g.targets) for g in self.gates.values()):
             choice=QMessageBox.question(self,'Remove qubits?',
@@ -494,10 +498,10 @@ class CircuitWorkspace(QWidget):
         self.measurements={q:c for q,c in self.measurements.items() if q<n}
         self.n=n;self.target.setRange(0,n-1);self.target3.setRange(0,n-1);self.grid.setRowCount(n)
         self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)]);self.refresh()
-    def clear(self):self.snapshot();self.active_example=None;self.gates={};self.measurements={};self._reserved_columns=2;self._sync_columns();self.refresh()
+    def clear(self):self.snapshot();self.active_example=None;self._example_ops=None;self.gates={};self.measurements={};self._reserved_columns=2;self._sync_columns();self.refresh()
     def example(self):
         if self.n<2:self.qubits.setValue(2)
-        self.snapshot();self.active_example='Bell pair';self.gates={(0,0):Gate('H',(0,)),(0,1):Gate('CX',(0,1))};self.measurements={};self._sync_columns();self.refresh()
+        self.snapshot();self.active_example='Bell pair';self._example_ops=None;self.gates={(0,0):Gate('H',(0,)),(0,1):Gate('CX',(0,1))};self.measurements={};self._sync_columns();self.refresh()
     def _sync_columns(self):
         """Keep precisely one trailing empty operation slot (two when empty)."""
         last=max([c for _,c in self.gates]+list(self.measurements.values()),default=-1)
@@ -546,7 +550,7 @@ class CircuitWorkspace(QWidget):
             if any(c!=dst_col for q,c in self.measurements.items() if q!=src_row):
                 self.status.setText('Measurements must occupy a shared terminal column');return
             self.snapshot();self.measurements.pop(src_row);self.measurements[dst_row]=dst_col
-        self.active_example=None;self._sync_columns();self.refresh()
+        self._sync_columns();self.refresh()
 
     def insert_column(self,index):
         if not 0<=index<=self.columns:return
@@ -554,7 +558,7 @@ class CircuitWorkspace(QWidget):
         self.gates={(r,c+1 if c>=index else c):g for (r,c),g in self.gates.items()}
         self.measurements={r:c+1 if c>=index else c for r,c in self.measurements.items()}
         self._reserved_columns=max(self._reserved_columns+1,index+2)
-        self.active_example=None;self._sync_columns();self.refresh()
+        self._sync_columns();self.refresh()
 
     def delete_empty_column(self,index):
         if not 0<=index<self.columns:return
@@ -564,7 +568,7 @@ class CircuitWorkspace(QWidget):
         self.gates={(r,c-1 if c>index else c):g for (r,c),g in self.gates.items()}
         self.measurements={r:c-1 if c>index else c for r,c in self.measurements.items()}
         self._reserved_columns=max(2,self._reserved_columns-1)
-        self.active_example=None;self._sync_columns();self.refresh()
+        self._sync_columns();self.refresh()
 
     def header_menu(self,point):
         index=self.grid.horizontalHeader().logicalIndexAt(point)
@@ -621,7 +625,6 @@ class CircuitWorkspace(QWidget):
             if c==col and (r,c)!=(row,col) and set(gate.targets)&set(ids):
                 self.status.setText('Qubit collision in column; choose another column');return
         self.snapshot()
-        self.active_example=None
         self.gates[(row,col)]=Gate(name,ids,math.radians(self.angle.value()) if name in ('RX','RY','RZ','P','U') else 0.0,math.radians(self.phi.value()) if name=='U' else 0.0,math.radians(self.lam.value()) if name=='U' else 0.0)
         self._sync_columns()
         self.refresh()
@@ -647,7 +650,7 @@ class CircuitWorkspace(QWidget):
     def remove_at(self,pos):
         idx=self.grid.indexAt(pos)
         if idx.isValid():
-            self.snapshot();self.active_example=None;self.gates.pop((idx.row(),idx.column()),None);self.measurements.pop(idx.row(),None) if self.measurements.get(idx.row())==idx.column() else None;self._sync_columns();self.refresh()
+            self.snapshot();self.gates.pop((idx.row(),idx.column()),None);self.measurements.pop(idx.row(),None) if self.measurements.get(idx.row())==idx.column() else None;self._sync_columns();self.refresh()
     def edit_gate_at(self,row,col):
         gate=self.gates.get((row,col))
         if gate is None:
@@ -675,7 +678,6 @@ class CircuitWorkspace(QWidget):
             except ValueError as exc:
                 QMessageBox.warning(dialog,'Invalid gate parameter',str(exc));return
             self.snapshot()
-            self.active_example=None
             self.gates[(row,col)]=Gate(gate.name,gate.targets,values['angle'],values.get('phi',gate.phi),values.get('lam',gate.lam))
             self.refresh()
             dialog.accept()
@@ -753,6 +755,7 @@ class CircuitWorkspace(QWidget):
         self.show_step(self.step.value())
         self.grid.horizontalScrollBar().setValue(saved_offset)
         self.status.setText(f'{self.n} qubits • {len(self.gates)} gates • {len(self.occupied_columns)} occupied columns • exact ideal simulation')
+        if has_specification(self.active_example) and hasattr(self,'verify_table'):self.verify_circuit()
     def _sync_timeline(self):
         self.inline_blochs.update()
     def toggle_play(self):
@@ -800,45 +803,50 @@ class CircuitWorkspace(QWidget):
     def load_example(self,index):
         if index==0:return
         choice=self.examples.itemText(index)
-        if choice=='Bell pair':n,ops=2,[Gate('H',(0,)),Gate('CX',(0,1))]
-        elif choice=='GHZ':n,ops=3,[Gate('H',(0,)),Gate('CX',(0,1)),Gate('CX',(1,2))]
-        elif choice=='Half adder (a=1,b=1)':
-            n,ops=3,[Gate('X',(0,)),Gate('X',(1,)),Gate('CCX',(0,1,2)),Gate('CX',(0,1))]
-        elif choice=='Half subtractor (a=1,b=1)':
-            # Difference in q1 = a xor b, borrow in q2 = not(a) and b.
-            n,ops=3,[Gate('X',(0,)),Gate('X',(1,)),Gate('X',(0,)),Gate('CCX',(0,1,2)),Gate('X',(0,)),Gate('CX',(0,1))]
-        else:
-            # Input a=01 in q0,q1 and b=01 in q2,q3.
-            # Reversible 2-bit sum, q4/q5 are carry work bits.
-            n,ops=6,[Gate('X',(1,)),Gate('X',(3,)),Gate('CCX',(1,3,4)),Gate('CX',(3,1)),Gate('CCX',(0,2,5)),Gate('CX',(0,2)),Gate('CCX',(2,4,5)),Gate('CX',(4,2))]
+        n,ops=example_circuit(choice)
         self.set_circuit(n,ops)
-        self.active_example=choice
+        self.active_example=choice;self._example_ops=tuple(self.ordered())
         self.verify_circuit()
-        self.status.setText('Loaded '+choice+' • illustrative reversible circuit; input bits and work registers shown as gates.')
+        self.status.setText('Loaded '+choice+' • illustrative reversible circuit; input bits and work registers shown as gates.'
+            +(' Edits are checked against this example’s specification.' if has_specification(choice) else ''))
         self.examples.blockSignals(True);self.examples.setCurrentIndex(0);self.examples.blockSignals(False)
-    def set_circuit(self,n,ops):
+    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None):
+        """Load a circuit. Without stored columns, gates are packed so that
+        simultaneous gates share a column (simulation order is unchanged)."""
         from quantumscope.physics.circuit_files import validate
+        from quantumscope.physics.circuit_layout import validate_columns
+        ops=list(ops)
         validate(n,ops)
+        if columns is None:ops,columns=pack_and_order(n,ops)
+        else:validate_columns(ops,list(columns))
+        last=max(columns,default=-1)
+        if measurement_column is None or measurement_column<=last:measurement_column=last+1
         self.snapshot()
-        self.active_example=None
+        self.active_example=None;self._example_ops=None
         self._restoring=True
         self.n=n
         self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
         self.target.setRange(0,n-1);self.target3.setRange(0,n-1)
-        self.columns=max(2,len(ops)+1)
         self.grid.setRowCount(n)
         self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)])
-        self.grid.setColumnCount(self.columns)
-        self.grid.setHorizontalHeaderLabels([str(i+1) for i in range(self.columns)])
-        self.gates={(g.targets[0],i):g for i,g in enumerate(ops)}
-        self.measurements={}
+        self.gates={(g.targets[0],c):g for g,c in zip(ops,columns)}
+        self.measurements={q:measurement_column for q in measured}
+        self._reserved_columns=max(2,total_columns or 0)
         self._sync_columns()
         self._restoring=False
         self.grid.horizontalScrollBar().setValue(0)
         self.refresh()
+    def _layout(self):
+        """Gates in simulation order with their columns, for saving."""
+        items=sorted(self.gates.items(),key=lambda x:(x[0][1],x[0][0]))
+        return [g for _,g in items],[c for (_,c),_ in items]
+    def _show_notes(self,title,notes):
+        if notes:QMessageBox.information(self,title,'\n\n'.join(notes))
     def verify_circuit(self):
-        if self.active_example and self.active_example.startswith(('Half adder','Half subtractor','2-bit ripple-carry')):
+        if has_specification(self.active_example):
             rows,note=verify_example(self.active_example,self.n,self.ordered())
+            if self._example_ops is not None and tuple(self.ordered())!=self._example_ops:
+                note=f'Edited {self.active_example}: checking against the original specification. '+note
         else:
             rows,note=inspect_basis(self.n,self.ordered())
         self.verify_table.setRowCount(len(rows))
@@ -856,8 +864,8 @@ class CircuitWorkspace(QWidget):
         path,_=QFileDialog.getOpenFileName(self,'Open QuantumScope circuit','','QuantumScope (*.qscope)')
         if not path:return
         try:
-            with open(path,encoding='utf-8') as f:n,ops,ms=from_native_measured(f.read())
-            self.set_circuit(n,ops);self.measurements={q:max((c for _,c in self.gates),default=-1)+1 for q in ms};self._expand_columns(max(self.measurements.values(),default=0));self.refresh();self.current_path=path
+            with open(path,encoding='utf-8') as f:n,ops,ms,layout=from_native_layout(f.read())
+            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns']);self.current_path=path
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'Native import failed',str(exc))
     def save_native(self):
         path,_=QFileDialog.getSaveFileName(self,'Save QuantumScope circuit',self.current_path or 'untitled.qscope','QuantumScope (*.qscope)')
@@ -865,14 +873,17 @@ class CircuitWorkspace(QWidget):
         if not path.lower().endswith('.qscope'):path+='.qscope'
         self.current_path=path
         try:
-            with open(path,'w',encoding='utf-8') as f:f.write(to_native_measured(self.n,self.ordered(),sorted(self.measurements)))
+            gates,columns=self._layout()
+            layout={'columns':columns,'measurement_column':min(self.measurements.values()) if self.measurements else None,'total_columns':self._reserved_columns}
+            with open(path,'w',encoding='utf-8') as f:f.write(to_native_measured(self.n,gates,sorted(self.measurements),layout=layout))
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'Save failed',str(exc))
     def load_qasm(self):
         path,_=QFileDialog.getOpenFileName(self,'Open OpenQASM 2 file','','OpenQASM 2 (*.qasm *.qasm2);;Text files (*.txt)')
         if not path:return
         try:
-            with open(path,encoding='utf-8') as f:n,ops,ms=from_qasm_measured(f.read())
-            self.set_circuit(n,ops);self.measurements={q:max((c for _,c in self.gates),default=-1)+1 for q in ms};self._expand_columns(max(self.measurements.values(),default=0));self.refresh()
+            with open(path,encoding='utf-8') as f:n,ops,ms,layout,notes=from_qasm_layout(f.read())
+            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'])
+            self._show_notes('QASM import notes',notes)
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'QASM import rejected',str(exc))
     def export_qasm(self):
         path,_=QFileDialog.getSaveFileName(self,'Export OpenQASM 2','untitled.qasm','OpenQASM 2 (*.qasm *.qasm2)')

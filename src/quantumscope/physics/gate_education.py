@@ -1,32 +1,10 @@
-"""Gate reference material and safe mathematical angle expression parser."""
-import ast
+"""Gate reference material; re-exports the safe angle expression parser."""
 import math
-import operator
 import numpy as np
 from .circuits import Gate, SINGLE, DUAL, TRIPLE, unitary, apply_gate
 
-_OP={ast.Add:operator.add,ast.Sub:operator.sub,ast.Mult:operator.mul,ast.Div:operator.truediv}
-
-def parse_angle(text):
-    """Evaluate arithmetic in radians without eval or arbitrary function calls."""
-    try:tree=ast.parse(text.strip().replace('π','pi').replace('^','**'),mode='eval')
-    except (SyntaxError,ValueError) as exc:raise ValueError('Enter a valid angle, e.g. pi/2') from exc
-    def parse(node):
-        if isinstance(node,ast.Expression):return parse(node.body)
-        if isinstance(node,ast.Constant) and type(node.value) in (int,float):return float(node.value)
-        if isinstance(node,ast.Name) and node.id=='pi':return math.pi
-        if isinstance(node,ast.UnaryOp) and isinstance(node.op,(ast.UAdd,ast.USub)):
-            v=parse(node.operand);return v if isinstance(node.op,ast.UAdd) else -v
-        if isinstance(node,ast.BinOp) and type(node.op) in _OP:return _OP[type(node.op)](parse(node.left),parse(node.right))
-        if isinstance(node,ast.BinOp) and isinstance(node.op,ast.Pow):
-            base=parse(node.left);exp=parse(node.right)
-            if abs(exp)>12 or abs(base)>1e6:raise ValueError('Angle expression too large')
-            return base**exp
-        raise ValueError('Only numbers, pi, +, -, *, /, ** and parentheses are allowed')
-    try:value=float(parse(tree))
-    except (OverflowError,ZeroDivisionError,TypeError) as exc:raise ValueError('Invalid or unbounded angle') from exc
-    if not math.isfinite(value) or abs(value)>1e9:raise ValueError('Angle must be finite and reasonable')
-    return value
+# parse_angle lives in expressions.py (shared with the QASM reader); re-exported here.
+from .expressions import parse_angle  # noqa: F401
 
 DESCRIPTIONS={
 'H':('Hadamard','Creates superposition and recombines probability amplitudes.','Superposition, Bell pairs, interference'),

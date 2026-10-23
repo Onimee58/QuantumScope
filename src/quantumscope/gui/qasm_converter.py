@@ -1,6 +1,6 @@
 """Dedicated OpenQASM 2 / QuantumScope native converter."""
 from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QTextEdit,QFileDialog,QComboBox,QMessageBox
-from quantumscope.physics.circuit_files import convert,from_native_measured,from_qasm_measured
+from quantumscope.physics.circuit_files import convert,from_native_layout,from_qasm_layout
 
 class QasmConverter(QWidget):
     def __init__(self,open_in_editor=None,parent=None):
@@ -26,9 +26,10 @@ class QasmConverter(QWidget):
     def transform(self):
         self.output.clear()
         try:
-            result=convert(self.source.toPlainText(),'qasm' if self.direction.currentIndex()==0 else 'qscope')
+            notes=[]
+            result=convert(self.source.toPlainText(),'qasm' if self.direction.currentIndex()==0 else 'qscope',notes)
             self.output.setPlainText(result)
-            self.status.setText('Converted successfully. Executable circuit operations preserved.')
+            self.status.setText('Converted successfully. Executable circuit operations preserved.'+(' Note: '+' '.join(notes) if notes else ''))
         except ValueError as exc:self.status.setText('Conversion rejected: '+str(exc))
     def save(self):
         if not self.output.toPlainText():self.status.setText('Convert first before saving.');return
@@ -46,6 +47,7 @@ class QasmConverter(QWidget):
         if not self.output.toPlainText():self.transform()
         if not self.output.toPlainText():return
         try:
-            n,gates,measured=from_native_measured(self.output.toPlainText()) if self.direction.currentIndex()==0 else from_qasm_measured(self.output.toPlainText())
-            if self.open_in_editor:self.open_in_editor(n,gates,measured)
+            if self.direction.currentIndex()==0:n,gates,measured,layout=from_native_layout(self.output.toPlainText())
+            else:n,gates,measured,layout,_=from_qasm_layout(self.output.toPlainText())
+            if self.open_in_editor:self.open_in_editor(n,gates,measured,layout)
         except ValueError as exc:self.status.setText(str(exc))
