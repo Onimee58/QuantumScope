@@ -1,4 +1,4 @@
-# Hydrogen Dynamics — QuantumScope v0.1.6
+# Hydrogen Dynamics
 
 Open **Experiments → Hydrogen Dynamics (superposition)...**. Select distinct hydrogen eigenstates, relative initial phase, first-state probability, viewing plane and grid size. Play/pause or scrub through one relative beat period.
 
@@ -22,3 +22,24 @@ only; they do not modify the physical density. Pillow is required for GIF export
 
 ## v0.1.7 3D dynamics
 Open Experiments > Hydrogen Dynamics — 3D animation. Select two distinct eigenstates and use Play or the time slider. Use GPU cloud or isosurface rendering. GIF exports the current 3D camera view for one complete beat period. 3D computations scale as O(N³); start at 96 points per axis on a 2 GB GPU.
+
+## Controls added in v0.5.0
+
+- **Quick-value buttons.** Common settings are one click away instead of stepping up to them:
+  - State A probability: 0 / 25 / 50 / 75 / 100 %.
+  - Phase: −90° / 0° / 90° / 180°.
+  - Grid resolution: Low / Default / High / Max.
+  - GIF settings: Min / Max.
+  - 3D cloud visibility: Faint / Default / Max.
+
+  Typing a value applies it once you finish (press Enter or leave the field) instead of rebuilding at every keystroke.
+- **Fit to states** sets the half-width so the view contains 99.5% of each selected state's probability. It uses the exact radial distribution r²R(r)². When the current half-width clips part of the states, the information panel says so. A larger view is not always better: the 100 a_mu maximum would make a 1s orbital a few pixels wide.
+- **2D Reset view** undoes panning and zooming. The axes are labeled with the actual plane coordinates (x, y, z).
+- **2D Contrast** changes how density maps to color:
+  - *Linear*;
+  - *Enhanced (√)*;
+  - *Logarithmic*, spanning four decades below the peak.
+
+  The non-linear scales reveal weak lobes next to a much denser state, for example a 3d orbital beside 1s. This is display only: exported NPZ data is always the raw density |ψ|².
+- **3D Reset camera** returns to the standard isometric view, centered and zoomed to fit. **Top (xy)**, **Front (xz)** and **Side (yz)** look along the z, y and x axes, matching the 2D cross-sections of the same names.
+- **Smoother 3D playback.** Animation updates the existing volume in place instead of rebuilding the scene each frame. Changing the representation or cloud visibility redraws without re-sampling the grid.

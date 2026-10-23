@@ -21,6 +21,9 @@ QToolButton#newExperiment:hover { background: #236b88; }
 QToolButton#headerTool { background: #1b2f45; color: #bdebf8; border: 1px solid #314a62;
   border-radius: 8px; min-width: 35px; min-height: 35px; font-size: 19px; }
 QToolButton#headerTool:hover, QToolButton#tabAddButton:hover { background: #2a4c67; }
+QToolButton#quickValue { background: #20344b; color: #ebf5ff; border: 1px solid #34506c; border-radius: 5px; padding: 3px 7px; }
+QToolButton#quickValue:hover { background: #2b4966; border-color: #4c9bc1; }
+QToolButton#quickValue:pressed { background: #16334c; }
 QToolButton#tabAddButton { background: #172940; color: #94dcea; border: 1px solid #304760;
   border-radius: 6px; min-width: 27px; min-height: 27px; font-size: 20px; }
 QTabWidget#experimentWorkspace::pane { border: 1px solid #27384d; background: #101824; border-radius: 9px; top: -1px; }
@@ -84,6 +87,8 @@ QMenu { background: #ffffff; color: #243c50; border-color: #b8cfdf; }
 QMenu::item:selected { background: #ceeafa; }
 QToolButton#headerTool { background: #e4eef7; color: #226276; border-color: #b2cede; }
 QToolButton#tabAddButton { background: #e7f1fa; color: #17657d; border-color: #b2cede; }
+QToolButton#quickValue { background: #e4eef7; color: #23435c; border: 1px solid #b0c7db; }
+QToolButton#quickValue:hover { background: #d1e6f4; }
 
 QListWidget { background:#f4f8fc; color:#19334b; border:1px solid #aac4d8; }
 QListWidget::item { background:#e4eff8; color:#1b4058; border:1px solid #c2d5e4; }

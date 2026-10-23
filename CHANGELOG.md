@@ -16,11 +16,20 @@
   - PDF export labels each wire with its initial state;
   - the converter reports when it writes preparation gates.
 - **Self-test:** the packaged-app self-test now also renders the State Inspector.
+- **Hydrogen Dynamics 2D and 3D:**
+  - **3D Reset camera fixed.** It did nothing: Qt's `clicked(checked)` argument reached PyVista as `render=False`, and a plain reset also kept the current rotation. It now restores the isometric view, centered and fitted.
+  - **New 3D view buttons:** Top (xy), Front (xz) and Side (yz).
+  - **Quick-value buttons** (Max, Min and common presets) for probability, phase, grid resolution, cloud visibility and GIF settings.
+  - **Fit to states** for the half-width, which contains 99.5% of each state's probability; a hint appears when the view clips the states.
+  - **Rebuilds wait** until you finish typing.
+  - **Smoother 3D playback,** because the volume is updated in place.
+  - **2D:** a Reset view button, axes named after the plane, and a display-only Contrast option (Linear, Enhanced √, Logarithmic).
+  - Removed the stale "(v0.2.0)" from the 3D window title.
 - **New user guide:** [STATE_INSPECTOR.md](STATE_INSPECTOR.md).
 - **New Qt-free modules:**
   - `physics/initial_states.py`;
   - `physics/state_analysis.py` (partial trace, purity, entropy, Dirac/LaTeX/CSV, Clifford test, depth and counts).
-- Automated tests: 455 passing (393 existing + 62 new), plus 9 opt-in GUI tests.
+- Automated tests: 468 passing (393 existing + 75 new), plus 16 opt-in GUI tests.
 
 ## v0.4.3 — Circuit editor model
 

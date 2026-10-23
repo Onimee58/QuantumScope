@@ -64,3 +64,28 @@ class HydrogenSuperposition:
         elif plane == 'yz': coords = (zero, a, b)
         else: raise ValueError("Plane must be xz, xy, or yz")
         return axis, self.density(*coords, time_fs=time_fs)
+
+
+def enclosing_radius(state, fraction=0.995):
+    """Radius (in a_mu) containing the given fraction of a state's probability.
+
+    Integrates the exact radial probability r²R(r)² numerically; the
+    normalized radial distribution integrates to 1 over [0, ∞).
+    """
+    if not 0 < fraction < 1:
+        raise ValueError("Fraction must be between 0 and 1")
+    r_max = 8.0 * state.n * state.n + 40.0      # far beyond the 99.99% radius for n ≤ 6
+    r = np.linspace(0.0, r_max, 40001)
+    density = state.radial_probability(r)
+    cumulative = np.concatenate([[0.0], np.cumsum((density[1:] + density[:-1]) * np.diff(r) / 2)])
+    return float(np.interp(fraction, cumulative / cumulative[-1], r))
+
+
+def suggested_half_width(states, fraction=0.995, minimum=5.0, maximum=100.0):
+    """A view half-width that contains `fraction` of every state's probability.
+
+    The cube's half-width equals the largest enclosing radius, so the sphere
+    holding that probability fits inside the view. Rounded up to 0.5 a_mu.
+    """
+    radius = max(enclosing_radius(s, fraction) for s in states)
+    return float(min(maximum, max(minimum, np.ceil(radius * 2) / 2)))

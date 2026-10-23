@@ -53,6 +53,11 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
   - the statevector in Dirac notation, with LaTeX and CSV export;
   - reduced density matrices with purity and entanglement entropy;
   - circuit statistics such as T-count, Clifford counts and minimum depth.
+- **Better Hydrogen Dynamics views:**
+  - a working 3D Reset camera, plus Top, Front and Side views;
+  - quick Max and preset buttons for parameters;
+  - Fit to states;
+  - a 2D contrast option that reveals weak lobes.
 
 See the [State Inspector guide](STATE_INSPECTOR.md) and [CHANGELOG.md](CHANGELOG.md).
 
@@ -189,7 +194,7 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-The v0.5.0 source passes **455 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
+The v0.5.0 source passes **468 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
 
 Build configuration and workflows live in `.github/workflows/`, and desktop packaging scripts live in `packaging/`. Please report reproducible errors with your OS version, installation method, screenshots or logs, and a short reproduction sequence.
 
