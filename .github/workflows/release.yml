@@ -52,10 +52,35 @@ jobs:
           if [ "$TARGET" = windows ]; then ICON="src/quantumscope/assets/quantumscope.ico"; fi
           if [ "$TARGET" = macos ]; then ICON="dist/mac-icon/QuantumScope.icns"; fi
           python -m PyInstaller --noconfirm --clean --windowed --onedir --name QuantumScope --icon "$ICON" --collect-submodules vtkmodules --collect-data vtkmodules --collect-data pyvista --collect-data pyqtgraph --collect-data pyvistaqt --collect-data quantumscope --exclude-module pyqtgraph.examples --exclude-module pyqtgraph.opengl --exclude-module pyvista.trame src/quantumscope/__main__.py
+      - name: Launch check of the packaged application (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          sudo apt-get install -y xvfb
+          QUANTUMSCOPE_SELF_TEST_REPORT=self-test.txt xvfb-run -a dist/QuantumScope/QuantumScope --self-test || { cat self-test.txt; exit 1; }
+          cat self-test.txt
+      - name: Launch check of the packaged application (macOS)
+        if: runner.os == 'macOS'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          QUANTUMSCOPE_SELF_TEST_REPORT=self-test.txt dist/QuantumScope.app/Contents/MacOS/QuantumScope --self-test || { cat self-test.txt; exit 1; }
+          cat self-test.txt
+      - name: Launch check of the packaged application (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $env:QUANTUMSCOPE_SELF_TEST_REPORT = "$PWD\self-test.txt"
+          # Windowed builds return immediately unless waited on explicitly.
+          $proc = Start-Process -FilePath "dist\QuantumScope\QuantumScope.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if (Test-Path self-test.txt) { Get-Content self-test.txt }
+          if ($proc.ExitCode -ne 0) { throw "Packaged self-test failed with exit code $($proc.ExitCode)" }
       - name: Build Debian installer
         if: runner.os == 'Linux'
         shell: bash
-        run: bash packaging/build_deb.sh 0.4.1
+        run: bash packaging/build_deb.sh 0.4.2
       - name: Install Inno Setup
         if: runner.os == 'Windows'
         shell: pwsh
@@ -66,7 +91,7 @@ jobs:
         run: |
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (!(Test-Path $compiler)) { throw "Inno Setup compiler missing: $compiler" }
-          & $compiler /DMyAppVersion=0.4.1 packaging\QuantumScope.iss
+          & $compiler /DMyAppVersion=0.4.2 packaging\QuantumScope.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build macOS DMG
         if: runner.os == 'macOS'
@@ -76,11 +101,11 @@ jobs:
           test -d dist/QuantumScope.app
           cp -R dist/QuantumScope.app dist/dmg-root/
           ln -s /Applications dist/dmg-root/Applications
-          hdiutil create -volname 'QuantumScope 0.4.1' -srcfolder dist/dmg-root -ov -format UDZO dist/installers/QuantumScope-0.4.1-macOS.dmg
+          hdiutil create -volname 'QuantumScope 0.4.2' -srcfolder dist/dmg-root -ov -format UDZO dist/installers/QuantumScope-0.4.2-macOS.dmg
       - name: Upload installers as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: QuantumScope-0.4.1-${{ matrix.platform }}-installer
+          name: QuantumScope-0.4.2-${{ matrix.platform }}-installer
           path: dist/installers/*
           if-no-files-found: error
       - name: Publish installers with tagged release
