@@ -51,6 +51,9 @@ def verify_example(name, n, gates):
         description='Expected output convention: sum LSB=q1, next bit=q2, carry=q5; input A=q0q1 and B=q2q3. Failing rows indicate a circuit or register-mapping issue.'
     else:
         return [], 'Choose an arithmetic example for exhaustive input/output verification.'
+    required=6 if name.startswith('2-bit ripple-carry') else 3
+    if n<required:
+        return [], f'This example needs {required} qubits; restore the qubit count to verify it.'
     if any(g.name!='X' for g in gates[:prep]):
         return [], 'Circuit has been edited: preset input preparation cannot be identified. Use basis-state inspection instead.'
     logic=gates[prep:]

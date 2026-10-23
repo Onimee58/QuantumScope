@@ -1,2 +1,0 @@
-[console_scripts]
-quantumscope = quantumscope.__main__:main

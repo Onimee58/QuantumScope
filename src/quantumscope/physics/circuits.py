@@ -111,11 +111,29 @@ def parse_qasm(text):
     """OpenQASM 2 subset: qreg + H/X/Y/Z/S/T, rotations, CX/CZ/SWAP, barriers.
 
     Reject measurements, custom gates, conditionals, multi-register circuits etc.
-    rather than silently change semantics.
+    rather than silently change semantics. Returns (n, gates); use
+    parse_qasm_detailed for barrier positions and import notices.
+    """
+    n,gates,_,_=parse_qasm_detailed(text)
+    return n,gates
+
+
+def _qasm_angle(expr):
+    from .expressions import parse_angle
+    return parse_angle(expr)
+
+
+def parse_qasm_detailed(text):
+    """Like parse_qasm, but also returns (fences, notes).
+
+    fences: sorted gate indices at which a barrier occurred (a barrier before
+    gates[i] is recorded as i). Barriers have no unitary effect; QuantumScope
+    uses them only as column separators and reports that in notes, so they
+    are never dropped silently.
     """
     text=re.sub(r'//[^\n]*','',text)
     statements=[x.strip() for x in text.split(';') if x.strip()]
-    n=None; gates=[]; reg=None; header=False
+    n=None; gates=[]; reg=None; header=False; fences=[]; barriers=0
     for statement in statements:
         s=' '.join(statement.split())
         if re.fullmatch(r'OPENQASM\s+2\.0',s,re.I): header=True; continue
@@ -124,7 +142,10 @@ def parse_qasm(text):
         if m:
             if n is not None: raise ValueError('Only one quantum register supported')
             reg,n=m.group(1),int(m.group(2)); zero(n);continue
-        if s.lower().startswith('barrier '): continue
+        if s.lower().startswith('barrier ') or s.lower()=='barrier':
+            barriers+=1
+            if not fences or fences[-1]!=len(gates):fences.append(len(gates))
+            continue
         if not header or n is None: raise ValueError(f'Expected OPENQASM 2.0 and qreg before: {s}')
         pat=rf'({re.escape(reg)})\[(\d+)\]'
         m=re.fullmatch(r'(h|x|y|z|s|t|sdg|tdg|sx|cx|cz|swap|ccx|cswap)\s+(.+)',s,re.I)
@@ -139,11 +160,8 @@ def parse_qasm(text):
             g=Gate(name,tuple(indexes));apply_gate(zero(n),n,g);gates.append(g);continue
         m=re.fullmatch(r'(rx|ry|rz|p)\s*\(([^()]*)\)\s*'+pat,s,re.I)
         if m:
-            expr=m.group(2).replace(' ','').lower()
-            if not re.fullmatch(r'[0-9.pi+*/-]+',expr): raise ValueError('Unsupported rotation expression')
-            try: angle=float(eval(expr,{'__builtins__':{}},{'pi':math.pi}))
-            except (SyntaxError,ValueError,TypeError,ZeroDivisionError) as exc: raise ValueError('Invalid rotation angle') from exc
-            if not math.isfinite(angle): raise ValueError('Nonfinite rotation')
+            try: angle=_qasm_angle(m.group(2))
+            except ValueError as exc: raise ValueError('Invalid rotation angle: '+str(exc)) from exc
             g=Gate(m.group(1).upper(),(int(m.group(4)),),angle);apply_gate(zero(n),n,g);gates.append(g);continue
         m=re.fullmatch(r'(u3|u)\s*\(([^()]*)\)\s*'+pat,s,re.I)
         if m:
@@ -151,15 +169,18 @@ def parse_qasm(text):
             if len(exprs)!=3:raise ValueError('U requires three angles')
             vals=[]
             for expr in exprs:
-                if not re.fullmatch(r'[0-9.pi+*/ -]+',expr.lower()):raise ValueError('Unsupported U angle')
-                try:val=float(eval(expr,{'__builtins__':{}},{'pi':math.pi}))
-                except (SyntaxError,ValueError,TypeError,ZeroDivisionError) as exc:raise ValueError('Invalid U angle') from exc
-                if not math.isfinite(val):raise ValueError('Nonfinite U angle')
+                try:val=_qasm_angle(expr)
+                except ValueError as exc:raise ValueError('Invalid U angle: '+str(exc)) from exc
                 vals.append(val)
             g=Gate('U',(int(m.group(4)),),*vals);gates.append(g);continue
         raise ValueError('Unsupported OpenQASM statement: '+s)
     if not header or n is None: raise ValueError('Missing OPENQASM 2.0 or qreg')
-    return n,gates
+    fences=[f for f in fences if 0<f<len(gates)]
+    notes=[]
+    if barriers:
+        notes.append(f'{barriers} barrier statement(s) were used only to separate circuit columns. '
+                     'QuantumScope has no barrier operation, so barriers are not saved or exported.')
+    return n,gates,fences,notes
 
 
 def measurement_marginal(probabilities, n, measured, counts=None):

@@ -295,12 +295,10 @@ class MainWindow(QMainWindow):
         tabs=self._select_category("circuits")
         tabs.setCurrentWidget(self.converter_widget)
 
-    def _load_converted_circuit(self,n,gates,measured=()):
-        self.circuit_widget.set_circuit(n,gates)
-        col=max((c for _,c in self.circuit_widget.gates),default=-1)+1
-        self.circuit_widget.measurements={q:col for q in measured}
-        self.circuit_widget._expand_columns(col)
-        self.circuit_widget.refresh()
+    def _load_converted_circuit(self,n,gates,measured=(),layout=None):
+        layout=layout or {}
+        self.circuit_widget.set_circuit(n,gates,layout.get('columns'),measured,
+            layout.get('measurement_column'),layout.get('total_columns'))
         self._launch_circuits()
 
     def _show_hydrogen(self):

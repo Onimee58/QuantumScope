@@ -1,3 +1,14 @@
+## v0.4.1 — Circuit file integrity and import hardening
+
+- **Circuit layout is preserved on save and load.** `.qscope` files now store each operation's column, the terminal-measurement column and the total column count, so parallel gates, intentional empty columns and spare trailing columns survive a save/reopen. The new fields are optional: v0.4.0 can still open v0.4.1 files (ignoring the layout), and older files open in v0.4.1 with simultaneous gates packed into shared columns.
+- **QASM import packs gates into columns** instead of placing one gate per column. Packing only reorders gates that act on disjoint qubits, so the simulated circuit is unchanged.
+- **`barrier` statements are no longer dropped silently.** They now separate columns on import, and the editor and converter report that barriers are not saved or exported.
+- **Safer QASM angle parsing.** The QASM reader now uses the same safe expression parser as the gate-parameter dialog (no `eval`), with limits on length, nesting and exponent size. Crafted angles such as `9**9**9**9` are rejected instead of freezing the application.
+- **Example circuits keep their verification after edits.** Editing the half adder, half subtractor or ripple-carry adder now re-runs the original specification and shows FAIL rows, instead of discarding the check. Undo/redo restores the matching example state.
+- Built-in examples moved to `physics/circuit_examples.py` and layout logic to `physics/circuit_layout.py` (Qt-free, unit-tested).
+- Removed accidentally tracked `src/quantumscope.egg-info/` build metadata.
+- Automated tests: 127 passing (95 existing + 32 new).
+
 ## v0.2.0 — Interactive principles update (post-release candidate)
 
 - Added **Quantum Superposition**: pure spin-½ state, Bloch-sphere schematic, selectable measurement basis, Born probabilities, collapse demonstration, and repeated preparations.
