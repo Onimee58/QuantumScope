@@ -84,8 +84,14 @@ def zero(n):
     v=np.zeros(1<<n,complex); v[0]=1; return v
 
 
-def evolution(n, gates):
-    states=[zero(n)]
+def evolution(n, gates, initial=None):
+    """States after each gate, starting from |0…0⟩ or the given initial state."""
+    if initial is None:
+        start=zero(n)
+    else:
+        start=np.asarray(initial,dtype=complex)
+        if start.shape!=(1<<n,):raise ValueError('Initial state has the wrong dimension')
+    states=[start]
     for g in gates: states.append(apply_gate(states[-1],n,g))
     return states
 

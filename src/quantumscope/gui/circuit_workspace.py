@@ -2,7 +2,7 @@
 import math
 import html
 import numpy as np
-from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer, QRectF
+from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QDrag, QFont, QBrush, QWheelEvent, QPdfWriter, QPageSize
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
     QLabel, QPushButton, QListWidget, QTableWidget, QTableWidgetItem, QSpinBox,
@@ -11,6 +11,8 @@ from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to
 from quantumscope.physics.circuit_layout import pack_and_order
 from quantumscope.gui.theme import canvas_color
 from quantumscope.editor.circuit_model import CircuitModel, EditorError
+from quantumscope.physics.initial_states import InitialState, PRESETS, PRESET_ORDER
+from quantumscope.physics.gate_education import angle_text
 from quantumscope.physics.circuit_examples import EXAMPLE_NAMES, example_circuit, has_specification
 from quantumscope.physics.circuit_verification import verify_example, inspect_basis
 from quantumscope.physics.gate_education import parse_angle, gate_information, transformation_rows
@@ -327,8 +329,11 @@ class ProbabilityBars(QWidget):
         p.end()
 
 class CircuitWorkspace(QWidget):
+    # Emitted whenever the displayed state changes (edit, step, initial state).
+    state_changed=Signal()
+
     def __init__(self,parent=None):
-        super().__init__(parent);self.model=CircuitModel(3);self.current_path=None;self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
+        super().__init__(parent);self.model=CircuitModel(3);self.current_path=None;self._inspector=None;self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
         page_layout=QVBoxLayout(self)
         page_layout.setContentsMargins(0,0,0,0)
         self.page_scroll=QScrollArea(self)
@@ -364,6 +369,9 @@ class CircuitWorkspace(QWidget):
         edits=QHBoxLayout();outer.addLayout(edits)
         for text,cb in [('Undo',self.undo),('Redo',self.redo)]:
             button=QPushButton(text);button.clicked.connect(cb);edits.addWidget(button)
+        self.inspector_button=QPushButton('State Inspector…')
+        self.inspector_button.setToolTip('Open amplitudes, statevector, reduced density matrices and circuit statistics')
+        self.inspector_button.clicked.connect(self.open_state_inspector);edits.addWidget(self.inspector_button)
         self.show_blochs=QCheckBox('Show Bloch spheres beside wires');self.show_blochs.setChecked(True);edits.addWidget(self.show_blochs)
         self.examples=QComboBox();self.examples.addItems(['Examples…',*EXAMPLE_NAMES]);self.examples.currentIndexChanged.connect(self.load_example);edits.addWidget(self.examples)
         edits.addStretch()
@@ -395,6 +403,8 @@ class CircuitWorkspace(QWidget):
             b=QPushButton(label);b.clicked.connect(callback);nav.addWidget(b)
         nav.addStretch()
         self.grid.horizontalHeader().sectionClicked.connect(lambda col:self.step.setValue(col+1))
+        self.grid.verticalHeader().sectionClicked.connect(self._initial_state_menu)
+        self.grid.verticalHeader().setToolTip('Click a qubit label to choose its initial state')
         self.grid.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.grid.horizontalHeader().customContextMenuRequested.connect(self.header_menu)
         wires=QHBoxLayout();v.addLayout(wires);wires.addWidget(self.grid,1)
@@ -487,7 +497,7 @@ class CircuitWorkspace(QWidget):
         self.target.setRange(0,n-1);self.target3.setRange(0,n-1)
         if self.grid.rowCount()!=n:
             self.grid.setRowCount(n)
-            self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)])
+        self.grid.setVerticalHeaderLabels([f'q{i} {s.label} ─' for i,s in enumerate(self.model.initial_states)])
         needed=self.model.columns
         if needed!=self.grid.columnCount():
             offset=self.grid.horizontalScrollBar().value()
@@ -502,6 +512,72 @@ class CircuitWorkspace(QWidget):
         self.status.setText(str(exc))
 
     def snapshot(self):self.model.snapshot()
+
+    # ---- initial states ----------------------------------------------------------
+    def set_initial_state(self,qubit,state):
+        try:changed=self.model.set_initial_state(qubit,state)
+        except EditorError as exc:self._rejected(exc);return
+        if changed:self._changed()
+    def _initial_state_menu(self,qubit):
+        from PySide6.QtGui import QCursor
+        if not 0<=qubit<self.model.n:return
+        current=self.model.initial_states[qubit]
+        menu=QMenu(self);menu.setToolTip('Initial state of q'+str(qubit))
+        title=menu.addAction(f'Initial state of q{qubit}');title.setEnabled(False)
+        actions={}
+        for key in PRESET_ORDER:
+            action=menu.addAction(PRESETS[key][2]);action.setCheckable(True)
+            action.setChecked(current.preset_key==key);actions[action]=key
+        menu.addSeparator()
+        custom=menu.addAction('Custom (θ, φ)…');custom.setCheckable(True);custom.setChecked(current.preset_key is None)
+        chosen=menu.exec(QCursor.pos())
+        if chosen in actions:self.set_initial_state(qubit,InitialState.preset(actions[chosen]))
+        elif chosen is custom:self._custom_initial_state(qubit)
+    def _custom_initial_state(self,qubit):
+        current=self.model.initial_states[qubit]
+        dialog=QDialog(self);dialog.setWindowTitle(f'Custom initial state for q{qubit}')
+        layout=QVBoxLayout(dialog)
+        layout.addWidget(QLabel('|ψ⟩ = cos(θ/2)|0⟩ + e^{iφ} sin(θ/2)|1⟩      (θ from 0 to π, φ from 0 to 2π, in radians)'))
+        form=QFormLayout();layout.addLayout(form)
+        theta=QLineEdit(angle_text(current.theta) if current.theta else '0');phi=QLineEdit(angle_text(current.phi) if current.phi else '0')
+        for field in (theta,phi):field.setToolTip('Radians. Examples: pi/3, 2*pi/3, 0.75')
+        form.addRow('θ (polar angle)',theta);form.addRow('φ (phase)',phi)
+        preview=BlochPanel();preview.setMinimumHeight(185);layout.addWidget(preview)
+        info=QLabel();info.setWordWrap(True);layout.addWidget(info)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel);layout.addWidget(buttons)
+        result={}
+        def update():
+            try:
+                state=InitialState(parse_angle(theta.text()),parse_angle(phi.text()))
+            except ValueError as exc:
+                info.setText('⚠ '+str(exc));buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False);return
+            result['state']=state
+            x,y,z=state.bloch();preview.set_vectors([(x,y,z)])
+            a,b=state.vector()
+            from quantumscope.physics.gate_education import format_amplitude
+            info.setText(f'{state.label}   amplitudes: |0⟩ {format_amplitude(a)},  |1⟩ {format_amplitude(b)}'
+                         +('   (same as a preset)' if state.preset_key else ''))
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
+        theta.textChanged.connect(update);phi.textChanged.connect(update)
+        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject)
+        update()
+        if dialog.exec()==QDialog.DialogCode.Accepted and 'state' in result:
+            self.set_initial_state(qubit,result['state'])
+
+    # ---- State Inspector ------------------------------------------------------------
+    def open_state_inspector(self):
+        from quantumscope.gui.state_inspector import StateInspector
+        if self._inspector is None:
+            self._inspector=StateInspector(self)
+        self._inspector.show();self._inspector.raise_();self._inspector.activateWindow()
+        self._inspector.refresh()
+    def inspected_view(self):
+        """What the State Inspector shows: the state at the current step."""
+        k=self.step.value()
+        completed=sum(1 for c in getattr(self,'occupied_columns',[]) if c<k)
+        states=getattr(self,'column_states',None) or [self.model.initial_vector()]
+        return {'state':states[min(completed,len(states)-1)],'n':self.model.n,'step':k,
+                'steps':self.step.maximum(),'layers_done':completed,'model':self.model}
     def undo(self):
         if self.model.undo():self._changed()
     def redo(self):
@@ -632,7 +708,7 @@ class CircuitWorkspace(QWidget):
         try:
             from quantumscope.gui.circuit_pdf import write_circuit_pdf
             write_circuit_pdf(path,self.n,self.gates,self.measurements,
-                              include_report=report)
+                              include_report=report,initial_states=self.model.initial_states)
         except Exception as exc:
             QMessageBox.warning(self,'PDF export failed',str(exc))
 
@@ -689,6 +765,7 @@ class CircuitWorkspace(QWidget):
         self.bars.title='Full quantum-state probabilities (before measurement) · cyan: theory'
         probs=distribution(state);inds=np.argsort(probs)[-8:][::-1]
         self.result.setPlainText('At column '+str(k)+':  '+'  '.join(f'|{i:0{self.n}b}⟩ {probs[i]*100:.1f}%' for i in inds if probs[i]>1e-8))
+        self.state_changed.emit()
     def _temporary_item(self,col):
         item=self.grid.item(0,col)
         if item is None:item=QTableWidgetItem('');self.grid.setItem(0,col,item)
@@ -718,10 +795,10 @@ class CircuitWorkspace(QWidget):
         self.status.setText('Loaded '+choice+' • illustrative reversible circuit; input bits and work registers shown as gates.'
             +(' Edits are checked against this example’s specification.' if has_specification(choice) else ''))
         self.examples.blockSignals(True);self.examples.setCurrentIndex(0);self.examples.blockSignals(False)
-    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None):
+    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None,initial_states=None):
         """Load a circuit. Without stored columns, gates are packed so that
         simultaneous gates share a column (simulation order is unchanged)."""
-        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns)
+        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns,initial_states)
         self._sync_view();self.grid.horizontalScrollBar().setValue(0);self.refresh()
     def _layout(self):
         """Gates in simulation order with their columns, for saving."""
@@ -737,6 +814,7 @@ class CircuitWorkspace(QWidget):
         self._color_header(self.step.value())
         for widget in (self.grid.viewport(),self.inline_blochs,self.blochs,self.bars):
             widget.update()
+        if self._inspector is not None:self._inspector.apply_theme()
     def _show_notes(self,title,notes):
         if notes:QMessageBox.information(self,title,'\n\n'.join(notes))
     def verify_circuit(self):
@@ -758,7 +836,7 @@ class CircuitWorkspace(QWidget):
         if not path:return
         try:
             with open(path,encoding='utf-8') as f:n,ops,ms,layout=from_native_layout(f.read())
-            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns']);self.current_path=path
+            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states']);self.current_path=path
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'Native import failed',str(exc))
     def save_native(self):
         path,_=QFileDialog.getSaveFileName(self,'Save QuantumScope circuit',self.current_path or 'untitled.qscope','QuantumScope (*.qscope)')
@@ -767,7 +845,7 @@ class CircuitWorkspace(QWidget):
         self.current_path=path
         try:
             gates,columns,mcol,total=self.model.layout()
-            layout={'columns':columns,'measurement_column':mcol,'total_columns':total}
+            layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states}
             with open(path,'w',encoding='utf-8') as f:f.write(to_native_measured(self.n,gates,sorted(self.measurements),layout=layout))
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'Save failed',str(exc))
     def load_qasm(self):
@@ -782,7 +860,7 @@ class CircuitWorkspace(QWidget):
         path,_=QFileDialog.getSaveFileName(self,'Export OpenQASM 2','untitled.qasm','OpenQASM 2 (*.qasm *.qasm2)')
         if not path:return
         if not path.lower().endswith(('.qasm','.qasm2')):path+='.qasm'
-        lines=to_qasm_measured(self.n,self.ordered(),sorted(self.measurements))
+        lines=to_qasm_measured(self.n,self.ordered(),sorted(self.measurements),self.model.initial_states)
         try:
             with open(path,'w',encoding='utf-8') as f:f.write(lines)
         except OSError as exc:QMessageBox.warning(self,'Export failed',str(exc))

@@ -7,7 +7,7 @@
 
   An open-source, cross-platform quantum visualization and circuit simulation studio built with Python and PySide6.
 
-  [![Version](https://img.shields.io/badge/version-v0.4.3-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
+  [![Version](https://img.shields.io/badge/version-v0.5.0-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
   [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
   [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-555)](https://github.com/Onimee58/QuantumScope/releases)
@@ -44,6 +44,22 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 - **Quantum Gate Explorer**: double-click a gate in the *left palette* for its definition, circuit symbol, matrix/operation and basic state transformations. Double-clicking a placed parameterized gate opens its parameter editor instead.
 
 **Supported operations:** `H`, `X`, `Y`, `Z`, `S`, `T`, `Sdg`, `Tdg`, `SX`, `RX`, `RY`, `RZ`, `U`/`U3`, `P`, `CX`, `CZ`, `SWAP`, `CCX`, `CSWAP`, and terminal `M`.
+
+## What's new in v0.5.0?
+
+- **Choose each qubit's initial state:** |0⟩, |1⟩, |+⟩, |−⟩, |+i⟩, |−i⟩ or any custom (θ, φ) state, by clicking the wire label.
+- **State Inspector window:**
+  - exact amplitudes and phases;
+  - the statevector in Dirac notation, with LaTeX and CSV export;
+  - reduced density matrices with purity and entanglement entropy;
+  - circuit statistics such as T-count, Clifford counts and minimum depth.
+- **Better Hydrogen Dynamics views:**
+  - a working 3D Reset camera, plus Top, Front and Side views;
+  - quick Max and preset buttons for parameters;
+  - Fit to states;
+  - a 2D contrast option that reveals weak lobes.
+
+See the [State Inspector guide](STATE_INSPECTOR.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## What's new in v0.4.3?
 
@@ -155,13 +171,13 @@ OpenQASM support is **not** a complete implementation of all OpenQASM 2 features
 
 QuantumScope aims for scientifically meaningful *models*, but visual demonstrations should be understood within their documented assumptions:
 
-- **Circuit simulation:** ideal statevector evolution on at most 10 qubits; no physical hardware execution, hardware noise, or decoherence model in the current release.
+- **Circuit simulation:** ideal statevector evolution on at most 10 qubits, starting from |0⟩ or chosen single-qubit product states; no physical hardware execution, hardware noise, or decoherence model in the current release.
 - **Measurements:** terminal measurement statistics are obtained from simulated quantum-state probabilities. Sampling error depends on shot count.
 - **Hydrogen:** nonrelativistic isolated-atom model; finite numerical grids approximate bounded portions of wavefunctions. Spin, relativistic and other advanced corrections are outside the current model.
 - **Double slit:** idealized far-field/Fraunhofer interference and diffraction model. The apparatus drawing and animated wavefronts are illustrative, not particle paths or a complete propagation simulation.
 - **Graphics:** screen representations (cloud brightness, phase coloring and rendered meshes) are visualization choices and should not be mistaken for additional physical observables.
 
-Explore the accompanying documentation: [Dynamics](DYNAMICS.md) · [Circuit simulator](CIRCUIT_SIMULATOR.md) · [Circuit verification](CIRCUIT_VERIFICATION_GUIDE.md) · [Entanglement demo](ENTANGLEMENT_DEMO.md).
+Explore the accompanying documentation: [Dynamics](DYNAMICS.md) · [Circuit simulator](CIRCUIT_SIMULATOR.md) · [Circuit verification](CIRCUIT_VERIFICATION_GUIDE.md) · [Entanglement demo](ENTANGLEMENT_DEMO.md) · [State Inspector & initial states](STATE_INSPECTOR.md).
 
 ## For educators and students
 
@@ -178,7 +194,7 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-The v0.4.3 source passes **393 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
+The v0.5.0 source passes **468 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
 
 Build configuration and workflows live in `.github/workflows/`, and desktop packaging scripts live in `packaging/`. Please report reproducible errors with your OS version, installation method, screenshots or logs, and a short reproduction sequence.
 

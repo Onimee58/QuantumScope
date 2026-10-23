@@ -31,6 +31,12 @@ def _self_test():
         if not verdicts or not all("PASS" in v for v in verdicts):
             raise RuntimeError(f"Example verification failed: {verdicts}")
         lines.append(f"Circuit workspace: half adder {len(verdicts)}/{len(verdicts)} PASS")
+        from quantumscope.gui.state_inspector import StateInspector
+        inspector = StateInspector(workspace)
+        inspector.refresh()
+        if "column" not in inspector.where.text() or inspector.amp_table.rowCount() == 0:
+            raise RuntimeError("State Inspector did not render the state")
+        lines.append(f"State Inspector: {inspector.amp_table.rowCount()} amplitude row(s) rendered")
         lines.append("RESULT: PASS")
         status = 0
     except Exception:
