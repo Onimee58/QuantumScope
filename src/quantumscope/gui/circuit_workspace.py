@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, Q
 from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured, from_native_layout, from_qasm_layout
 from quantumscope.physics.circuit_layout import pack_and_order
 from quantumscope.gui.theme import canvas_color
+from quantumscope.editor.circuit_model import CircuitModel, EditorError
 from quantumscope.physics.circuit_examples import EXAMPLE_NAMES, example_circuit, has_specification
 from quantumscope.physics.circuit_verification import verify_example, inspect_basis
 from quantumscope.physics.gate_education import parse_angle, gate_information, transformation_rows
@@ -327,7 +328,7 @@ class ProbabilityBars(QWidget):
 
 class CircuitWorkspace(QWidget):
     def __init__(self,parent=None):
-        super().__init__(parent);self.n=3;self.columns=2;self._reserved_columns=2;self._pending_gate=None;self.gates={};self.measurements={};self._syncing=False;self.undo_stack=[];self.redo_stack=[];self._restoring=False;self.current_path=None;self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
+        super().__init__(parent);self.model=CircuitModel(3);self.current_path=None;self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
         page_layout=QVBoxLayout(self)
         page_layout.setContentsMargins(0,0,0,0)
         self.page_scroll=QScrollArea(self)
@@ -448,7 +449,6 @@ class CircuitWorkspace(QWidget):
         split.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         split.setStretchFactor(1,1)
         self.qubits.valueChanged.connect(self.resize_qubits);self.step.valueChanged.connect(self.show_step)
-        self.active_example=None;self._example_ops=None
         self.example()
 
     def _update_operand_labels(self,name):
@@ -467,110 +467,68 @@ class CircuitWorkspace(QWidget):
         elif multi:
             self.second_label.setText('Target' if name in ('CX','CZ') else 'Swap partner')
 
-    def _record(self):
-        return (self.n,self._reserved_columns,dict(self.gates),dict(self.measurements),self.active_example,self._example_ops)
-    def snapshot(self):
-        if not self._restoring:
-            self.undo_stack.append(self._record())
-            self.undo_stack=self.undo_stack[-80:];self.redo_stack.clear()
-    def _restore(self,record):
-        n,columns,gates,measurements,self.active_example,self._example_ops=record
-        self._reserved_columns=columns
-        self._restoring=True
-        self.n=n;self.columns=columns;self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
-        self.target.setRange(0,n-1);self.target3.setRange(0,n-1);self.grid.setRowCount(n);self.grid.setColumnCount(columns)
-        self.grid.setHorizontalHeaderLabels([str(i+1) for i in range(columns)])
-        self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)])
-        self.gates=dict(gates);self.measurements=dict(measurements);self._sync_columns();self.refresh();self._restoring=False
+    # ---- state lives in the Qt-free CircuitModel; these keep the widget API ----
+    n=property(lambda self:self.model.n,lambda self,v:setattr(self.model,'n',v))
+    gates=property(lambda self:self.model.gates,lambda self,v:setattr(self.model,'gates',v))
+    measurements=property(lambda self:self.model.measurements,lambda self,v:setattr(self.model,'measurements',v))
+    columns=property(lambda self:self.model.columns)
+    _reserved_columns=property(lambda self:self.model.reserved_columns,lambda self,v:setattr(self.model,'reserved_columns',v))
+    _pending_gate=property(lambda self:self.model.pending,lambda self,v:setattr(self.model,'pending',v))
+    active_example=property(lambda self:self.model.active_example,lambda self,v:setattr(self.model,'active_example',v))
+    _example_ops=property(lambda self:self.model.example_ops,lambda self,v:setattr(self.model,'example_ops',v))
+    undo_stack=property(lambda self:self.model.undo_stack)
+    redo_stack=property(lambda self:self.model.redo_stack)
+
+    def _sync_view(self):
+        """Match qubit controls, wires and columns to the model."""
+        n=self.model.n
+        if self.qubits.value()!=n:
+            self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
+        self.target.setRange(0,n-1);self.target3.setRange(0,n-1)
+        if self.grid.rowCount()!=n:
+            self.grid.setRowCount(n)
+            self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)])
+        needed=self.model.columns
+        if needed!=self.grid.columnCount():
+            offset=self.grid.horizontalScrollBar().value()
+            self.grid.setColumnCount(needed)
+            self.grid.setHorizontalHeaderLabels([str(i+1) for i in range(needed)])
+            self.grid.horizontalScrollBar().setValue(offset)
+    _sync_columns=_sync_view
+    def _expand_columns(self,needed=None):self._sync_view()
+    def _changed(self):
+        self._sync_view();self.refresh()
+    def _rejected(self,exc):
+        self.status.setText(str(exc))
+
+    def snapshot(self):self.model.snapshot()
     def undo(self):
-        if self.undo_stack:
-            self.redo_stack.append(self._record());self._restore(self.undo_stack.pop())
+        if self.model.undo():self._changed()
     def redo(self):
-        if self.redo_stack:
-            self.undo_stack.append(self._record());self._restore(self.redo_stack.pop())
+        if self.model.redo():self._changed()
     def resize_qubits(self,n):
-        if n<self.n and any(any(q>=n for q in g.targets) for g in self.gates.values()):
+        if self.model.removes_gates(n):
             choice=QMessageBox.question(self,'Remove qubits?',
                 'Gates targeting removed qubits will be deleted. Continue?',
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if choice!=QMessageBox.StandardButton.Yes:
-                self.qubits.blockSignals(True);self.qubits.setValue(self.n);self.qubits.blockSignals(False);return
-        self.snapshot()
-        self.gates={pos:g for pos,g in self.gates.items() if all(q<n for q in g.targets)}
-        self.measurements={q:c for q,c in self.measurements.items() if q<n}
-        self.n=n;self.target.setRange(0,n-1);self.target3.setRange(0,n-1);self.grid.setRowCount(n)
-        self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)]);self.refresh()
-    def clear(self):self.snapshot();self.active_example=None;self._example_ops=None;self.gates={};self.measurements={};self._reserved_columns=2;self._sync_columns();self.refresh()
-    def example(self):
-        if self.n<2:self.qubits.setValue(2)
-        self.snapshot();self.active_example='Bell pair';self._example_ops=None;self.gates={(0,0):Gate('H',(0,)),(0,1):Gate('CX',(0,1))};self.measurements={};self._sync_columns();self.refresh()
-    def _sync_columns(self):
-        """Keep precisely one trailing empty operation slot (two when empty)."""
-        last=max([c for _,c in self.gates]+list(self.measurements.values()),default=-1)
-        needed=max(2,last+2,self._reserved_columns)
-        if needed!=self.columns:
-            offset=self.grid.horizontalScrollBar().value()
-            self.columns=needed
-            self.grid.setColumnCount(needed)
-            self.grid.setHorizontalHeaderLabels([str(i+1) for i in range(needed)])
-            self.grid.horizontalScrollBar().setValue(offset)
-
-    def _expand_columns(self,needed):
-        # Retained for existing load/import callers; the model decides size.
-        self._sync_columns()
-    def operation_at(self,row,col):
-        for key,gate in self.gates.items():
-            if key[1]==col and row in gate.targets:
-                return ('gate', key, gate)
-        if self.measurements.get(row)==col:
-            return ('measurement',(row,col),None)
-        return None
-
+                self.qubits.blockSignals(True);self.qubits.setValue(self.model.n);self.qubits.blockSignals(False);return
+        try:self.model.resize(n)
+        except EditorError as exc:self._rejected(exc);return
+        self._changed()
+    def clear(self):self.model.clear();self._changed()
+    def example(self):self.model.load_bell();self._changed()
+    def operation_at(self,row,col):return self.model.operation_at(row,col)
     def move_operation(self,src_row,src_col,dst_row,dst_col):
-        found=self.operation_at(src_row,src_col)
-        if not found or (src_row,src_col)==(dst_row,dst_col):return
-        if not(0<=dst_row<self.n and 0<=dst_col<self.columns):return
-        kind,key,gate=found
-        if kind=='gate':
-            delta=dst_row-src_row
-            targets=tuple(q+delta for q in gate.targets)
-            if any(q<0 or q>=self.n for q in targets):
-                self.status.setText('Cannot move operation outside available qubits');return
-            others={k:v for k,v in self.gates.items() if k!=key}
-            if any(c==dst_col and set(v.targets)&set(targets) for (_,c),v in others.items()):
-                self.status.setText('Destination occupied by another operation');return
-            measurements=self.measurements
-            if any(q in measurements for q in targets) or (measurements and dst_col>=min(measurements.values())):
-                self.status.setText('Cannot move unitary past terminal measurements');return
-            moved=Gate(gate.name,targets,gate.angle,gate.phi,gate.lam)
-            self.snapshot();self.gates.pop(key);self.gates[(targets[0],dst_col)]=moved
-        else:
-            if dst_row in self.measurements and dst_row!=src_row:
-                self.status.setText('Target qubit already measured');return
-            if any(c>=dst_col for (_,c) in self.gates):
-                self.status.setText('Measurement must follow all unitary columns');return
-            if any(c!=dst_col for q,c in self.measurements.items() if q!=src_row):
-                self.status.setText('Measurements must occupy a shared terminal column');return
-            self.snapshot();self.measurements.pop(src_row);self.measurements[dst_row]=dst_col
-        self._sync_columns();self.refresh()
-
+        try:moved=self.model.move(src_row,src_col,dst_row,dst_col)
+        except EditorError as exc:self._rejected(exc);return
+        if moved:self._changed()
     def insert_column(self,index):
-        if not 0<=index<=self.columns:return
-        self.snapshot()
-        self.gates={(r,c+1 if c>=index else c):g for (r,c),g in self.gates.items()}
-        self.measurements={r:c+1 if c>=index else c for r,c in self.measurements.items()}
-        self._reserved_columns=max(self._reserved_columns+1,index+2)
-        self._sync_columns();self.refresh()
-
+        if self.model.insert_column(index):self._changed()
     def delete_empty_column(self,index):
-        if not 0<=index<self.columns:return
-        if any(c==index for _,c in self.gates) or index in self.measurements.values():
-            self.status.setText('Delete the gates in this column first');return
-        self.snapshot()
-        self.gates={(r,c-1 if c>index else c):g for (r,c),g in self.gates.items()}
-        self.measurements={r:c-1 if c>index else c for r,c in self.measurements.items()}
-        self._reserved_columns=max(2,self._reserved_columns-1)
-        self._sync_columns();self.refresh()
+        try:deleted=self.model.delete_empty_column(index)
+        except EditorError as exc:self._rejected(exc);return
+        if deleted:self._changed()
 
     def header_menu(self,point):
         index=self.grid.horizontalHeader().logicalIndexAt(point)
@@ -585,82 +543,41 @@ class CircuitWorkspace(QWidget):
         elif chosen is delete:self.delete_empty_column(index)
 
     def cancel_pending(self):
-        self._pending_gate=None
+        self.model.cancel_pending()
         if hasattr(self,'status'):self.status.setText('Placement cancelled');self.grid.viewport().update()
 
     def keyPressEvent(self,event):
-        if event.key()==Qt.Key.Key_Escape and self._pending_gate:
+        if event.key()==Qt.Key.Key_Escape and self.model.pending:
             self.cancel_pending();event.accept();return
         super().keyPressEvent(event)
 
     def place(self,name,row,col,operands=None):
-        if not (0<=row<self.n and 0<=col<self.columns):return
-        if name in DUAL+TRIPLE and operands is None:
-            if self.n < (3 if name in TRIPLE else 2):
-                self.status.setText('Not enough qubits for this gate');return
-            if self.operation_at(row,col):
-                self.status.setText('Choose an empty cell for the first operand');return
-            self._pending_gate=(name,col,(row,))
-            self.status.setText(f'{name}: target anchored on q{row}; select remaining qubit(s) in column {col+1} (Esc to cancel)');self.grid.viewport().update()
-            return
-        if (row,col) in self.gates or self.measurements.get(row)==col:
-            self.status.setText('Cell occupied: select or remove the existing gate first')
-            return
-        if name=='M':
-            if row in self.measurements:
-                self.status.setText('This qubit already has a terminal measurement');return
-            if any(c>=col for (r,c),g in self.gates.items()):
-                self.status.setText('M must be terminal on its measured qubit');return
-            if self.measurements and any(c!=col for c in self.measurements.values()):
-                self.status.setText('All measurement gates must be in the final circuit column');return
-            self.snapshot();self.measurements[row]=col;self._sync_columns();self.refresh();return
-        if name not in ALL:return
-        if row in self.measurements:
-            self.status.setText('Remove this qubit’s terminal measurement before adding gates');return
-        if self.measurements and col>=min(self.measurements.values()):
-            self.status.setText('Unitary gates must be before terminal measurements');return
-        ids=tuple(operands) if operands is not None else (row,)
-        if len(ids)!=(3 if name in TRIPLE else 2 if name in DUAL else 1) or len(set(ids))!=len(ids):
-            self.status.setText('Select distinct operand qubits');return
-        # Reject overlapping operations within a parallel column.
-        for (r,c),gate in self.gates.items():
-            if c==col and (r,c)!=(row,col) and set(gate.targets)&set(ids):
-                self.status.setText('Qubit collision in column; choose another column');return
-        self.snapshot()
-        self.gates[(row,col)]=Gate(name,ids,math.radians(self.angle.value()) if name in ('RX','RY','RZ','P','U') else 0.0,math.radians(self.phi.value()) if name=='U' else 0.0,math.radians(self.lam.value()) if name=='U' else 0.0)
-        self._sync_columns()
-        self.refresh()
+        try:
+            result=self.model.place(name,row,col,operands,math.radians(self.angle.value()),
+                                    math.radians(self.phi.value()),math.radians(self.lam.value()))
+        except EditorError as exc:self._rejected(exc);return
+        if isinstance(result,str):
+            self.status.setText(result);self.grid.viewport().update();return
+        if result:self._changed()
     def cell_click(self,r,c):
-        if not self._pending_gate:return
-        name,col,ids=self._pending_gate
-        if c!=col:
-            self.status.setText(f'Select a qubit in column {col+1}, or press Esc');return
-        if r in ids:
-            self.status.setText('Choose another qubit');return
-        if self.operation_at(r,c):
-            self.status.setText('Qubit occupied in this column');return
-        ids=ids+(r,)
-        if len(ids)<(3 if name in TRIPLE else 2):
-            self._pending_gate=(name,col,ids)
-            self.status.setText(f'{name}: select final qubit in column {col+1}');self.grid.viewport().update();return
-        self._pending_gate=None
+        if not self.model.pending:return
+        try:result=self.model.add_operand(r,c)
+        except EditorError as exc:
+            self._rejected(exc);self.grid.viewport().update();return
         self.grid.viewport().update()
-        # CX/CCX are target-first in the editor, control-first in Gate.targets.
-        ordered = ids[1:]+ids[:1] if name in ('CX','CCX') else ids
-        self.place(name,ids[0],col,ordered)
+        if isinstance(result,str):self.status.setText(result);return
+        if result:self._changed()
 
     def remove_at(self,pos):
         idx=self.grid.indexAt(pos)
-        if idx.isValid():
-            self.snapshot();self.gates.pop((idx.row(),idx.column()),None);self.measurements.pop(idx.row(),None) if self.measurements.get(idx.row())==idx.column() else None;self._sync_columns();self.refresh()
+        if idx.isValid() and self.model.remove(idx.row(),idx.column()):self._changed()
     def edit_gate_at(self,row,col):
-        gate=self.gates.get((row,col))
-        if gate is None:
+        found=self.model.editable_gate(row,col)
+        if found is None:
             return
-        if gate.name not in ('RX','RY','RZ','P','U'):
-            return
+        _,gate=found
         dialog=QDialog(self)
-        dialog.setWindowTitle(f'Edit {gate.name} gate on q{row}')
+        dialog.setWindowTitle(f'Edit {gate.name} gate on q{gate.targets[0]}')
         layout=QFormLayout(dialog)
         edits={}
         params=[('angle','θ' if gate.name!='P' else 'λ')]
@@ -679,9 +596,8 @@ class CircuitWorkspace(QWidget):
                 values={key:parse_angle(field.text()) for key,field in edits.items()}
             except ValueError as exc:
                 QMessageBox.warning(dialog,'Invalid gate parameter',str(exc));return
-            self.snapshot()
-            self.gates[(row,col)]=Gate(gate.name,gate.targets,values['angle'],values.get('phi',gate.phi),values.get('lam',gate.lam))
-            self.refresh()
+            self.model.edit_parameters(row,col,values['angle'],values.get('phi'),values.get('lam'))
+            self._changed()
             dialog.accept()
         buttons.accepted.connect(commit)
         dialog.exec()
@@ -690,20 +606,15 @@ class CircuitWorkspace(QWidget):
         idx=self.grid.indexAt(pos)
         if not idx.isValid():return
         row,col=idx.row(),idx.column()
-        gate=self.gates.get((row,col))
-        if gate is None and self.measurements.get(row)!=col:return
+        found=self.model.operation_at(row,col)
+        if found is None:return
         menu=QMenu(self)
-        if self._pending_gate:
+        if self.model.pending:
             cancel=menu.addAction('Cancel multi-qubit placement')
             if menu.exec(self.grid.viewport().mapToGlobal(pos)) is cancel:self.cancel_pending()
             return
-        if gate is not None:
-            if gate.name in ('RX','RY','RZ','P','U'):
-                edit=menu.addAction('Edit parameters…')
-            else:edit=None
-            info=None
-        else:edit=info=None
-        delete=menu.addAction('Remove gate')
+        edit=menu.addAction('Edit parameters…') if self.model.editable_gate(row,col) else None
+        delete=menu.addAction('Remove measurement' if found[0]=='measurement' else 'Remove gate')
         chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
         if chosen is edit and edit is not None:self.edit_gate_at(row,col)
         elif chosen is delete:self.remove_at(pos)
@@ -726,7 +637,7 @@ class CircuitWorkspace(QWidget):
             QMessageBox.warning(self,'PDF export failed',str(exc))
 
     def ordered(self):
-        return [g for (r,c),g in sorted(self.gates.items(),key=lambda x:(x[0][1],x[0][0]))]
+        return self.model.ordered()
     def refresh(self):
         saved_offset=self.grid.horizontalScrollBar().value()
         self.grid.clearContents()
@@ -740,16 +651,8 @@ class CircuitWorkspace(QWidget):
             self.grid.setItem(r,c,item)
         try:
             # One state per occupied *column*, including simultaneous disjoint gates.
-            self.column_ops={}
-            for (r,c),g in sorted(self.gates.items(),key=lambda item:(item[0][1],item[0][0])):
-                self.column_ops.setdefault(c,[]).append(g)
-            self.occupied_columns=sorted(self.column_ops)
-            self.states=evolution(self.n,[g for c in self.occupied_columns for g in self.column_ops[c]])
-            from quantumscope.physics.circuits import zero,apply_gate
-            state=zero(self.n);self.column_states=[state]
-            for c in self.occupied_columns:
-                for g in self.column_ops[c]:state=apply_gate(state,self.n,g)
-                self.column_states.append(state)
+            sim=self.model.simulate()
+            self.occupied_columns,self.column_states,self.states=sim.occupied_columns,sim.column_states,sim.states
         except Exception as exc:self.status.setText(str(exc));return
         last=max(self.occupied_columns,default=-1)
         self.step.setRange(0,last+1)
@@ -809,9 +712,8 @@ class CircuitWorkspace(QWidget):
     def load_example(self,index):
         if index==0:return
         choice=self.examples.itemText(index)
-        n,ops=example_circuit(choice)
-        self.set_circuit(n,ops)
-        self.active_example=choice;self._example_ops=tuple(self.ordered())
+        self.model.load_example(choice)
+        self._sync_view();self.grid.horizontalScrollBar().setValue(0);self.refresh()
         self.verify_circuit()
         self.status.setText('Loaded '+choice+' • illustrative reversible circuit; input bits and work registers shown as gates.'
             +(' Edits are checked against this example’s specification.' if has_specification(choice) else ''))
@@ -819,33 +721,12 @@ class CircuitWorkspace(QWidget):
     def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None):
         """Load a circuit. Without stored columns, gates are packed so that
         simultaneous gates share a column (simulation order is unchanged)."""
-        from quantumscope.physics.circuit_files import validate
-        from quantumscope.physics.circuit_layout import validate_columns
-        ops=list(ops)
-        validate(n,ops)
-        if columns is None:ops,columns=pack_and_order(n,ops)
-        else:validate_columns(ops,list(columns))
-        last=max(columns,default=-1)
-        if measurement_column is None or measurement_column<=last:measurement_column=last+1
-        self.snapshot()
-        self.active_example=None;self._example_ops=None
-        self._restoring=True
-        self.n=n
-        self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
-        self.target.setRange(0,n-1);self.target3.setRange(0,n-1)
-        self.grid.setRowCount(n)
-        self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(n)])
-        self.gates={(g.targets[0],c):g for g,c in zip(ops,columns)}
-        self.measurements={q:measurement_column for q in measured}
-        self._reserved_columns=max(2,total_columns or 0)
-        self._sync_columns()
-        self._restoring=False
-        self.grid.horizontalScrollBar().setValue(0)
-        self.refresh()
+        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns)
+        self._sync_view();self.grid.horizontalScrollBar().setValue(0);self.refresh()
     def _layout(self):
         """Gates in simulation order with their columns, for saving."""
-        items=sorted(self.gates.items(),key=lambda x:(x[0][1],x[0][0]))
-        return [g for _,g in items],[c for (_,c),_ in items]
+        gates,columns,_,_=self.model.layout()
+        return gates,columns
     def apply_theme(self):
         """Recolor theme-dependent content after an appearance change."""
         for r in range(self.verify_table.rowCount()):
@@ -859,12 +740,7 @@ class CircuitWorkspace(QWidget):
     def _show_notes(self,title,notes):
         if notes:QMessageBox.information(self,title,'\n\n'.join(notes))
     def verify_circuit(self):
-        if has_specification(self.active_example):
-            rows,note=verify_example(self.active_example,self.n,self.ordered())
-            if self._example_ops is not None and tuple(self.ordered())!=self._example_ops:
-                note=f'Edited {self.active_example}: checking against the original specification. '+note
-        else:
-            rows,note=inspect_basis(self.n,self.ordered())
+        rows,note=self.model.verification()
         self.verify_table.setRowCount(len(rows))
         for i,row in enumerate(rows):
             values=(row.input_label,row.output_label,row.expected_label,
@@ -890,8 +766,8 @@ class CircuitWorkspace(QWidget):
         if not path.lower().endswith('.qscope'):path+='.qscope'
         self.current_path=path
         try:
-            gates,columns=self._layout()
-            layout={'columns':columns,'measurement_column':min(self.measurements.values()) if self.measurements else None,'total_columns':self._reserved_columns}
+            gates,columns,mcol,total=self.model.layout()
+            layout={'columns':columns,'measurement_column':mcol,'total_columns':total}
             with open(path,'w',encoding='utf-8') as f:f.write(to_native_measured(self.n,gates,sorted(self.measurements),layout=layout))
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'Save failed',str(exc))
     def load_qasm(self):

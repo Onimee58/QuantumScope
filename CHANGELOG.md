@@ -1,3 +1,19 @@
+## v0.4.3 — Circuit editor model
+
+An internal release with no intended change to how QuantumScope looks or behaves; it prepares the editor for the v0.5 education features.
+
+- **Editor logic moved into a Qt-free `CircuitModel`** (`src/quantumscope/editor/circuit_model.py`). Placement, multi-qubit anchoring, moving, column insertion and deletion, terminal-measurement rules, undo/redo, examples, verification and per-column simulation now live there. The circuit workspace widget only turns input into model calls and draws the result. The widget shrank from 884 to 788 lines.
+- **40 new unit tests** cover every editing rule without a display. An opt-in GUI test file checks the widget delegates correctly; run it with `QUANTUMSCOPE_GUI_TESTS=1`.
+- **Verified unchanged behavior:**
+  - A scripted 44-step editing session gives the same gates, measurements, columns, status messages and verification results as v0.4.2.
+  - The rendered workspace is pixel-identical in both themes.
+- **Small fixes that fell out of the refactor:**
+  - right-clicking any wire of a multi-qubit gate (not only its anchor row) now offers Remove;
+  - loading a circuit or undoing now cancels a half-finished multi-qubit placement;
+  - empty trailing columns shrink after reducing the qubit count removes gates;
+  - removing nothing no longer adds an empty undo step.
+- Automated tests: 393 passing (353 existing + 40 new), plus 4 opt-in GUI tests.
+
 ## v0.4.2 — Light Mode, Gate Explorer and release checks
 
 - **Light Mode circuit canvas is readable.** Gate symbols, control dots, targets, measurement boxes, Bloch glyphs, probability charts, PASS/FAIL results and step highlights now use theme-aware colors instead of dark-theme colors painted onto the light canvas. Control dots went from 1.08:1 to 12.3:1 contrast. Every color pairing meets WCAG 2.1 AA (4.5:1 for text, 3:1 for graphics), enforced by automated tests. Switching themes recolors the circuit workspace immediately.

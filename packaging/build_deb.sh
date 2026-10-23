@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-VERSION="${1:-0.4.2}"
+VERSION="${1:-0.4.3}"
 ARCH=amd64
 APP_DIR="dist/QuantumScope"
 if [ ! -x "$APP_DIR/QuantumScope" ]; then echo "Missing $APP_DIR/QuantumScope. Run PyInstaller --onedir first." >&2; exit 1; fi
