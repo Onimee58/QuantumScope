@@ -7,6 +7,7 @@ import json
 import math
 from .circuits import Gate, ALL, DUAL, TRIPLE, MAX_QUBITS, parse_qasm, parse_qasm_detailed, zero
 from .circuit_layout import pack_and_order, validate_columns
+from .initial_states import InitialState, defaults, all_default, preparation_gates
 
 FORMAT = 'quantumscope-circuit'
 
@@ -28,7 +29,7 @@ def to_native(n, gates):
 def from_native(text):
     try: obj=json.loads(text)
     except json.JSONDecodeError as exc: raise ValueError('Invalid .qscope JSON') from exc
-    if not isinstance(obj, dict) or obj.get('format')!=FORMAT or obj.get('schema_version')!=1:
+    if not isinstance(obj, dict) or obj.get('format')!=FORMAT or obj.get('schema_version') not in (1,2):
         raise ValueError('Unsupported .qscope file format or version')
     n=obj.get('qubits'); ops=obj.get('operations')
     if type(n) is not int or not isinstance(ops,list): raise ValueError('Invalid circuit structure')
@@ -41,7 +42,19 @@ def from_native(text):
         if not isinstance(a,(int,float)):raise ValueError('Invalid angle')
         gates.append(Gate(op['gate'],tuple(op['qubits']),float(a),float(op.get('phi_radians',0)),float(op.get('lambda_radians',0))))
     validate(n,gates)
+    if not all_default(_initial_states(obj,n)):
+        raise ValueError('This circuit uses initial states; read it with from_native_layout')
     return n,gates
+
+def _initial_states(obj,n):
+    """Initial states stored in a schema-2 document (|0⟩ for schema 1)."""
+    if obj.get('schema_version')!=2:
+        if 'initial_states' in obj:raise ValueError('initial_states requires schema_version 2')
+        return defaults(n)
+    records=obj.get('initial_states')
+    if not isinstance(records,list) or len(records)!=n:
+        raise ValueError('Schema 2 files need one initial state per qubit')
+    return [InitialState.from_record(r) for r in records]
 
 def to_qasm(n, gates):
     validate(n,gates)
@@ -61,7 +74,11 @@ def convert(text,source_format,notes=None):
         if notes is not None:notes.extend(found)
         return to_native_measured(n,gates,measured,layout=layout)
     if source_format=='qscope':
-        n,gates,measured=from_native_measured(text);return to_qasm_measured(n,gates,measured)
+        n,gates,measured,layout=from_native_layout(text)
+        states=layout['initial_states']
+        if notes is not None and not all_default(states):
+            notes.append('OpenQASM 2 has no initial states, so they were written as preparation gates at the start.')
+        return to_qasm_measured(n,gates,measured,states)
     raise ValueError('Unknown source format')
 
 # Terminal measurements are deliberately distinct from unitary Gate instances.
@@ -78,8 +95,17 @@ def to_native_measured(n,gates,measured=(),layout=None):
     layout (optional, added in v0.4.1) is a dict with 'columns' (one column per
     operation), 'measurement_column' and 'total_columns'. It is stored as
     optional fields, so v0.4.0 can still open the file (ignoring the layout).
+    layout may also hold 'initial_states' (v0.5.0). If any qubit does not
+    start in |0⟩ the file is written as schema 2, which older versions refuse
+    to open rather than silently simulating from |0⟩.
     """
     data=json.loads(to_native(n,gates))
+    states=(layout or {}).get('initial_states')
+    if states is not None:
+        if len(states)!=n:raise ValueError('Need one initial state per qubit')
+        if not all_default(states):
+            data['schema_version']=2
+            data['initial_states']=[s.to_record() for s in states]
     data['terminal_measurements']=_measure_indices(n,measured)
     if layout is not None:
         columns=list(layout.get('columns') or [])
@@ -102,14 +128,26 @@ def from_native_measured(text):
     measured=_measure_indices(n,data.get('terminal_measurements',[]))
     return n,gates,measured
 
+def _from_native_any(text):
+    """(n, gates, measured, initial states, document) for schema 1 or 2."""
+    try: obj=json.loads(text)
+    except json.JSONDecodeError as exc: raise ValueError('Invalid .qscope JSON') from exc
+    if not isinstance(obj,dict) or obj.get('format')!=FORMAT or obj.get('schema_version') not in (1,2):
+        raise ValueError('Unsupported .qscope file format or version')
+    n=obj.get('qubits')
+    if type(n) is not int:raise ValueError('Invalid circuit structure')
+    states=_initial_states(obj,n)
+    plain=dict(obj);plain['schema_version']=1;plain.pop('initial_states',None)
+    n,gates,measured=from_native_measured(json.dumps(plain))
+    return n,gates,measured,states,obj
+
 def from_native_layout(text):
     """Return (n, gates, measured, layout).
 
     Files without stored columns (v0.4.0 and earlier) get a packed layout, so
     simultaneous gates share a column instead of one gate per column.
     """
-    n,gates,measured=from_native_measured(text)
-    data=json.loads(text)
+    n,gates,measured,states,data=_from_native_any(text)
     stored=[op.get('column') for op in data['operations']]
     if gates and all(c is not None for c in stored):
         validate_columns(gates,stored);columns=stored
@@ -125,13 +163,23 @@ def from_native_layout(text):
     total=data.get('total_columns')
     if total is not None and (type(total) is not int or total<1 or total>100000):
         raise ValueError('Invalid total column count')
-    return n,gates,measured,{'columns':columns,'measurement_column':mcol if measured else None,'total_columns':total}
+    return n,gates,measured,{'columns':columns,'measurement_column':mcol if measured else None,'total_columns':total,'initial_states':states}
 
-def to_qasm_measured(n,gates,measured=()):
+def to_qasm_measured(n,gates,measured=(),initial_states=None):
+    """OpenQASM 2 text. Non-|0⟩ initial states become preparation gates at the
+    start (OpenQASM 2 has no initial-state syntax), marked with comments."""
     measured=_measure_indices(n,measured)
-    qasm=to_qasm(n,gates)
-    if not measured:return qasm
+    prep=preparation_gates(initial_states) if initial_states is not None else []
+    if initial_states is not None and len(initial_states)!=n:raise ValueError('Need one initial state per qubit')
+    qasm=to_qasm(n,prep+list(gates))
     lines=qasm.rstrip().splitlines()
+    if prep:
+        ascii_label=lambda s:s.label.replace('⟩','>').replace('−','-').replace('ψ','psi')
+        described=', '.join(f'q{q}={ascii_label(s)}'+('' if s.preset_key else f'(theta={s.theta:.17g}, phi={s.phi:.17g})')
+                            for q,s in enumerate(initial_states) if not s.is_default)
+        lines.insert(3,f'// Initial-state preparation from QuantumScope: {described}')
+        lines.insert(4+len(prep),'// Circuit')
+    if not measured:return '\n'.join(lines)+'\n'
     lines.insert(3,f'creg c[{n}];')
     lines.extend(f'measure q[{q}] -> c[{q}];' for q in measured)
     return '\n'.join(lines)+'\n'
@@ -173,4 +221,4 @@ def from_qasm_layout(text):
     _,_,fences,notes=parse_qasm_detailed(';'.join(unitary)+';')
     gates,columns=pack_and_order(n,gates,fences)
     last=max(columns,default=-1)
-    return n,gates,measured,{'columns':columns,'measurement_column':last+1 if measured else None,'total_columns':None},notes
+    return n,gates,measured,{'columns':columns,'measurement_column':last+1 if measured else None,'total_columns':None,'initial_states':defaults(n)},notes

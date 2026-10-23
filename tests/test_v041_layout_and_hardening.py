@@ -108,7 +108,8 @@ def test_native_layout_round_trip_keeps_parallel_and_empty_columns():
     text = to_native_measured(3, gates, [0, 2], layout=layout)
     n, restored, measured, back = from_native_layout(text)
     assert (n, restored, measured) == (3, gates, [0, 2])
-    assert back == layout
+    assert {key: back[key] for key in layout} == layout
+    assert all(state.is_default for state in back['initial_states'])  # added in v0.5.0
 
 
 def test_layout_file_still_opens_with_v040_reader():

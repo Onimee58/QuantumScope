@@ -12,10 +12,12 @@ occupies every qubit in Gate.targets within that column.
 """
 from dataclasses import dataclass
 
-from quantumscope.physics.circuits import ALL, DUAL, TRIPLE, MAX_QUBITS, Gate, apply_gate, evolution, zero
+from quantumscope.physics.circuits import ALL, DUAL, TRIPLE, MAX_QUBITS, Gate, apply_gate, evolution
 from quantumscope.physics.circuit_examples import example_circuit, has_specification
 from quantumscope.physics.circuit_layout import pack_and_order, validate_columns
 from quantumscope.physics.circuit_verification import inspect_basis, verify_example
+from quantumscope.physics.initial_states import DEFAULT, InitialState, all_default, defaults, product_state
+from quantumscope.physics.state_analysis import analyze_circuit
 
 PARAMETERIZED = ('RX', 'RY', 'RZ', 'P', 'U')
 UNDO_LIMIT = 80
@@ -47,6 +49,7 @@ class CircuitModel:
         self.active_example = None
         self.example_ops = None    # example's original gate order, to detect edits
         self.pending = None        # (name, col, operand rows) during multi-qubit placement
+        self.initial_states = defaults(n)   # per-qubit starting state, |0⟩ by default
         self.undo_stack = []
         self.redo_stack = []
 
@@ -79,7 +82,7 @@ class CircuitModel:
     # ---- undo/redo ------------------------------------------------------------
     def _record(self):
         return (self.n, self.reserved_columns, dict(self.gates), dict(self.measurements),
-                self.active_example, self.example_ops)
+                self.active_example, self.example_ops, tuple(self.initial_states))
 
     def snapshot(self):
         self.undo_stack.append(self._record())
@@ -88,8 +91,9 @@ class CircuitModel:
 
     def _restore(self, record):
         (self.n, self.reserved_columns, gates, measurements,
-         self.active_example, self.example_ops) = record
+         self.active_example, self.example_ops, states) = record
         self.gates, self.measurements = dict(gates), dict(measurements)
+        self.initial_states = list(states)
         self.pending = None
 
     def undo(self):
@@ -112,6 +116,7 @@ class CircuitModel:
         self.active_example = self.example_ops = self.pending = None
         self.gates, self.measurements = {}, {}
         self.reserved_columns = 2
+        self.initial_states = defaults(self.n)
 
     def load_bell(self):
         """The quick 'Bell example' button (not a verified example)."""
@@ -121,9 +126,12 @@ class CircuitModel:
         self.active_example, self.example_ops, self.pending = 'Bell pair', None, None
         self.gates = {(0, 0): Gate('H', (0,)), (0, 1): Gate('CX', (0, 1))}
         self.measurements = {}
+        self.initial_states = defaults(self.n)
 
-    def set_circuit(self, n, ops, columns=None, measured=(), measurement_column=None, total_columns=None):
-        """Replace the circuit. Without columns, gates are packed (simulation unchanged)."""
+    def set_circuit(self, n, ops, columns=None, measured=(), measurement_column=None, total_columns=None,
+                    initial_states=None):
+        """Replace the circuit. Without columns, gates are packed (simulation unchanged).
+        initial_states defaults to |0⟩ on every qubit."""
         from quantumscope.physics.circuit_files import validate
         ops = list(ops)
         validate(n, ops)
@@ -135,12 +143,16 @@ class CircuitModel:
         last = max(columns, default=-1)
         if measurement_column is None or measurement_column <= last:
             measurement_column = last + 1
+        states = defaults(n) if initial_states is None else list(initial_states)
+        if len(states) != n or not all(isinstance(s, InitialState) for s in states):
+            raise ValueError('Need one initial state per qubit')
         self.snapshot()
         self.active_example = self.example_ops = self.pending = None
         self.n = n
         self.gates = {(g.targets[0], c): g for g, c in zip(ops, columns)}
         self.measurements = {q: measurement_column for q in measured}
         self.reserved_columns = max(2, total_columns or 0)
+        self.initial_states = states
 
     def load_example(self, name):
         n, ops = example_circuit(name)
@@ -159,8 +171,25 @@ class CircuitModel:
         self.gates = {pos: g for pos, g in self.gates.items() if all(q < n for q in g.targets)}
         self.measurements = {q: c for q, c in self.measurements.items() if q < n}
         self.n = n
+        self.initial_states = (self.initial_states + defaults(n))[:n]
         if self.pending and any(q >= n for q in self.pending[2]):
             self.pending = None
+
+    # ---- initial states -----------------------------------------------------------
+    def set_initial_state(self, qubit, state):
+        """Set a qubit's starting state. Returns False if it is unchanged."""
+        if not 0 <= qubit < self.n:
+            raise EditorError('No such qubit')
+        if not isinstance(state, InitialState):
+            raise EditorError('Invalid initial state')
+        if self.initial_states[qubit] == state:
+            return False
+        self.snapshot()
+        self.initial_states[qubit] = state
+        return True
+
+    def initial_vector(self):
+        return product_state(self.initial_states)
 
     # ---- placement --------------------------------------------------------------
     def place(self, name, row, col, operands=None, angle=0.0, phi=0.0, lam=0.0):
@@ -336,8 +365,16 @@ class CircuitModel:
             rows, note = verify_example(self.active_example, self.n, self.ordered())
             if self.is_edited_example():
                 note = f'Edited {self.active_example}: checking against the original specification. ' + note
-            return rows, note
-        return inspect_basis(self.n, self.ordered())
+        else:
+            rows, note = inspect_basis(self.n, self.ordered())
+        if not all_default(self.initial_states):
+            note += ' The table checks the gate logic for each basis input; it does not use the chosen initial states.'
+        return rows, note
+
+    def analysis(self):
+        """Gate statistics for the State Inspector's Circuit tab."""
+        gates, columns, _, _ = self.layout()
+        return analyze_circuit(self.n, gates, columns, sorted(self.measurements))
 
     def simulate(self):
         """Exact state before and after each occupied column (parallel gates commute)."""
@@ -345,8 +382,9 @@ class CircuitModel:
         for (_, c), g in sorted(self.gates.items(), key=lambda item: (item[0][1], item[0][0])):
             column_ops.setdefault(c, []).append(g)
         occupied = sorted(column_ops)
-        states = evolution(self.n, [g for c in occupied for g in column_ops[c]])
-        state = zero(self.n)
+        start = self.initial_vector()
+        states = evolution(self.n, [g for c in occupied for g in column_ops[c]], start)
+        state = start
         column_states = [state]
         for c in occupied:
             for g in column_ops[c]:

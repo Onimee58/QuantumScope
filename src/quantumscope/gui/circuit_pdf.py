@@ -2,9 +2,13 @@
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QPdfWriter, QPainter, QColor, QPen, QFont, QPageSize
 from quantumscope.physics.circuits import evolution
+from quantumscope.physics.gate_education import angle_text
+from quantumscope.physics.initial_states import defaults, product_state
 
-def write_circuit_pdf(filename,n,gates,measurements,include_report=False):
-    """Render the full circuit with scalable Qt vector primitives, not a screenshot."""
+def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial_states=None):
+    """Render the full circuit with scalable Qt vector primitives, not a screenshot.
+    Each wire is labeled with its initial state (|0⟩ unless given)."""
+    initial_states=list(initial_states) if initial_states is not None else defaults(n)
     columns=max([c for _,c in gates]+list(measurements.values()),default=0)+1
     writer=QPdfWriter(str(filename));writer.setResolution(96)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.A3))
@@ -15,19 +19,24 @@ def write_circuit_pdf(filename,n,gates,measurements,include_report=False):
         margin=48
         lane=72
         graph_width=max(400,columns*110)
-        scale=min(1.0,(width-2*margin-70)/graph_width)
+        scale=min(1.0,(width-2*margin-125)/graph_width)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(0,0,width,height,QColor('white'))
         painter.setPen(QColor('#152536'));painter.setFont(QFont('Sans',17,QFont.Weight.Bold))
         painter.drawText(margin,65,'QuantumScope Circuit')
         painter.setFont(QFont('Sans',9))
         painter.drawText(margin,90,f'{n} qubits   •   {len(gates)} unitary gates   •   {len(measurements)} terminal measurements')
-        painter.save();painter.translate(margin+40,125);painter.scale(scale,scale)
+        painter.save();painter.translate(margin+95,125);painter.scale(scale,scale)
         painter.setFont(QFont('Sans',12))
         for q in range(n):
             y=35+q*lane
             painter.setPen(QPen(QColor('#273c4e'),2))
-            painter.drawText(-38,y+5,f'q{q}')
+            state=initial_states[q]
+            painter.drawText(-92,y+5,f'q{q}  {state.label}')
+            if state.preset_key is None:
+                painter.setFont(QFont('Sans',8))
+                painter.drawText(-92,y+21,f'θ={angle_text(state.theta)}, φ={angle_text(state.phi)}')
+                painter.setFont(QFont('Sans',12))
             painter.drawLine(0,y,graph_width,y)
         for (r,c),gate in sorted(gates.items(),key=lambda x:(x[0][1],x[0][0])):
             x=55+110*c;y=35+lane*r
@@ -58,7 +67,7 @@ def write_circuit_pdf(filename,n,gates,measurements,include_report=False):
             painter.drawText(rect,Qt.AlignmentFlag.AlignCenter,'M')
         painter.restore()
         if include_report:
-            state=evolution(n,[g for _,g in sorted(gates.items(),key=lambda item:(item[0][1],item[0][0]))])[-1]
+            state=evolution(n,[g for _,g in sorted(gates.items(),key=lambda item:(item[0][1],item[0][0]))],product_state(initial_states))[-1]
             probs=abs(state)**2
             order=sorted(range(len(probs)),key=lambda i:-probs[i])[:16]
             painter.setPen(QColor('#152536'));painter.setFont(QFont('Sans',11,QFont.Weight.Bold))
