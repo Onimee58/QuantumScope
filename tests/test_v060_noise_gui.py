@@ -29,8 +29,11 @@ def bell(app):
 
 
 def test_palette_has_a_noise_section(bell):
-    texts = [bell.palette.item(i).text() for i in range(bell.palette.count())]
-    assert '— Noise —' in texts and 'Depolarize' in texts
+    gates = [bell.palette.item(i).text() for i in range(bell.palette.count())]
+    noise = [bell.noise_palette.item(i).text() for i in range(bell.noise_palette.count())]
+    assert 'H' in gates and 'M' in gates and 'Depolarize' in noise and 'Depolarize' not in gates
+    cell = bell.palette.gridSize()
+    assert bell.palette.width() < 4 * cell.width() and bell.palette.height() < 8 * cell.height()   # 3 × 7 grid
     assert bell.noise_button.text() == 'Noise: off'
 
 
@@ -114,3 +117,28 @@ def test_large_registers_show_noise_only_at_the_end(app):
     assert 'purity' in w.result.toPlainText()                 # final column: noisy
     w.step.setValue(1)
     assert 'final column' in w.result.toPlainText()
+
+
+def test_inspector_shows_the_mixed_state(bell):
+    bell.model.set_noise_model(N.PRESETS['Moderate'])
+    bell._changed()
+    bell.open_state_inspector()
+    inspector = bell._inspector
+    assert inspector.tabs.tabText(0) == 'Probabilities' and inspector.tabs.tabText(1) == 'Density matrix'
+    assert 'purity' in inspector.where.text() and 'mixed' in inspector.amp_table.item(0, 1).text()
+    assert 'Density matrix' in inspector.dirac.toPlainText()
+    assert not any(b.isEnabled() for b in inspector._copy_buttons)
+    assert 'noise and/or entanglement' in inspector.reduced_info.text()
+    bell.model.set_noise_model(N.NoiseModel())
+    bell._changed()
+    assert inspector.tabs.tabText(1) == 'Statevector' and all(b.isEnabled() for b in inspector._copy_buttons)
+
+
+def test_verification_reports_noisy_success(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('grover', {'n': 2, 'marked': '11', 'iterations': 1})
+    w.model.set_noise_model(N.PRESETS['Very noisy'])
+    w._changed()
+    w.verify_circuit()
+    assert 'With noise: P(11)' in w.verify_status.text() and 'PASS' in w.verify_status.text()

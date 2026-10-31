@@ -730,6 +730,22 @@ class CircuitModel:
         return CircuitView(self.n, gates, start, [pl.block for pl in self.blocks.values()],
                            tuple(sorted(self.measurements)), final)
 
+    def noisy_verification(self):
+        """Algorithm checks evaluated on the noisy final state (None if not applicable).
+
+        Truth-table examples test every basis input of the ideal gates, so they
+        have no noisy counterpart; algorithm specifications use the final state.
+        """
+        if self.active_entry is None or not self.noisy:
+            return None
+        from quantumscope.physics.algorithms import entry
+        key, params = self.active_entry
+        if entry(key).menu != 'Algorithms':
+            return None
+        view = self.circuit_view()
+        view.final_state = self.simulate_noisy(store=False)[1][-1]
+        return entry(key).spec(dict(params), view)
+
     def verification(self):
         """(rows, note) for the verification table."""
         if self.active_entry is not None:

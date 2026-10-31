@@ -19,7 +19,6 @@ NOISE_PALETTE = {'Bit flip': 'bit_flip', 'Phase flip': 'phase_flip', 'Depolarize
                  'Amp. damp': 'amplitude_damping', 'Dephase': 'phase_damping'}
 NOISE_SHORT = {'bit_flip': 'BF', 'phase_flip': 'PF', 'depolarizing': 'DEP', 'amplitude_damping': 'AD',
                'phase_damping': 'PD'}
-NOISE_SEPARATOR = '— Noise —'
 from quantumscope.gui import preferences as prefs
 from quantumscope.gui.controls import Debouncer
 from quantumscope.editor.circuit_model import CircuitModel, EditorError
@@ -40,7 +39,7 @@ class Palette(QListWidget):
         self.setDefaultDropAction(Qt.DropAction.CopyAction)
     def startDrag(self, actions):
         item=self.currentItem()
-        if item is None or item.text()==NOISE_SEPARATOR:return
+        if item is None:return
         drag=QDrag(self); mime=QMimeData();mime.setText('QS_GATE:'+item.text());drag.setMimeData(mime)
         drag.exec(Qt.DropAction.CopyAction)
 
@@ -482,11 +481,21 @@ class CircuitWorkspace(QWidget):
         # A whole-page scroll area, not a shrinking circuit editor, handles
         # limited vertical space on Windows and older Ubuntu releases.
         outer.addWidget(split)
-        self.palette=Palette();self.palette.addItems(list(ALL)+['M',NOISE_SEPARATOR,*NOISE_PALETTE]);self._style_palette();self.palette.setMinimumWidth(85);self.palette.setMaximumWidth(130)
-        # Palette clicks only select palette entries; they never place or replace gates.
+        # Palette: gates in a 3-column grid, noise channels in a 2-column grid below.
+        # Clicks only select entries; they never place or replace gates.
+        side=QWidget();sv=QVBoxLayout(side);sv.setContentsMargins(0,0,0,0);sv.setSpacing(4)
+        sv.addWidget(QLabel('Gates'))
+        self.palette=Palette();self.palette.addItems(list(ALL)+['M']);self._grid_palette(self.palette,3,64)
         self.palette.setToolTip('Drag to place a gate; double-click for the Gate Explorer')
-        self.palette.itemDoubleClicked.connect(lambda item:self.show_gate_explorer(item.text()) if item.text() not in NOISE_PALETTE and item.text()!=NOISE_SEPARATOR else None)
-        split.addWidget(self.palette)
+        self.palette.itemDoubleClicked.connect(lambda item:self.show_gate_explorer(item.text()))
+        sv.addWidget(self.palette)
+        sv.addWidget(QLabel('Noise'))
+        self.noise_palette=Palette();self.noise_palette.addItems(list(NOISE_PALETTE));self._grid_palette(self.noise_palette,2,92)
+        self.noise_palette.setToolTip('Drag a noise channel onto a wire; double-click it there to set its strength')
+        sv.addWidget(self.noise_palette)
+        sv.addStretch()
+        self._style_palette()
+        split.addWidget(side)
         center=QWidget();v=QVBoxLayout(center);split.addWidget(center)
         self.grid=Grid(self);self.grid.setRowCount(self.n);self.grid.setColumnCount(self.columns)
         self.grid.setHorizontalHeaderLabels([f'{i+1}' for i in range(self.columns)]);self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(self.n)])
@@ -625,15 +634,28 @@ class CircuitWorkspace(QWidget):
     def snapshot(self):self.model.snapshot()
 
     # ---- noise ------------------------------------------------------------------------------
+    @staticmethod
+    def _grid_palette(palette,columns,cell):
+        """Lay a palette out as a fixed grid (columns × rows) with no scrolling."""
+        from PySide6.QtCore import QSize
+        from PySide6.QtWidgets import QListView
+        palette.setObjectName('gatePalette')          # tighter item padding (see theme.py)
+        palette.setViewMode(QListView.ViewMode.IconMode)
+        palette.setFlow(QListView.Flow.LeftToRight);palette.setWrapping(True)
+        palette.setMovement(QListView.Movement.Static);palette.setResizeMode(QListView.ResizeMode.Adjust)
+        palette.setGridSize(QSize(cell,34));palette.setUniformItemSizes(True);palette.setSpacing(0)
+        palette.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        palette.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        for i in range(palette.count()):
+            item=palette.item(i);item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item.setSizeHint(QSize(cell-6,30))
+        rows=(palette.count()+columns-1)//columns
+        palette.setFixedSize(columns*cell+10,rows*34+10)
     def _style_palette(self):
-        for i in range(self.palette.count()):
-            item=self.palette.item(i)
-            if item.text()==NOISE_SEPARATOR:
-                item.setFlags(Qt.ItemFlag.NoItemFlags)
-                item.setToolTip('Noise channels: drag one onto a wire; double-click it there to set its strength')
-            elif item.text() in NOISE_PALETTE:
-                name=noisemod.CHANNELS[NOISE_PALETTE[item.text()]][0]
-                item.setToolTip(f'{name} noise channel — drag onto a wire (drawn as a dashed box)')
+        for i in range(self.noise_palette.count()):
+            item=self.noise_palette.item(i)
+            name=noisemod.CHANNELS[NOISE_PALETTE[item.text()]][0]
+            item.setToolTip(f'{name} noise channel — drag onto a wire (drawn as a dashed box)')
     def _noise_summary(self):
         model=self.model.noise_model
         if not model.active and not self.model.noise:return 'Noise: off'
@@ -840,7 +862,8 @@ class CircuitWorkspace(QWidget):
         completed=sum(1 for c in getattr(self,'occupied_columns',[]) if c<k)
         states=getattr(self,'column_states',None) or [self.model.initial_vector()]
         return {'state':states[min(completed,len(states)-1)],'n':self.model.n,'step':k,
-                'steps':self.step.maximum(),'layers_done':completed,'model':self.model}
+                'steps':self.step.maximum(),'layers_done':completed,'model':self.model,
+                'rho':self._noisy_state_at(k) if self.noisy_view else None,'noisy':bool(self.noisy_view)}
     def undo(self):
         if self.model.undo():self._changed()
     def redo(self):
@@ -1231,6 +1254,9 @@ class CircuitWorkspace(QWidget):
         if notes:QMessageBox.information(self,title,'\n\n'.join(notes))
     def verify_circuit(self):
         rows,note=self.model.verification()
+        noisy=self.model.noisy_verification()
+        if noisy:   # the PASS/FAIL judges the ideal circuit; report what noise does to it
+            note+='  With noise: '+'; '.join(r.output_label for r in noisy[0][:3])+'.'
         self.verify_table.setRowCount(len(rows))
         for i,row in enumerate(rows):
             values=(row.input_label,row.output_label,row.expected_label,

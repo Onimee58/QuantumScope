@@ -195,8 +195,9 @@ class CircuitView:
 
 
 def marginal(state, n, qubits):
-    """Probabilities of each bit string on `qubits` (listed in order) from a pure state."""
-    probs = distribution(state)
+    """Probabilities of each bit string on `qubits` (listed in order), from a pure
+    state vector or — under noise — a density matrix (its diagonal)."""
+    probs = np.clip(np.real(np.diag(state)), 0, 1) if np.ndim(state) == 2 else distribution(state)
     out = {}
     for index, p in enumerate(probs):
         if p < 1e-15:
@@ -354,7 +355,9 @@ def spec_qft(p, view):
     f = dft_matrix(n)
     expected = np.linalg.matrix_power(f, qft) @ view.initial_vector
     expected = np.linalg.matrix_power(f.conj().T, inverse) @ expected if inverse else expected
-    fidelity = float(abs(np.vdot(expected, view.final_state)) ** 2)
+    final = view.final_state
+    fidelity = (float(np.real(np.vdot(expected, final @ expected))) if np.ndim(final) == 2   # noisy: ⟨e|ρ|e⟩
+                else float(abs(np.vdot(expected, final)) ** 2))
     what = ('QFT' if qft else '') + (' then QFT†' if inverse else '')
     row = _row(f'{qft} QFT, {inverse} QFT† on the initial state', f'fidelity {fidelity:.9f}',
                f'{what.strip() or "identity"} of the input (DFT matrix)', fidelity, abs(fidelity - 1) < 1e-9)

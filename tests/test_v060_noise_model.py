@@ -155,3 +155,37 @@ def test_invalid_noise_in_files_is_rejected(change):
     with pytest.raises(ValueError):
         n, gates, measured, layout = from_native_layout(json.dumps(data))
         CircuitModel().set_circuit(n, gates, layout['columns'], measured, noise=layout['noise'])
+
+
+# ---- algorithm checks under noise ---------------------------------------------------------------
+
+@pytest.mark.parametrize('key,values', [('grover', {'n': 3, 'marked': '101', 'iterations': -1}),
+                                        ('bernstein_vazirani', {'n': 3, 's': '101'}),
+                                        ('qft', {'n': 3, 'x': 5, 'inverse': 'no'})])
+def test_noisy_verification_lowers_success_but_ideal_still_passes(key, values):
+    m = CircuitModel()
+    m.load_library(key, values)
+    assert m.noisy_verification() is None                      # no noise: nothing extra to report
+    m.set_noise_model(N.PRESETS['Moderate'])
+    ideal, noisy = m.verification()[0][0], m.noisy_verification()[0][0]
+    assert ideal.passed and 0 < noisy.probability < ideal.probability
+
+
+def test_noisy_verification_without_noise_matches_ideal():
+    m = CircuitModel()
+    m.load_library('grover', {'n': 2, 'marked': '11', 'iterations': 1})
+    m.set_noise_model(N.NoiseModel(True, single=0.0, two=0.0, readout=0.1))   # readout only: state unchanged
+    assert m.noisy_verification()[0][0].probability == pytest.approx(m.verification()[0][0].probability)
+
+
+def test_truth_table_examples_have_no_noisy_check():
+    m = CircuitModel()
+    m.load_library('full_adder')
+    m.set_noise_model(N.PRESETS['Moderate'])
+    assert m.noisy_verification() is None
+
+
+def test_marginal_accepts_a_density_matrix():
+    from quantumscope.physics.algorithms import marginal
+    psi = np.array([0.6, 0, 0, 0.8], complex)
+    assert marginal(N.density(psi), 2, [0]) == pytest.approx(marginal(psi, 2, [0]))

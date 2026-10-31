@@ -68,6 +68,7 @@ QScrollBar::handle:horizontal { background: #38536c; border-radius: 5px; min-wid
 QListWidget { background:#112035; color:#dfeeff; border:1px solid #3b5975; border-radius:7px; }
 QListWidget::item { background:#213c56; color:#f2f7ff; border:1px solid #3b5975; border-radius:4px; padding:5px; }
 QListWidget::item:selected { background:#145c82; color:#ffffff; }
+QListWidget#gatePalette::item { padding: 1px 2px; }
 QTableWidget { background:#101c2c; color:#deefff; gridline-color:#34516d; border:1px solid #304962; }
 QTableWidget::item { background:#101c2c; color:#deefff; }
 QTableWidget::item:selected { background:#245574; color:#ffffff; }
@@ -109,6 +110,7 @@ QToolButton#quickValue:hover { background: #d1e6f4; }
 QListWidget { background:#f4f8fc; color:#19334b; border:1px solid #aac4d8; }
 QListWidget::item { background:#e4eff8; color:#1b4058; border:1px solid #c2d5e4; }
 QListWidget::item:selected { background:#1b6d91; color:#ffffff; }
+QListWidget#gatePalette::item { padding: 1px 2px; }
 QTableWidget { background:#f5f9fe; color:#1b364e; gridline-color:#c3d5e5; border:1px solid #aac4d8; }
 QTableWidget::item { background:#f5f9fe; color:#1b364e; }
 QTableWidget::item:selected { background:#c8e6f5; color:#14344d; }
