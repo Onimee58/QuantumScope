@@ -12,6 +12,14 @@ from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to
 from quantumscope.physics.circuit_layout import pack_and_order
 from quantumscope.gui.theme import canvas_color
 from quantumscope.physics.display import bits, ket
+from quantumscope.physics import noise as noisemod
+
+# Palette names for placeable noise channels -> channel kind (drawn as dashed boxes).
+NOISE_PALETTE = {'Bit flip': 'bit_flip', 'Phase flip': 'phase_flip', 'Depolarize': 'depolarizing',
+                 'Amp. damp': 'amplitude_damping', 'Dephase': 'phase_damping'}
+NOISE_SHORT = {'bit_flip': 'BF', 'phase_flip': 'PF', 'depolarizing': 'DEP', 'amplitude_damping': 'AD',
+               'phase_damping': 'PD'}
+NOISE_SEPARATOR = '— Noise —'
 from quantumscope.gui import preferences as prefs
 from quantumscope.gui.controls import Debouncer
 from quantumscope.editor.circuit_model import CircuitModel, EditorError
@@ -32,7 +40,7 @@ class Palette(QListWidget):
         self.setDefaultDropAction(Qt.DropAction.CopyAction)
     def startDrag(self, actions):
         item=self.currentItem()
-        if item is None:return
+        if item is None or item.text()==NOISE_SEPARATOR:return
         drag=QDrag(self); mime=QMimeData();mime.setText('QS_GATE:'+item.text());drag.setMimeData(mime)
         drag.exec(Qt.DropAction.CopyAction)
 
@@ -113,6 +121,7 @@ class Grid(QTableWidget):
                 p.setFont(QFont('Sans',10,QFont.Weight.DemiBold))
                 p.drawText(box,Qt.AlignmentFlag.AlignCenter,g.name)
         self._draw_blocks(p,blocks,rect)
+        self._draw_noise(p,rows)
         # Draw incomplete multi-qubit placement as a preview, not a committed gate.
         pending = getattr(self.owner, '_pending_gate', None)
         if pending:
@@ -153,6 +162,21 @@ class Grid(QTableWidget):
         top=self.visualRect(self.model().index(pl.block.low,pl.col))
         bottom=self.visualRect(self.model().index(pl.block.high,min(pl.end,self.columnCount()-1)))
         return QRectF(top.left(),top.top(),bottom.right()-top.left(),bottom.bottom()-top.top())
+
+    def _draw_noise(self,p,rows):
+        """Noise channels: a dashed orange box, never mistaken for a gate."""
+        color=canvas_color('chart_sampled')
+        for (row,col),element in self.owner.model.noise.items():
+            if row>=rows or col>=self.columnCount():continue
+            box=QRectF(self.visualRect(self.model().index(row,col))).adjusted(10,8,-10,-8)
+            fill=QColor(color);fill.setAlphaF(0.12)
+            p.setBrush(fill);p.setPen(QPen(color,1.6,Qt.PenStyle.DashLine))
+            p.drawRoundedRect(box,6,6)
+            p.setPen(canvas_color('chart_text'))
+            p.setFont(QFont('Sans',8,QFont.Weight.DemiBold))
+            p.drawText(box.adjusted(0,2,0,-box.height()/2),Qt.AlignmentFlag.AlignCenter,NOISE_SHORT[element.kind])
+            p.setFont(QFont('Sans',7))
+            p.drawText(box.adjusted(0,box.height()/2,0,-2),Qt.AlignmentFlag.AlignCenter,f'{element.p:g}')
 
     def _draw_blocks(self,p,blocks,rect):
         self._chips={}
@@ -394,7 +418,7 @@ class CircuitWorkspace(QWidget):
     def __init__(self,parent=None):
         prefs.configure_display()
         super().__init__(parent);self.model=CircuitModel(prefs.get('circuits/default_qubits'));self.current_path=None;self._inspector=None;
-        self._autosave_enabled=False;self._autosave=Debouncer(self,self.autosave_now,1500);self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
+        self._autosave_enabled=False;self._autosave=Debouncer(self,self.autosave_now,1500);self.new_noise_p=0.1;self.noisy_view=None;self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
         page_layout=QVBoxLayout(self)
         page_layout.setContentsMargins(0,0,0,0)
         self.page_scroll=QScrollArea(self)
@@ -433,6 +457,9 @@ class CircuitWorkspace(QWidget):
         for text,cb in [('Undo',self.undo),('Redo',self.redo)]:
             button=QPushButton(text);button.clicked.connect(cb);edits.addWidget(button)
         self._refresh_recent()
+        self.noise_button=QPushButton('Noise: off')
+        self.noise_button.setToolTip('Simulate with noise: presets, error rates, idle noise and readout error')
+        self.noise_button.clicked.connect(self.noise_dialog);edits.addWidget(self.noise_button)
         self.tools_button=QPushButton('Tools')
         self.tools_button.setToolTip('Simplify the circuit or check it against another circuit')
         tools=QMenu(self.tools_button)
@@ -455,10 +482,10 @@ class CircuitWorkspace(QWidget):
         # A whole-page scroll area, not a shrinking circuit editor, handles
         # limited vertical space on Windows and older Ubuntu releases.
         outer.addWidget(split)
-        self.palette=Palette();self.palette.addItems(list(ALL)+['M']);self.palette.setMinimumWidth(85);self.palette.setMaximumWidth(130)
+        self.palette=Palette();self.palette.addItems(list(ALL)+['M',NOISE_SEPARATOR,*NOISE_PALETTE]);self._style_palette();self.palette.setMinimumWidth(85);self.palette.setMaximumWidth(130)
         # Palette clicks only select palette entries; they never place or replace gates.
         self.palette.setToolTip('Drag to place a gate; double-click for the Gate Explorer')
-        self.palette.itemDoubleClicked.connect(lambda item:self.show_gate_explorer(item.text()))
+        self.palette.itemDoubleClicked.connect(lambda item:self.show_gate_explorer(item.text()) if item.text() not in NOISE_PALETTE and item.text()!=NOISE_SEPARATOR else None)
         split.addWidget(self.palette)
         center=QWidget();v=QVBoxLayout(center);split.addWidget(center)
         self.grid=Grid(self);self.grid.setRowCount(self.n);self.grid.setColumnCount(self.columns)
@@ -596,6 +623,70 @@ class CircuitWorkspace(QWidget):
         self.status.setText(str(exc))
 
     def snapshot(self):self.model.snapshot()
+
+    # ---- noise ------------------------------------------------------------------------------
+    def _style_palette(self):
+        for i in range(self.palette.count()):
+            item=self.palette.item(i)
+            if item.text()==NOISE_SEPARATOR:
+                item.setFlags(Qt.ItemFlag.NoItemFlags)
+                item.setToolTip('Noise channels: drag one onto a wire; double-click it there to set its strength')
+            elif item.text() in NOISE_PALETTE:
+                name=noisemod.CHANNELS[NOISE_PALETTE[item.text()]][0]
+                item.setToolTip(f'{name} noise channel — drag onto a wire (drawn as a dashed box)')
+    def _noise_summary(self):
+        model=self.model.noise_model
+        if not model.active and not self.model.noise:return 'Noise: off'
+        preset=next((name for name,m in noisemod.PRESETS.items() if m==model and name!='Ideal'),None)
+        parts=[preset or ('custom' if model.active else None)]
+        if self.model.noise:parts.append(f'{len(self.model.noise)} element{"s" if len(self.model.noise)!=1 else ""}')
+        return 'Noise: '+', '.join(p for p in parts if p)
+    def noise_dialog(self):
+        model=self.model.noise_model
+        dialog=QDialog(self);dialog.setWindowTitle('Noise')
+        v=QVBoxLayout(dialog)
+        enabled=QCheckBox('Simulate every gate with noise');enabled.setChecked(model.enabled);v.addWidget(enabled)
+        form=QFormLayout();v.addLayout(form)
+        preset=QComboBox();preset.addItems(list(noisemod.PRESETS)+['Custom']);form.addRow('Preset',preset)
+        fields={}
+        for key,label,tip in (('single','Single-qubit gate error','Depolarizing probability after each 1-qubit gate'),
+                              ('two','Two-qubit gate error','Depolarizing probability after each multi-qubit gate'),
+                              ('damping','Amplitude damping γ','Energy relaxation (T₁-like) on each qubit a gate acts on'),
+                              ('dephasing','Dephasing λ','Loss of phase (T₂-like) on each qubit a gate acts on'),
+                              ('readout','Readout error','Probability that a measured bit is reported wrongly')):
+            box=QDoubleSpinBox();box.setRange(0,1);box.setDecimals(4);box.setSingleStep(0.001);box.setValue(getattr(model,key))
+            box.setToolTip(tip);form.addRow(label,box);fields[key]=box
+        idle=QCheckBox('Idle noise: qubits also relax while waiting in a column');idle.setChecked(model.idle);v.addWidget(idle)
+        new_p=QDoubleSpinBox();new_p.setRange(0,1);new_p.setDecimals(3);new_p.setSingleStep(0.05);new_p.setValue(self.new_noise_p)
+        form.addRow('Strength for new noise elements',new_p)
+        note=QLabel('Presets are illustrative teaching levels, not measurements of any real device. '
+                    f'Noisy simulation stores every step up to {noisemod.MAX_STORED_QUBITS} qubits; '
+                    'larger circuits show the noisy result at the final column.');note.setWordWrap(True);v.addWidget(note)
+        def from_preset(index):
+            name=preset.itemText(index)
+            if name=='Custom':return
+            chosen=noisemod.PRESETS[name]
+            enabled.setChecked(chosen.enabled)
+            for key,box in fields.items():box.blockSignals(True);box.setValue(getattr(chosen,key));box.blockSignals(False)
+        preset.currentIndexChanged.connect(from_preset)
+        current=next((name for name,m in noisemod.PRESETS.items() if m==model),'Custom')
+        preset.blockSignals(True);preset.setCurrentText(current);preset.blockSignals(False)
+        for box in fields.values():box.valueChanged.connect(lambda _=0:preset.setCurrentText('Custom') if preset.currentText()!='Custom' else None)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel);v.addWidget(buttons)
+        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject)
+        if dialog.exec()!=QDialog.DialogCode.Accepted:return
+        self.new_noise_p=new_p.value()
+        chosen=noisemod.NoiseModel(enabled.isChecked(),idle=idle.isChecked(),**{k:b.value() for k,b in fields.items()})
+        if self.model.set_noise_model(chosen):self._changed()
+        else:self.noise_button.setText(self._noise_summary())
+    def _noisy_state_at(self,k):
+        """Density matrix after column k when noise is simulated (None if not available for this step)."""
+        view=self.noisy_view
+        if view is None:return None
+        occupied,history=view
+        if self.model.n<=noisemod.MAX_STORED_QUBITS:          # every column was stored
+            return history[sum(1 for c in occupied if c<k)]
+        return history[-1] if k>=self.step.maximum() else None          # large registers: final column only
 
     # ---- circuit tools ------------------------------------------------------------------------
     @staticmethod
@@ -802,6 +893,11 @@ class CircuitWorkspace(QWidget):
         super().keyPressEvent(event)
 
     def place(self,name,row,col,operands=None):
+        if name in NOISE_PALETTE:
+            try:placed=self.model.place_noise(NOISE_PALETTE[name],row,col,self.new_noise_p)
+            except EditorError as exc:self._rejected(exc);return
+            if placed:self._changed()
+            return
         try:
             result=self.model.place(name,row,col,operands,self._angle_radians(self.angle),
                                     self._angle_radians(self.phi),self._angle_radians(self.lam))
@@ -821,8 +917,27 @@ class CircuitWorkspace(QWidget):
     def remove_at(self,pos):
         idx=self.grid.indexAt(pos)
         if idx.isValid() and self.model.remove(idx.row(),idx.column()):self._changed()
+    def edit_noise_dialog(self,row,col):
+        element=self.model.noise.get((row,col))
+        if element is None:return
+        dialog=QDialog(self);dialog.setWindowTitle(f'Noise on q{row}')
+        form=QFormLayout(dialog)
+        kind=QComboBox()
+        for label,key in NOISE_PALETTE.items():kind.addItem(noisemod.CHANNELS[key][0],key)
+        kind.setCurrentIndex(kind.findData(element.kind));form.addRow('Channel',kind)
+        strength=QDoubleSpinBox();strength.setRange(0,1);strength.setDecimals(4);strength.setSingleStep(0.01);strength.setValue(element.p)
+        form.addRow('Strength (p, γ or λ)',strength)
+        form.addRow(QLabel('Noise acts after the gates to its left on this wire. Strength 0 = no effect.'))
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel);form.addRow(buttons)
+        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject)
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            try:changed=self.model.edit_noise(row,col,strength.value(),kind.currentData())
+            except EditorError as exc:self._rejected(exc);return
+            if changed:self._changed()
     def edit_gate_at(self,row,col):
         op=self.model.operation_at(row,col)
+        if op is not None and op[0]=='noise':
+            self.edit_noise_dialog(row,col);return
         if op is not None and op[0]=='block':
             bid,pl=op[1],op[2]
             if not pl.expanded:self.expand_block(bid)
@@ -867,6 +982,14 @@ class CircuitWorkspace(QWidget):
         if found is None:return
         if found[0]=='block' and not self.model.pending:
             self._block_menu(found[1],found[2],pos);return
+        if found[0]=='noise' and not self.model.pending:
+            menu=QMenu(self)
+            title=menu.addAction(found[2].label);title.setEnabled(False)
+            edit=menu.addAction('Edit noise…');remove=menu.addAction('Remove noise')
+            chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
+            if chosen is edit:self.edit_noise_dialog(row,col)
+            elif chosen is remove:self.remove_at(pos)
+            return
         menu=QMenu(self)
         if self.model.pending:
             cancel=menu.addAction('Cancel multi-qubit placement')
@@ -899,7 +1022,8 @@ class CircuitWorkspace(QWidget):
         try:
             from quantumscope.gui.circuit_pdf import write_circuit_pdf
             write_circuit_pdf(path,self.n,self.gates,self.measurements,
-                              include_report=report,initial_states=self.model.initial_states,blocks=self.model.blocks.values())
+                              include_report=report,initial_states=self.model.initial_states,blocks=self.model.blocks.values(),
+                              noise=self.model.noise)
         except Exception as exc:
             QMessageBox.warning(self,'PDF export failed',str(exc))
 
@@ -920,8 +1044,12 @@ class CircuitWorkspace(QWidget):
             # One state per occupied *column*, including simultaneous disjoint gates.
             sim=self.model.simulate()
             self.occupied_columns,self.column_states,self.states=sim.occupied_columns,sim.column_states,sim.states
+            self.noisy_view=self.model.simulate_noisy() if self.model.noisy else None
         except Exception as exc:self.status.setText(str(exc));return
-        last=max(self.occupied_columns,default=-1)
+        last=max(self.occupied_columns+(self.noisy_view[0] if self.noisy_view else []),default=-1)
+        for (r,c),element in self.model.noise.items():
+            item=QTableWidgetItem('');item.setToolTip(element.label+' (double-click to edit)');self.grid.setItem(r,c,item)
+        self.noise_button.setText(self._noise_summary())
         self.step.setRange(0,last+1)
         self.step.setValue(last+1)
         self.show_step(self.step.value())
@@ -930,7 +1058,8 @@ class CircuitWorkspace(QWidget):
         if self._autosave_enabled:self._autosave()
         self.status.setText(f'{self.n} qubits • {len(self.model.ordered())} gates'
                             +(f' ({blocks} block{"s" if blocks!=1 else ""}: double-click to expand, right-click for options)' if blocks else '')
-                            +f' • {len(self.occupied_columns)} occupied columns • exact ideal simulation')
+                            +f' • {len(self.noisy_view[0]) if self.noisy_view else len(self.occupied_columns)} occupied columns • '
+                            +('noisy density-matrix simulation' if self.noisy_view else 'exact ideal simulation'))
         if has_specification(self.active_example) and hasattr(self,'verify_table'):self.verify_circuit()
     def _sync_timeline(self):
         self.inline_blochs.update()
@@ -950,34 +1079,57 @@ class CircuitWorkspace(QWidget):
     def show_step(self,k):
         if not hasattr(self,'column_states'):return
         completed=sum(1 for c in self.occupied_columns if c<k)
-        state=self.column_states[completed]
+        state=self.column_states[min(completed,len(self.column_states)-1)]
         self.step_label.setText(f'Column {k}/{self.step.maximum()}  •  {completed} occupied layers executed')
         # Do not pan as a side effect of stepping, placement, or refresh.
         self._color_header(k)
-        vectors=[bloch(state,self.n,q) for q in range(self.n)]
-        self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
-        self.bars.set_data(state,self.n)
-        self.bars.title='Full quantum-state probabilities (before measurement) · cyan: theory'
-        probs=distribution(state);inds=np.argsort(probs)[-8:][::-1]
-        self.result.setPlainText('At column '+str(k)+':  '+'  '.join(f'{ket(i,self.n)} {probs[i]*100:.1f}%' for i in inds if probs[i]>1e-8))
+        rho=self._noisy_state_at(k)
+        if rho is not None:
+            # Mixed state: Bloch vectors shrink inside the sphere as qubits lose purity.
+            vectors=[noisemod.bloch(noisemod.partial_trace(rho,self.n,[q])) for q in range(self.n)]
+            probs=noisemod.populations(rho)
+            self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
+            self.bars.set_probabilities(probs,self.n)
+            self.bars.title='Noisy probabilities (density matrix, before measurement) · cyan: theory'
+            ideal=self.column_states[completed]
+            extra=f'   •   purity {noisemod.purity(rho):.4f}, fidelity with ideal {noisemod.fidelity_with_pure(rho,ideal):.4f}'
+        else:
+            vectors=[bloch(state,self.n,q) for q in range(self.n)]
+            self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
+            self.bars.set_data(state,self.n)
+            self.bars.title='Full quantum-state probabilities (before measurement) · cyan: theory'
+            probs=distribution(state)
+            extra='   •   noisy view only at the final column for this many qubits' if self.noisy_view else ''
+        inds=np.argsort(probs)[-8:][::-1]
+        self.result.setPlainText('At column '+str(k)+':  '+'  '.join(f'{ket(i,self.n)} {probs[i]*100:.1f}%' for i in inds if probs[i]>1e-8)+extra)
         self.state_changed.emit()
     def _temporary_item(self,col):
         item=self.grid.item(0,col)
         if item is None:item=QTableWidgetItem('');self.grid.setItem(0,col,item)
         return item
+    def _final_distribution(self):
+        """Outcome probabilities at the end: ideal, or noisy with readout error on measured qubits."""
+        if not self.noisy_view:
+            return distribution(self.states[-1])
+        probs=noisemod.populations(self.noisy_view[1][-1])
+        measured=sorted(self.measurements) or list(range(self.n))
+        probs=noisemod.apply_readout(probs,self.n,measured,self.model.noise_model.readout if self.model.noise_model.enabled else 0.0)
+        return probs/probs.sum()
     def measure(self):
-        counts=sample(self.states[-1],self.shots.value())
+        probs=self._final_distribution()
+        counts=np.random.default_rng().multinomial(self.shots.value(),probs)
         measured=sorted(self.measurements)
+        noisy=' (noisy)' if self.noisy_view else ''
         if measured:
-            theoretical,marginal=measurement_marginal(distribution(self.states[-1]),self.n,measured,counts)
+            theoretical,marginal=measurement_marginal(probs,self.n,measured,counts)
             self.bars.set_probabilities(theoretical,len(measured),marginal)
-            self.bars.title='Measured '+', '.join('q'+str(q) for q in measured)+' · cyan: theory · orange: shots'
+            self.bars.title='Measured '+', '.join('q'+str(q) for q in measured)+noisy+' · cyan: theory · orange: shots'
             self.bars.update()
             detail='   '.join(f'{ket(i,len(measured))} {int(amount)}' for i,amount in enumerate(marginal) if amount)
             self.result.setPlainText('Measured classical outcomes ('+', '.join('q'+str(q) for q in measured)+'):\n'+detail+'\nFull quantum state remains available in the simulation step view (before measurement).')
         else:
-            self.bars.set_data(self.states[-1],self.n,counts)
-            self.bars.title='All-qubit diagnostic sampling (no M gates) · cyan: theory · orange: shots'
+            self.bars.set_probabilities(probs,self.n,counts)
+            self.bars.title='All-qubit diagnostic sampling (no M gates)'+noisy+' · cyan: theory · orange: shots'
             self.bars.update()
             ids=np.argsort(counts)[-12:][::-1]
             self.result.setPlainText('No M gates: diagnostic sampling of all qubits, not circuit measurement.\n'+'   '.join(f'{ket(i,self.n)} {counts[i]}' for i in ids if counts[i]))
@@ -1055,10 +1207,10 @@ class CircuitWorkspace(QWidget):
         self.status.setText('Loaded '+choice+' • illustrative reversible circuit; input bits and work registers shown as gates.'
             +(' Edits are checked against this example’s specification.' if has_specification(choice) else ''))
         self.examples.blockSignals(True);self.examples.setCurrentIndex(0);self.examples.blockSignals(False)
-    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None,initial_states=None,blocks=()):
+    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None,initial_states=None,blocks=(),noise=(),noise_model=None):
         """Load a circuit. Without stored columns, gates are packed so that
         simultaneous gates share a column (simulation order is unchanged)."""
-        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns,initial_states,blocks)
+        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns,initial_states,blocks,noise,noise_model)
         self._sync_view();self.grid.horizontalScrollBar().setValue(0);self.refresh()
     def _layout(self):
         """Gates in simulation order with their columns, for saving."""
@@ -1102,12 +1254,14 @@ class CircuitWorkspace(QWidget):
     def load_text(self,text):
         """Load a .qscope document (raises ValueError if it is invalid)."""
         n,ops,ms,layout=from_native_layout(text)
-        self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks'])
+        self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks'],
+                         layout.get('noise',()),layout.get('noise_model'))
     def serialize(self):
         """The current circuit as a .qscope document."""
         gates,columns,mcol,total=self.model.layout()
         layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states,
-                'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()]}
+                'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()],
+                'noise':self.model.noise_layout(),'noise_model':self.model.noise_model}
         return to_native_measured(self.n,gates,sorted(self.measurements),layout=layout)
     def _suggest(self,name):
         """A file-dialog starting path in the preferred folder."""
@@ -1135,6 +1289,10 @@ class CircuitWorkspace(QWidget):
         if not path.lower().endswith(('.qasm','.qasm2')):path+='.qasm'
         gates,comments=self.model.qasm_items()
         lines=to_qasm_measured(self.n,gates,sorted(self.measurements),self.model.initial_states,comments)
+        if self.model.noisy:   # OpenQASM 2 cannot describe noise: say so in the file and the status line
+            head,_,rest=lines.partition('\n')
+            lines=head+'\n// Note: QuantumScope noise settings are not part of OpenQASM 2 and were not exported.\n'+rest
+            self.status.setText('Exported the ideal circuit: noise cannot be written in OpenQASM 2')
         try:
             with open(path,'w',encoding='utf-8') as f:f.write(lines)
         except OSError as exc:QMessageBox.warning(self,'Export failed',str(exc))

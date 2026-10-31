@@ -5,7 +5,7 @@ from quantumscope.physics.circuits import evolution
 from quantumscope.physics.gate_education import angle_text
 from quantumscope.physics.initial_states import defaults, product_state
 
-def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial_states=None,blocks=()):
+def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial_states=None,blocks=(),noise=None):
     """Render the full circuit with scalable Qt vector primitives, not a screenshot.
     Each wire is labeled with its initial state (|0⟩ unless given). blocks are
     BlockPlacement objects: collapsed ones draw as labeled boxes, expanded ones
@@ -18,7 +18,8 @@ def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial
     for pl in blocks:
         if pl.expanded:
             gates.update({(g.targets[0],c):g for g,c in pl.placed_gates()})
-    columns=max([c for _,c in gates]+list(measurements.values())+[pl.end for pl in blocks],default=0)+1
+    noise=dict(noise or {})
+    columns=max([c for _,c in gates]+list(measurements.values())+[pl.end for pl in blocks]+[c for _,c in noise],default=0)+1
     writer=QPdfWriter(str(filename));writer.setResolution(96)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.A3))
     painter=QPainter(writer)
@@ -87,6 +88,14 @@ def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial
                 box=QRectF(left+12,top+8,right-left-24,bottom-top-16)
                 painter.drawRoundedRect(box,6,6);painter.setPen(QColor('#2b1869'))
                 painter.drawText(box,Qt.AlignmentFlag.AlignCenter,pl.block.label)
+        for (q,c),element in noise.items():         # noise channels: dashed orange boxes
+            x=55+110*c;y=35+lane*q
+            painter.setPen(QPen(QColor('#b5600a'),1.5,Qt.PenStyle.DashLine));painter.setBrush(QColor('#fff4e6'))
+            painter.drawRoundedRect(QRectF(x-30,y-20,60,40),6,6)
+            painter.setPen(QColor('#7a3f00'));painter.setFont(QFont('Sans',9))
+            short={'bit_flip':'BF','phase_flip':'PF','depolarizing':'DEP','amplitude_damping':'AD','phase_damping':'PD'}[element.kind]
+            painter.drawText(QRectF(x-30,y-20,60,40),Qt.AlignmentFlag.AlignCenter,f'{short}\n{element.p:g}')
+            painter.setFont(QFont('Sans',12))
         for q,c in measurements.items():
             x=55+110*c;y=35+lane*q
             painter.setPen(QPen(QColor('#ae7221'),2));painter.setBrush(QColor('#fff4dc'))
