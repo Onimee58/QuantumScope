@@ -9,6 +9,7 @@ from .circuits import Gate, ALL, DUAL, TRIPLE, MAX_QUBITS, parse_qasm, parse_qas
 from .circuit_layout import pack_and_order, validate_columns
 from .initial_states import InitialState, defaults, all_default, preparation_gates
 from .blocks import Block, BlockPlacement, check_layout, flatten_with_comments
+from .noise import NoiseElement, NoiseModel
 
 FORMAT = 'quantumscope-circuit'
 
@@ -48,10 +49,10 @@ def from_native(text):
     return n,gates
 
 def _initial_states(obj,n):
-    """Initial states stored in a schema-2 or schema-3 document (|0⟩ for schema 1)."""
-    if obj.get('schema_version')==3 and 'initial_states' not in obj:
+    """Initial states stored in a schema-2, 3 or 4 document (|0⟩ for schema 1)."""
+    if obj.get('schema_version') in (3,4) and 'initial_states' not in obj:
         return defaults(n)
-    if obj.get('schema_version') not in (2,3):
+    if obj.get('schema_version') not in (2,3,4):
         if 'initial_states' in obj:raise ValueError('initial_states requires schema_version 2')
         return defaults(n)
     records=obj.get('initial_states')
@@ -123,6 +124,13 @@ def to_native_measured(n,gates,measured=(),layout=None):
             check_layout(n,gates,list(layout['columns']),placements)
         data['schema_version']=3
         data['blocks']=[{'column':pl.col,'expanded':pl.expanded,**pl.block.to_record()} for pl in placements]
+    noise=(layout or {}).get('noise') or []
+    noise_model=(layout or {}).get('noise_model')
+    if noise or (noise_model is not None and noise_model!=NoiseModel()):
+        # Schema 4 (v0.6.0): noise changes the results, so older versions must refuse the file.
+        data['schema_version']=4
+        if noise_model is not None:data['noise_model']=noise_model.to_record()
+        data['noise']=[{**e.to_record(),'column':c} for e,c in noise]
     data['terminal_measurements']=_measure_indices(n,measured)
     if layout is not None:
         columns=list(layout.get('columns') or [])
@@ -149,20 +157,38 @@ def _from_native_any(text):
     """(n, gates, measured, initial states, document) for schema 1 or 2."""
     try: obj=json.loads(text)
     except json.JSONDecodeError as exc: raise ValueError('Invalid .qscope JSON') from exc
-    if not isinstance(obj,dict) or obj.get('format')!=FORMAT or obj.get('schema_version') not in (1,2,3):
+    if not isinstance(obj,dict) or obj.get('format')!=FORMAT or obj.get('schema_version') not in (1,2,3,4):
         raise ValueError('Unsupported .qscope file format or version')
     n=obj.get('qubits')
     if type(n) is not int:raise ValueError('Invalid circuit structure')
     states=_initial_states(obj,n)
-    plain=dict(obj);plain['schema_version']=1;plain.pop('initial_states',None);plain.pop('blocks',None)
+    plain=dict(obj);plain['schema_version']=1
+    for extra in ('initial_states','blocks','noise','noise_model'):plain.pop(extra,None)
     n,gates,measured=from_native_measured(json.dumps(plain))
     return n,gates,measured,states,obj
 
+def _noise_in(obj,n):
+    """(noise model, [(NoiseElement, column)]) stored in a schema-4 document."""
+    if obj.get('schema_version')!=4:
+        if 'noise' in obj or 'noise_model' in obj:raise ValueError('noise requires schema_version 4')
+        return NoiseModel(),[]
+    model=NoiseModel.from_record(obj['noise_model']) if 'noise_model' in obj else NoiseModel()
+    records=obj.get('noise',[])
+    if not isinstance(records,list) or len(records)>10000:raise ValueError('Invalid noise elements')
+    elements=[]
+    for r in records:
+        if not isinstance(r,dict) or type(r.get('column')) is not int or r['column']<0:
+            raise ValueError('Invalid noise element placement')
+        element=NoiseElement.from_record(r)
+        if not 0<=element.qubit<n:raise ValueError('Noise element outside the circuit')
+        elements.append((element,r['column']))
+    return model,elements
+
 def _blocks_in(obj,n):
-    if obj.get('schema_version')!=3:
+    if obj.get('schema_version') not in (3,4):
         if 'blocks' in obj:raise ValueError('blocks require schema_version 3')
         return []
-    records=obj.get('blocks')
+    records=obj.get('blocks',[])                # a schema-4 file may have noise but no blocks
     if not isinstance(records,list) or len(records)>1000:raise ValueError('Invalid blocks')
     out=[]
     for r in records:
@@ -179,6 +205,7 @@ def from_native_layout(text):
     """
     n,gates,measured,states,data=_from_native_any(text)
     blocks=_blocks_in(data,n)
+    noise_model,noise=_noise_in(data,n)
     stored=[op.get('column') for op in data['operations']]
     if gates and all(c is not None for c in stored):
         validate_columns(gates,stored);columns=stored
@@ -187,7 +214,7 @@ def from_native_layout(text):
     else:
         gates,columns=pack_and_order(n,gates)
     check_layout(n,gates,columns,[BlockPlacement(b,c,e) for b,c,e in blocks])
-    last=max(list(columns)+[BlockPlacement(b,c,e).end for b,c,e in blocks],default=-1)
+    last=max(list(columns)+[BlockPlacement(b,c,e).end for b,c,e in blocks]+[c for _,c in noise],default=-1)
     mcol=data.get('measurement_column')
     if mcol is not None and (type(mcol) is not int or mcol<=last or mcol>100000):
         raise ValueError('Invalid measurement column')
@@ -195,7 +222,8 @@ def from_native_layout(text):
     total=data.get('total_columns')
     if total is not None and (type(total) is not int or total<1 or total>100000):
         raise ValueError('Invalid total column count')
-    return n,gates,measured,{'columns':columns,'measurement_column':mcol if measured else None,'total_columns':total,'initial_states':states,'blocks':blocks}
+    return n,gates,measured,{'columns':columns,'measurement_column':mcol if measured else None,'total_columns':total,
+                            'initial_states':states,'blocks':blocks,'noise':noise,'noise_model':noise_model}
 
 def to_qasm_measured(n,gates,measured=(),initial_states=None,comments=None):
     """OpenQASM 2 text. Non-|0⟩ initial states become preparation gates at the
