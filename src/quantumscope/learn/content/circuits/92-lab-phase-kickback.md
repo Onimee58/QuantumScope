@@ -3,7 +3,7 @@ title: "Lab: see phase kickback"
 area: circuits
 kind: lab
 order: 92
-objectives: Prepare a target in |−⟩ | Watch a CX change its control instead of its target
+objectives: Prepare a target in the minus state | Watch a CX change its control instead of its target
 ---
 # Lab: see phase kickback
 

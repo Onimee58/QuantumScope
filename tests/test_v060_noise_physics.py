@@ -187,3 +187,29 @@ def test_readout_error():
     assert probs == pytest.approx([0.81, 0.09, 0.09, 0.01])
     assert N.apply_readout([0.25] * 4, 2, [0], 0.3) == pytest.approx([0.25] * 4)
     assert sum(N.apply_readout(np.abs(random_state(3)) ** 2, 3, [0, 2], 0.2)) == pytest.approx(1)
+
+
+# ---- Noise Explorer: Bloch-sphere maps and reference pages --------------------------------------------
+
+@pytest.mark.parametrize('kind', sorted(N.CHANNELS))
+def test_bloch_map_matches_the_channel(kind):
+    for _ in range(25):
+        v = RNG.normal(size=3)
+        v = v / np.linalg.norm(v) * RNG.uniform(0, 1)
+        p = RNG.uniform()
+        rho = N.apply_channel(N.rho_from_bloch(v), 1, N.kraus(kind, p), (0,))
+        assert N.bloch(rho) == pytest.approx(N.bloch_map(kind, p, v), abs=1e-12)
+
+
+def test_phase_damping_equals_a_phase_flip_on_one_qubit():
+    lam = 0.36
+    p = (1 - math.sqrt(1 - lam)) / 2                          # the relation stated on the reference page
+    v = (0.6, -0.3, 0.5)
+    assert N.bloch_map('phase_damping', lam, v) == pytest.approx(N.bloch_map('phase_flip', p, v))
+
+
+def test_every_channel_has_a_reference_page():
+    from quantumscope.learn.lessons import reference_page
+    for kind, (name, _, _) in N.CHANNELS.items():
+        page = reference_page(kind)
+        assert page is not None and page.title == name and '## Kraus operators' in page.body

@@ -491,7 +491,8 @@ class CircuitWorkspace(QWidget):
         sv.addWidget(self.palette)
         sv.addWidget(QLabel('Noise'))
         self.noise_palette=Palette();self.noise_palette.addItems(list(NOISE_PALETTE));self._grid_palette(self.noise_palette,2,92)
-        self.noise_palette.setToolTip('Drag a noise channel onto a wire; double-click it there to set its strength')
+        self.noise_palette.setToolTip('Drag a noise channel onto a wire; double-click here to learn what it does')
+        self.noise_palette.itemDoubleClicked.connect(lambda item:self.show_noise_explorer(NOISE_PALETTE[item.text()]))
         sv.addWidget(self.noise_palette)
         sv.addStretch()
         self._style_palette()
@@ -657,7 +658,7 @@ class CircuitWorkspace(QWidget):
         for i in range(self.noise_palette.count()):
             item=self.noise_palette.item(i)
             name=noisemod.CHANNELS[NOISE_PALETTE[item.text()]][0]
-            item.setToolTip(f'{name} noise channel — drag onto a wire (drawn as a dashed box)')
+            item.setToolTip(f'{name} noise channel — drag onto a wire (drawn as a dashed box); double-click to learn more')
     def _noise_summary(self):
         model=self.model.noise_model
         if not model.active and not self.model.noise:return 'Noise: off'
@@ -942,6 +943,14 @@ class CircuitWorkspace(QWidget):
     def remove_at(self,pos):
         idx=self.grid.indexAt(pos)
         if idx.isValid() and self.model.remove(idx.row(),idx.column()):self._changed()
+    def show_noise_explorer(self,kind,p=0.2):
+        from quantumscope.gui.noise_explorer import NoiseExplorer
+        NoiseExplorer(kind,self,p).exec()
+    def try_noise(self,kind,p,start):
+        """A one-qubit circuit showing a noise channel acting on a suitable starting state."""
+        element=noisemod.NoiseElement(kind,0,p)
+        self.set_circuit(1,[],initial_states=[InitialState.preset(start)],noise=[(element,0)])
+        self.status.setText(f'Trying {element.label} on |{start}⟩: watch the Bloch vector shrink; open the State Inspector for ρ')
     def edit_noise_dialog(self,row,col):
         element=self.model.noise.get((row,col))
         if element is None:return
@@ -953,6 +962,9 @@ class CircuitWorkspace(QWidget):
         strength=QDoubleSpinBox();strength.setRange(0,1);strength.setDecimals(4);strength.setSingleStep(0.01);strength.setValue(element.p)
         form.addRow('Strength (p, γ or λ)',strength)
         form.addRow(QLabel('Noise acts after the gates to its left on this wire. Strength 0 = no effect.'))
+        about=QPushButton('About this channel…')
+        about.clicked.connect(lambda:self.show_noise_explorer(kind.currentData(),strength.value()))
+        form.addRow(about)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel);form.addRow(buttons)
         buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject)
         if dialog.exec()==QDialog.DialogCode.Accepted:
@@ -1010,9 +1022,10 @@ class CircuitWorkspace(QWidget):
         if found[0]=='noise' and not self.model.pending:
             menu=QMenu(self)
             title=menu.addAction(found[2].label);title.setEnabled(False)
-            edit=menu.addAction('Edit noise…');remove=menu.addAction('Remove noise')
+            edit=menu.addAction('Edit noise…');about=menu.addAction('About this channel…');remove=menu.addAction('Remove noise')
             chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
             if chosen is edit:self.edit_noise_dialog(row,col)
+            elif chosen is about:self.show_noise_explorer(found[2].kind,found[2].p)
             elif chosen is remove:self.remove_at(pos)
             return
         menu=QMenu(self)

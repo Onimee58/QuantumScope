@@ -29,7 +29,9 @@ def test_every_equation_has_images_for_both_themes(lesson):
 
 
 def test_no_stale_equation_images():
-    wanted = {image_name(tex, kind, theme) for l in LESSONS for tex, kind in equations_in(l.body) for theme in THEME_COLORS}
+    from quantumscope.learn.lessons import reference_pages
+    wanted = {image_name(tex, kind, theme) for l in LESSONS + reference_pages()
+              for tex, kind in equations_in(l.body) for theme in THEME_COLORS}
     unused = [n for n in os.listdir(EQ) if n.endswith('.png') and n not in wanted]
     assert not unused, 'run tools/render_equations.py --prune'
 
@@ -255,3 +257,10 @@ def test_png_size_matches_the_image_and_needs_no_qt():
     from quantumscope.learn.render import png_size
     name = sorted(os.listdir(EQ))[0]
     assert png_size(os.path.join(EQ, name)) == Image.open(os.path.join(EQ, name)).size
+
+
+def test_objectives_are_not_split_inside_kets():
+    # '|' separates objectives, so a ket like |1⟩ in an objective would be cut in pieces.
+    for lesson in LESSONS:
+        for objective in lesson.objectives:
+            assert '⟩' not in objective and not objective.startswith(('1⟩', '0⟩')), (lesson.key, objective)

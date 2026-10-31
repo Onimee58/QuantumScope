@@ -3,7 +3,7 @@ title: Phase kickback and oracles
 area: circuits
 kind: lecture
 order: 7
-objectives: Explain phase kickback with a target in |−⟩ | Describe a phase oracle | Follow the Deutsch, Deutsch–Jozsa and Bernstein–Vazirani algorithms
+objectives: Explain phase kickback with the target in the minus state | Describe a phase oracle | Follow the Deutsch, Deutsch–Jozsa and Bernstein–Vazirani algorithms
 ---
 # Phase kickback and oracles
 

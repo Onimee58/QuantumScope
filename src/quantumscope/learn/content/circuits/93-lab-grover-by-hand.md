@@ -3,7 +3,7 @@ title: "Lab: Grover search by hand"
 area: circuits
 kind: lab
 order: 93
-objectives: Build Grover's oracle and diffusion from single gates | Find the marked item |11⟩ with one query
+objectives: Build Grover's oracle and diffusion from single gates | Find the marked item 11 with one query
 ---
 # Lab: Grover search by hand
 

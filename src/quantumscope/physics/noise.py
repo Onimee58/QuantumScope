@@ -328,3 +328,35 @@ def apply_readout(probs, n, qubits, error):
         flipped = np.flip(shaped, axis=q)
         probs = ((1 - error) * shaped + error * flipped).reshape(-1)
     return probs
+
+
+# ---- what each channel does to the Bloch sphere (used by the Noise Explorer) -------------------
+
+def bloch_map(kind, p, vector):
+    """Exact image of a Bloch vector (x, y, z) under a single-qubit channel.
+
+    bit flip:          (x, (1−2p)y, (1−2p)z)
+    phase flip:        ((1−2p)x, (1−2p)y, z)
+    depolarizing:      (1−p)(x, y, z)
+    amplitude damping: (√(1−γ)x, √(1−γ)y, γ + (1−γ)z)
+    phase damping:     (√(1−λ)x, √(1−λ)y, z)
+    """
+    x, y, z = vector
+    if kind == 'bit_flip':
+        return (x, (1 - 2 * p) * y, (1 - 2 * p) * z)
+    if kind == 'phase_flip':
+        return ((1 - 2 * p) * x, (1 - 2 * p) * y, z)
+    if kind == 'depolarizing':
+        return ((1 - p) * x, (1 - p) * y, (1 - p) * z)
+    if kind == 'amplitude_damping':
+        s = math.sqrt(1 - p)
+        return (s * x, s * y, p + (1 - p) * z)
+    if kind == 'phase_damping':
+        s = math.sqrt(1 - p)
+        return (s * x, s * y, z)
+    raise ValueError(f'Unknown channel: {kind}')
+
+
+def rho_from_bloch(vector):
+    x, y, z = vector
+    return 0.5 * np.array([[1 + z, x - 1j * y], [x + 1j * y, 1 - z]], dtype=complex)

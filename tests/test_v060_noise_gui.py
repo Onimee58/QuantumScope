@@ -160,3 +160,26 @@ def test_dragging_from_the_palettes_places_items(app, monkeypatch, palette_name,
     assert sent == [f'QS_GATE:{label}']
     w.grid._handle_drop(sent[0], 1, 0)
     assert w.model.operation_at(1, 0) is not None or w.model.pending is not None
+
+
+@pytest.mark.parametrize('kind', ['bit_flip', 'phase_flip', 'depolarizing', 'amplitude_damping', 'phase_damping'])
+def test_noise_explorer_for_every_channel(app, kind):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    from quantumscope.gui.noise_explorer import NoiseExplorer
+    w = CircuitWorkspace()
+    explorer = NoiseExplorer(kind, w, 0.3)
+    assert 'Kraus operators' in explorer.about.toPlainText()
+    explorer.strength.setValue(0.5)
+    numbers = explorer.numbers.toPlainText()
+    assert '= 0.5' in numbers and 'Σ K†K = I ✓' in numbers and explorer.slider.value() == 500
+    explorer._try_it()
+    assert w.model.n == 1 and list(w.model.noise.values())[0].kind == kind
+    assert 'purity' in w.result.toPlainText()                 # the circuit runs as a noisy simulation
+
+
+def test_palette_double_click_opens_the_noise_explorer(bell, monkeypatch):
+    opened = []
+    monkeypatch.setattr(type(bell), 'show_noise_explorer', lambda self, kind, p=0.2: opened.append(kind))
+    item = bell.noise_palette.item(0)
+    bell.noise_palette.itemDoubleClicked.emit(item)
+    assert opened == ['bit_flip']

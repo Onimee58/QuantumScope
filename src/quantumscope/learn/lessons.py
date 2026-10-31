@@ -113,3 +113,22 @@ def search(lessons, query, limit=30):
             score = sum(3 for w in words if w in title) + sum(body.count(w) for w in words)
             scored.append((-score, lesson.title, lesson))
     return [item[2] for item in sorted(scored, key=lambda x: (x[0], x[1]))[:limit]]
+
+
+REFERENCE = 'reference'
+
+
+def reference_pages():
+    """Reference pages (e.g. one per noise channel), shown by explorers rather than in the contents."""
+    folder = os.path.join(content_folder(), REFERENCE)
+    pages = []
+    if os.path.isdir(folder):
+        for name in sorted(os.listdir(folder)):
+            if name.endswith('.md'):
+                with open(os.path.join(folder, name), encoding='utf-8') as handle:
+                    pages.append(parse(handle.read(), f'{REFERENCE}/{name[:-3]}', folder, REFERENCE))
+    return pages
+
+
+def reference_page(name):
+    return next((p for p in reference_pages() if p.key == f'{REFERENCE}/{name}'), None)
