@@ -152,11 +152,13 @@ class StateInspector(QWidget):
         v.addWidget(self.dirac)
         row = QHBoxLayout()
         v.addLayout(row)
+        self._copy_buttons = []
         for text, handler in (('Copy as text', self._copy_text), ('Copy as LaTeX', self._copy_latex),
                               ('Copy as CSV', self._copy_csv), ('Save CSV…', self._save_csv)):
             button = QPushButton(text)
             button.clicked.connect(handler)
             row.addWidget(button)
+            self._copy_buttons.append(button)
         row.addStretch()
         self.copy_status = QLabel()
         row.addWidget(self.copy_status)
@@ -215,7 +217,9 @@ class StateInspector(QWidget):
         self.view = {'state': np.array(view['state'], complex), 'n': view['n'], 'step': view['step'],
                      'steps': view['steps'], 'layers_done': view['layers_done'],
                      'analysis': model.analysis(), 'measured': sorted(model.measurements),
-                     'initial': [s.label for s in model.initial_states]}
+                     'initial': [s.label for s in model.initial_states],
+                     'rho': None if view.get('rho') is None else np.array(view['rho'], complex),
+                     'noisy': view.get('noisy', False), 'noise': model.noise_model, 'elements': len(model.noise)}
         self._sync_keep_boxes()
         self._render()
 
@@ -253,9 +257,19 @@ class StateInspector(QWidget):
         measured = (' Terminal measurements on ' + ', '.join(f'q{q}' for q in v['measured'])
                     + ' are not applied: this is the state before measurement.') if v['measured'] else ''
         starts = ', '.join(f'q{q} {label}' for q, label in enumerate(v['initial']) if label != '|0⟩')
+        noisy = ''
+        if v['rho'] is not None:
+            from quantumscope.physics import noise as N
+            noisy = (f'<br><b>Noisy simulation (mixed state):</b> purity {N.purity(v["rho"]):.4f}, '
+                     f'fidelity with the ideal state {N.fidelity_with_pure(v["rho"], v["state"]):.4f}.')
+        elif v['noisy']:
+            noisy = '<br>Noise is on, but for this many qubits it is shown at the final column only; this step is ideal.'
         self.where.setText(f'<b>State after column {v["step"]} of {v["steps"]}</b>{frozen} · '
                            f'{v["layers_done"]} occupied column(s) applied · {v["n"]} qubit(s)'
-                           + (f' · initial states: {starts}' if starts else '') + '.' + measured)
+                           + (f' · initial states: {starts}' if starts else '') + '.' + measured + noisy)
+        mixed = v['rho'] is not None
+        self.tabs.setTabText(0, 'Probabilities' if mixed else 'Amplitudes')
+        self.tabs.setTabText(1, 'Density matrix' if mixed else 'Statevector')
         self._render_amplitudes()
         self._render_statevector()
         self._render_reduced()
@@ -263,6 +277,9 @@ class StateInspector(QWidget):
 
     def _render_amplitudes(self):
         v = self.view
+        if v['rho'] is not None:
+            self._render_populations()
+            return
         rows = amplitude_rows(v['state'], v['n'], self.show_all.isChecked(), self.relative.isChecked(),
                               'probability' if self.sort.currentIndex() == 1 else 'basis')
         self.amp_table.setRowCount(len(rows))
@@ -282,11 +299,60 @@ class StateInspector(QWidget):
         nonzero = int(np.sum(np.abs(v['state']) > 1e-10))
         self.amp_summary.setText(f'{nonzero} of {1 << v["n"]} amplitudes nonzero')
 
+    def _render_populations(self):
+        """Mixed state: amplitudes are undefined; show noisy probabilities beside the ideal ones."""
+        from quantumscope.physics import noise as N
+        from quantumscope.physics.display import ket
+        v = self.view
+        noisy = N.populations(v['rho'])
+        ideal = np.abs(v['state']) ** 2
+        indices = [i for i in range(1 << v['n']) if self.show_all.isChecked() or noisy[i] > 1e-6 or ideal[i] > 1e-10]
+        if self.sort.currentIndex() == 1:
+            indices.sort(key=lambda i: -noisy[i])
+        self.amp_table.setRowCount(len(indices))
+        for r, i in enumerate(indices):
+            self.amp_table.setItem(r, 0, _item(ket(i, v['n'])))
+            self.amp_table.setItem(r, 1, _item('mixed', tooltip='A mixed state has no amplitudes; see the density matrix'))
+            self.amp_table.setItem(r, 2, _item(f'ideal {ideal[i] * 100:.2f}%'))
+            self.amp_table.setItem(r, 3, _item(f'{noisy[i] * 100:.2f}%', tooltip='Noisy probability (diagonal of ρ)'))
+            self.amp_table.setItem(r, 4, _item('—'))
+            self.amp_table.setCellWidget(r, 5, QLabel())
+        self.amp_summary.setText('Mixed state: probabilities are the diagonal of ρ (noisy), beside the ideal values')
+
     def _render_statevector(self):
         v = self.view
+        if v['rho'] is not None:
+            self._render_density()
+            return
+        for button in self._copy_buttons:
+            button.setEnabled(True)
         text = dirac_text(v['state'], v['n'], self.relative.isChecked())
         self.dirac.setHtml(f'<p style="font-size:17px">|ψ⟩ = {text}</p>'
                            '<p style="color:gray">q0 is the leftmost bit of each basis label.</p>')
+
+    def _render_density(self):
+        """Mixed state: the full density matrix (small registers), purity and fidelity."""
+        from quantumscope.physics import noise as N
+        from quantumscope.physics.display import ket
+        v = self.view
+        rho, n = v['rho'], v['n']
+        for button in self._copy_buttons:
+            button.setEnabled(False)
+            button.setToolTip('A mixed state has no statevector to copy')
+        head = (f'<p style="font-size:16px"><b>Density matrix ρ</b> (noisy, mixed state)</p>'
+                f'<p>Purity Tr(ρ²) = {N.purity(rho):.4f} (1 = pure, {1 / 2 ** n:.4g} = maximally mixed) · '
+                f'fidelity with the ideal state ⟨ψ|ρ|ψ⟩ = {N.fidelity_with_pure(rho, v["state"]):.4f}</p>')
+        if n <= 3:
+            labels = [ket(i, n) for i in range(2 ** n)]
+            cells = ''.join('<tr><td><b>' + labels[r] + '</b></td>' + ''.join(
+                f'<td align="center">{format_amplitude(rho[r, c])}</td>' for c in range(2 ** n)) + '</tr>' for r in range(2 ** n))
+            table = ('<table border="1" cellpadding="4" cellspacing="0"><tr><td></td>'
+                     + ''.join(f'<td><b>{l}</b></td>' for l in labels) + '</tr>' + cells + '</table>')
+        else:
+            table = (f'<p>The full matrix is {2 ** n} × {2 ** n}; use the Reduced state tab to view up to '
+                     f'{MAX_REDUCED_QUBITS} qubits at a time.</p>')
+        self.dirac.setHtml(head + table + '<p style="color:gray">Diagonal entries are probabilities; off-diagonal '
+                           'entries are coherences, which noise shrinks.</p>')
 
     def _render_reduced(self):
         if self.view is None:
@@ -299,10 +365,14 @@ class StateInspector(QWidget):
             self.heatmap.set_matrix(None, [])
             self.reduced_info.setText('Select at least one qubit.')
             return
-        info = reduced_summary(v['state'], v['n'], keep)
+        if v['rho'] is not None:
+            info = self._noisy_reduced(keep)
+        else:
+            info = reduced_summary(v['state'], v['n'], keep)
         rho = info['rho']
         dim = rho.shape[0]
-        labels = [f'|{i:0{len(keep)}b}⟩' for i in range(dim)]
+        from quantumscope.physics.display import ket
+        labels = [ket(i, len(keep)) for i in range(dim)]
         self.rho_table.setRowCount(dim)
         self.rho_table.setColumnCount(dim)
         self.rho_table.setHorizontalHeaderLabels(labels)
@@ -324,6 +394,21 @@ class StateInspector(QWidget):
             text += f'<br>Bloch vector ({x:.4f}, {y:.4f}, {z:.4f}), length {length:.4f}'
         self.reduced_info.setText(text)
 
+    def _noisy_reduced(self, keep):
+        """Reduced state of the noisy ρ. The whole register is mixed, so entropy now mixes
+        noise and entanglement: the verdict says so instead of claiming entanglement."""
+        from quantumscope.physics import noise as N
+        from quantumscope.physics.state_analysis import entropy_bits
+        v = self.view
+        keep = sorted(keep)
+        rho = N.partial_trace(v['rho'], v['n'], keep)
+        p = N.purity(rho)
+        verdict = ('Nearly pure.' if p > 0.999 else
+                   'Mixed: from noise and/or entanglement — with a mixed register, entropy no longer measures '
+                   'entanglement alone.')
+        return {'keep': keep, 'rho': rho, 'purity': p, 'entropy': entropy_bits(rho), 'verdict': verdict,
+                'bloch': N.bloch(rho) if len(keep) == 1 else None, 'max_entropy': float(len(keep))}
+
     def _render_circuit(self):
         a = self.view['analysis']
         stats = [
@@ -340,6 +425,17 @@ class StateInspector(QWidget):
             ('Minimum depth', a['minimum_depth']),
             ('Terminal measurements', a['measurements']),
         ]
+        noise = self.view.get('noise')
+        if self.view.get('noisy'):
+            from quantumscope.physics.noise import PRESETS
+            preset = next((name for name, m in PRESETS.items() if m == noise), 'custom') if noise.active else 'off'
+            stats.append(('Global noise', preset + (', idle noise on' if noise.active and noise.idle else '')))
+            stats.append(('Noise elements placed', self.view.get('elements', 0)))
+        if a.get('blocks'):
+            from collections import Counter
+            counts = Counter((label, n) for label, n, _ in a['blocks'])
+            stats.append(('Blocks (gates inside)', ', '.join(f'{label} ×{k} ({n} gates each)' if k > 1 else f'{label} ({n} gates)'
+                                                         for (label, n), k in counts.items())))
         self.stats.setRowCount(len(stats))
         for r, (name, value) in enumerate(stats):
             self.stats.setItem(r, 0, _item(name, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter))

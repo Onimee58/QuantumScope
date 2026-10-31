@@ -4,6 +4,17 @@ STYLESHEET = """
 QMainWindow, QWidget#workspaceShell { background: #0b101b; color: #e9f2ff; }
 QWidget { color: #dce7f7; font-family: "Inter", "Segoe UI", "Noto Sans", sans-serif; font-size: 12px; }
 QMenu { background: #141e2d; color: #e5effc; border: 1px solid #304058; padding: 6px; }
+QDialog { background: #101824; color: #dce7f7; }
+QTreeView, QTreeWidget { background: #0d1520; color: #dce7f7; border: 1px solid #304058; border-radius: 6px; }
+QTreeView::item { padding: 3px; }
+QTreeView::item:selected { background: #1c6987; color: #ffffff; }
+QTreeView::item:disabled { color: #7f93a8; }
+QDialog QLabel, QDialog QCheckBox, QDialog QRadioButton { color: #dce7f7; background: transparent; }
+QDialog QTextBrowser { background: #0d1520; color: #dce7f7; border: 1px solid #304058; border-radius: 6px; }
+QDialog QTabWidget::pane { background: #101824; border: 1px solid #304058; border-radius: 6px; }
+QDialog QTabBar::tab { background: #172434; color: #c8d8ea; border: 1px solid #304058; padding: 6px 12px; border-top-left-radius: 6px; border-top-right-radius: 6px; }
+QDialog QTabBar::tab:selected { background: #234766; color: #ffffff; }
+QMessageBox { background: #101824; }
 QMenu::item { padding: 8px 20px; border-radius: 4px; }
 QMenu::item:selected { background: #214666; }
 QWidget#workspaceHeader { background: #111d2e; border: 1px solid #263a52; border-radius: 13px; }
@@ -57,6 +68,7 @@ QScrollBar::handle:horizontal { background: #38536c; border-radius: 5px; min-wid
 QListWidget { background:#112035; color:#dfeeff; border:1px solid #3b5975; border-radius:7px; }
 QListWidget::item { background:#213c56; color:#f2f7ff; border:1px solid #3b5975; border-radius:4px; padding:5px; }
 QListWidget::item:selected { background:#145c82; color:#ffffff; }
+QListWidget#gatePalette::item { padding: 1px 2px; }
 QTableWidget { background:#101c2c; color:#deefff; gridline-color:#34516d; border:1px solid #304962; }
 QTableWidget::item { background:#101c2c; color:#deefff; }
 QTableWidget::item:selected { background:#245574; color:#ffffff; }
@@ -84,6 +96,11 @@ QPushButton { background: #e4eef7; color: #23435c; border-color: #b0c7db; }
 QPushButton:hover { background: #d1e6f4; }
 QStatusBar { background: #e9f0f7; color: #38546a; border-color: #bed0df; }
 QMenu { background: #ffffff; color: #243c50; border-color: #b8cfdf; }
+QTreeView, QTreeWidget { background: #ffffff; color: #1b364e; border: 1px solid #b4cada; border-radius: 6px; }
+QTreeView::item { padding: 3px; }
+QTreeView::item:selected { background: #b9dff0; color: #10324a; }
+QTreeView::item:disabled { color: #6b8296; }
+QPushButton:disabled { background: #eef3f8; color: #8aa0b3; border-color: #cbd9e5; }
 QMenu::item:selected { background: #ceeafa; }
 QToolButton#headerTool { background: #e4eef7; color: #226276; border-color: #b2cede; }
 QToolButton#tabAddButton { background: #e7f1fa; color: #17657d; border-color: #b2cede; }
@@ -93,6 +110,7 @@ QToolButton#quickValue:hover { background: #d1e6f4; }
 QListWidget { background:#f4f8fc; color:#19334b; border:1px solid #aac4d8; }
 QListWidget::item { background:#e4eff8; color:#1b4058; border:1px solid #c2d5e4; }
 QListWidget::item:selected { background:#1b6d91; color:#ffffff; }
+QListWidget#gatePalette::item { padding: 1px 2px; }
 QTableWidget { background:#f5f9fe; color:#1b364e; gridline-color:#c3d5e5; border:1px solid #aac4d8; }
 QTableWidget::item { background:#f5f9fe; color:#1b364e; }
 QTableWidget::item:selected { background:#c8e6f5; color:#14344d; }
@@ -167,6 +185,11 @@ CANVAS = {
         'header_current': '#1c6987',
         'header_past':    '#223648',
         'header_future':  '#29313c',
+        'block_fill':     '#2b2552',  # collapsed block box
+        'block_border':   '#a993f2',
+        'block_text':     '#f3efff',
+        'block_outline':  '#7f68cf',  # dashed outline of an expanded block
+        'block_tint':     '#7f68cf',  # drawn at low opacity inside the outline (decorative)
     },
     'light': {
         'surface':        '#f5f9fe',
@@ -199,6 +222,11 @@ CANVAS = {
         'header_current': '#b9dff0',
         'header_past':    '#dceaf5',
         'header_future':  '#eef3f8',
+        'block_fill':     '#ebe5fb',
+        'block_border':   '#5a3eb4',
+        'block_text':     '#2b1869',
+        'block_outline':  '#8a74d1',
+        'block_tint':     '#8a74d1',
     },
 }
 
@@ -216,6 +244,7 @@ CONTRAST_REQUIREMENTS = (
     ('pass', 'surface', 4.5), ('fail', 'surface', 4.5),
     ('header_text', 'header_current', 4.5), ('header_text', 'header_past', 4.5),
     ('header_text', 'header_future', 4.5),
+    ('block_border', 'surface', 3.0), ('block_text', 'block_fill', 4.5), ('block_outline', 'surface', 3.0),
 )
 
 
@@ -247,3 +276,26 @@ def contrast_ratio(foreground, background):
         return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
     hi, lo = sorted((luminance(foreground), luminance(background)), reverse=True)
     return (hi + 0.05) / (lo + 0.05)
+
+
+def system_is_dark():
+    """True when the operating system's color scheme is dark (Qt 6.5+), else False."""
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        return QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+    except (ImportError, AttributeError):
+        return False
+
+
+def apply_theme(choice):
+    """Apply 'dark', 'light' or 'system' to the running application; returns 'dark' or 'light'."""
+    from PySide6.QtWidgets import QApplication
+    from quantumscope.gui.preferences import resolve_theme
+    resolved = resolve_theme(choice, system_is_dark())
+    app = QApplication.instance()
+    app.setProperty('quantumscope_light', resolved == 'light')
+    app.setStyleSheet(LIGHT_STYLESHEET if resolved == 'light' else STYLESHEET)
+    for widget in app.allWidgets():
+        widget.update()
+    return resolved

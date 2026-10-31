@@ -1,0 +1,185 @@
+"""Optional GUI checks for noise in the circuit tab (QUANTUMSCOPE_GUI_TESTS=1)."""
+import os
+
+import numpy as np
+import pytest
+
+if os.environ.get('QUANTUMSCOPE_GUI_TESTS') != '1':
+    pytest.skip('GUI tests are opt-in: set QUANTUMSCOPE_GUI_TESTS=1', allow_module_level=True)
+
+QtWidgets = pytest.importorskip('PySide6.QtWidgets')
+
+from quantumscope.physics import noise as N  # noqa: E402
+
+
+@pytest.fixture(scope='module')
+def app():
+    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+@pytest.fixture
+def bell(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.set_circuit(2, [])
+    w.place('H', 0, 0)
+    w.place('CX', 1, 1)
+    w.cell_click(0, 1)
+    return w
+
+
+def test_palette_has_a_noise_section(bell):
+    gates = [bell.palette.item(i).text() for i in range(bell.palette.count())]
+    noise = [bell.noise_palette.item(i).text() for i in range(bell.noise_palette.count())]
+    assert 'H' in gates and 'M' in gates and 'Depolarize' in noise and 'Depolarize' not in gates
+    cell = bell.palette.gridSize()
+    assert bell.palette.width() < 4 * cell.width() and bell.palette.height() < 8 * cell.height()   # 3 × 7 grid
+    assert bell.noise_button.text() == 'Noise: off'
+
+
+def test_noise_from_the_palette_changes_the_view(bell):
+    ideal = bell.result.toPlainText()
+    bell.new_noise_p = 0.5
+    bell.place('Dephase', 0, 2)
+    assert bell.model.noise[(0, 2)].kind == 'phase_damping' and bell.model.noise[(0, 2)].p == 0.5
+    assert bell.noise_button.text() == 'Noise: 1 element'
+    assert 'purity' in bell.result.toPlainText() and bell.result.toPlainText() != ideal
+    assert 'noisy density-matrix simulation' in bell.status.text()
+    bell.undo()
+    assert not bell.model.noise and 'exact ideal simulation' in bell.status.text()
+
+
+def test_rejections_and_editing(bell, monkeypatch):
+    bell.place('Bit flip', 0, 0)                               # H is there
+    assert 'occupied' in bell.status.text() and not bell.model.noise
+    bell.place('Bit flip', 1, 2)
+
+    def accept(dialog):
+        dialog.findChild(QtWidgets.QDoubleSpinBox).setValue(0.25)
+        return QtWidgets.QDialog.DialogCode.Accepted
+    monkeypatch.setattr(QtWidgets.QDialog, 'exec', accept)
+    bell.edit_gate_at(1, 2)                                    # double-click opens the noise editor
+    assert bell.model.noise[(1, 2)].p == 0.25
+
+
+def test_noise_dialog_applies_a_preset(bell, monkeypatch):
+    def choose(dialog):
+        dialog.findChild(QtWidgets.QComboBox).setCurrentText('Moderate')
+        return QtWidgets.QDialog.DialogCode.Accepted
+    monkeypatch.setattr(QtWidgets.QDialog, 'exec', choose)
+    bell.noise_dialog()
+    assert bell.model.noise_model == N.PRESETS['Moderate'] and bell.noise_button.text() == 'Noise: Moderate'
+
+
+def test_bloch_vectors_shrink_and_shots_use_noisy_probabilities(bell):
+    bell.model.set_noise_model(N.NoiseModel(True, readout=0.2))
+    bell._changed()
+    vectors = bell.blochs.vecs if hasattr(bell.blochs, 'vecs') else None
+    probs = bell._final_distribution()
+    assert probs[1] == pytest.approx(0.5 * 0.2 * 0.8 * 2, abs=1e-9)       # readout flips one of the two bits
+    bell.measure()
+    assert '(noisy)' in bell.bars.title
+    bell.model.set_noise_model(N.NoiseModel(True, single=0.2, two=0.2))
+    bell._changed()
+    lengths = [np.linalg.norm(v) for v in bell.inline_blochs.vecs]
+    assert all(length < 0.5 for length in lengths)              # Bell qubits are mixed
+
+
+def test_save_reopen_qasm_and_pdf_with_noise(bell, tmp_path, monkeypatch):
+    bell.place('Amp. damp', 1, 2)
+    bell.model.set_noise_model(N.PRESETS['Gentle'])
+    bell._changed()
+    final = bell.noisy_view[1][-1]
+    monkeypatch.setattr(QtWidgets.QMessageBox, 'question',
+                        staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes))
+    for name, action in (('c.qscope', bell.save_native), ('c.qasm', bell.export_qasm), ('c.pdf', bell.export_pdf)):
+        path = str(tmp_path / name)
+        monkeypatch.setattr(QtWidgets.QFileDialog, 'getSaveFileName', staticmethod(lambda *a, p=path, **k: (p, '')))
+        action()
+        assert os.path.getsize(path) > 100
+    assert 'not exported' in (tmp_path / 'c.qasm').read_text()
+    monkeypatch.setattr(QtWidgets.QFileDialog, 'getOpenFileName',
+                        staticmethod(lambda *a, **k: (str(tmp_path / 'c.qscope'), '')))
+    bell.clear()
+    bell.load_native()
+    assert bell.model.noise and bell.model.noise_model == N.PRESETS['Gentle']
+    assert np.allclose(bell.noisy_view[1][-1], final)
+
+
+def test_large_registers_show_noise_only_at_the_end(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    from quantumscope.physics.circuits import Gate
+    w = CircuitWorkspace()
+    n = N.MAX_STORED_QUBITS + 1
+    w.set_circuit(n, [Gate('H', (0,)), Gate('X', (0,))])     # two columns: a middle step exists
+    w.model.set_noise_model(N.PRESETS['Gentle'])
+    w._changed()
+    assert 'purity' in w.result.toPlainText()                 # final column: noisy
+    w.step.setValue(1)
+    assert 'final column' in w.result.toPlainText()
+
+
+def test_inspector_shows_the_mixed_state(bell):
+    bell.model.set_noise_model(N.PRESETS['Moderate'])
+    bell._changed()
+    bell.open_state_inspector()
+    inspector = bell._inspector
+    assert inspector.tabs.tabText(0) == 'Probabilities' and inspector.tabs.tabText(1) == 'Density matrix'
+    assert 'purity' in inspector.where.text() and 'mixed' in inspector.amp_table.item(0, 1).text()
+    assert 'Density matrix' in inspector.dirac.toPlainText()
+    assert not any(b.isEnabled() for b in inspector._copy_buttons)
+    assert 'noise and/or entanglement' in inspector.reduced_info.text()
+    bell.model.set_noise_model(N.NoiseModel())
+    bell._changed()
+    assert inspector.tabs.tabText(1) == 'Statevector' and all(b.isEnabled() for b in inspector._copy_buttons)
+
+
+def test_verification_reports_noisy_success(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('grover', {'n': 2, 'marked': '11', 'iterations': 1})
+    w.model.set_noise_model(N.PRESETS['Very noisy'])
+    w._changed()
+    w.verify_circuit()
+    assert 'With noise: P(11)' in w.verify_status.text() and 'PASS' in w.verify_status.text()
+
+
+@pytest.mark.parametrize('palette_name,label', [('palette', 'H'), ('palette', 'CX'), ('noise_palette', 'Depolarize')])
+def test_dragging_from_the_palettes_places_items(app, monkeypatch, palette_name, label):
+    """The real drag path: palette drag → mime text → canvas drop → placed item."""
+    from PySide6.QtGui import QDrag
+    from PySide6.QtWidgets import QAbstractItemView
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    palette = getattr(w, palette_name)
+    assert palette.dragEnabled() and palette.dragDropMode() == QAbstractItemView.DragDropMode.DragOnly
+    sent = []
+    monkeypatch.setattr(QDrag, 'exec', lambda self, *a: sent.append(self.mimeData().text()))
+    palette.setCurrentItem(next(palette.item(i) for i in range(palette.count()) if palette.item(i).text() == label))
+    palette.startDrag(None)
+    assert sent == [f'QS_GATE:{label}']
+    w.grid._handle_drop(sent[0], 1, 0)
+    assert w.model.operation_at(1, 0) is not None or w.model.pending is not None
+
+
+@pytest.mark.parametrize('kind', ['bit_flip', 'phase_flip', 'depolarizing', 'amplitude_damping', 'phase_damping'])
+def test_noise_explorer_for_every_channel(app, kind):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    from quantumscope.gui.noise_explorer import NoiseExplorer
+    w = CircuitWorkspace()
+    explorer = NoiseExplorer(kind, w, 0.3)
+    assert 'Kraus operators' in explorer.about.toPlainText()
+    explorer.strength.setValue(0.5)
+    numbers = explorer.numbers.toPlainText()
+    assert '= 0.5' in numbers and 'Σ K†K = I ✓' in numbers and explorer.slider.value() == 500
+    explorer._try_it()
+    assert w.model.n == 1 and list(w.model.noise.values())[0].kind == kind
+    assert 'purity' in w.result.toPlainText()                 # the circuit runs as a noisy simulation
+
+
+def test_palette_double_click_opens_the_noise_explorer(bell, monkeypatch):
+    opened = []
+    monkeypatch.setattr(type(bell), 'show_noise_explorer', lambda self, kind, p=0.2: opened.append(kind))
+    item = bell.noise_palette.item(0)
+    bell.noise_palette.itemDoubleClicked.emit(item)
+    assert opened == ['bit_flip']

@@ -66,3 +66,16 @@ This tab describes the circuit rather than the state:
 - **T-count:** the number of T and T† gates.
 - **Clifford and non-Clifford counts:** a gate is Clifford if it maps Pauli operators to Pauli operators. Rotations count as Clifford only at multiples of π/2.
 - **Two depths:** *drawn depth* is the number of occupied columns as laid out. *Minimum depth* is the fewest layers possible if every gate ran as early as it could. A large difference between the two means the drawing spreads out gates that could run in parallel.
+
+## With noise (v0.6.0)
+
+When the circuit has noise (see [NOISE.md](NOISE.md)), the inspected state is a **mixed state** described by a density matrix ρ, and the inspector adapts:
+
+| Tab | With noise |
+|---|---|
+| **Probabilities** (was Amplitudes) | Noisy probabilities (the diagonal of ρ) beside the ideal ones. A mixed state has no amplitudes or phases. |
+| **Density matrix** (was Statevector) | The full ρ for up to 3 qubits, with purity Tr(ρ²) and fidelity ⟨ψ\|ρ\|ψ⟩ with the ideal state. The copy buttons are disabled, because there is no statevector. |
+| **Reduced state** | Taken from the noisy ρ. Because the whole register is mixed, entropy now reflects noise as well as entanglement, and the verdict says so. |
+| **Circuit** | Also lists the global noise preset and the number of noise elements. |
+
+The header shows purity and fidelity at the current step. Up to 8 qubits this works at every step; for larger noisy circuits it is shown at the final column only.

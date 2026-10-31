@@ -9,7 +9,9 @@ import numpy as np
 
 MAX_QUBITS = 10
 SINGLE = ('H', 'X', 'Y', 'Z', 'S', 'T', 'SDG', 'TDG', 'SX', 'P', 'RX', 'RY', 'RZ', 'U')
-DUAL = ('CX', 'CZ', 'SWAP')
+DUAL = ('CX', 'CZ', 'SWAP', 'CP')
+# Gates with an angle parameter (CP(λ) is the controlled phase, diag(1, 1, 1, e^{iλ})).
+PARAMETERIZED = ('RX', 'RY', 'RZ', 'P', 'U', 'CP')
 TRIPLE = ('CCX', 'CSWAP')
 ALL = SINGLE + DUAL + TRIPLE
 
@@ -66,7 +68,11 @@ def apply_gate(state, n, gate):
                 j=i^m2^m3;result[i],result[j]=result[j],result[i]
     else:
         m1,m2 = (1<<(n-1-q) for q in ids)
-        if name in ('CX','CZ'):
+        if name == 'CP':
+            phase = np.exp(1j*gate.angle)
+            for i in range(1 << n):
+                if i & m1 and i & m2: result[i] *= phase
+        elif name in ('CX','CZ'):
             for i in range(1 << n):
                 if i & m1:
                     if name == 'CZ' and i & m2: result[i] *= -1
@@ -169,6 +175,11 @@ def parse_qasm_detailed(text):
             try: angle=_qasm_angle(m.group(2))
             except ValueError as exc: raise ValueError('Invalid rotation angle: '+str(exc)) from exc
             g=Gate(m.group(1).upper(),(int(m.group(4)),),angle);apply_gate(zero(n),n,g);gates.append(g);continue
+        m=re.fullmatch(r'(cp|cu1)\s*\(([^()]*)\)\s*'+pat+r'\s*,\s*'+pat,s,re.I)
+        if m:
+            try: angle=_qasm_angle(m.group(2))
+            except ValueError as exc: raise ValueError('Invalid controlled-phase angle: '+str(exc)) from exc
+            g=Gate('CP',(int(m.group(4)),int(m.group(6))),angle);apply_gate(zero(n),n,g);gates.append(g);continue
         m=re.fullmatch(r'(u3|u)\s*\(([^()]*)\)\s*'+pat,s,re.I)
         if m:
             exprs=[v.strip() for v in m.group(2).split(',')]

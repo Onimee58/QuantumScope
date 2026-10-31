@@ -37,6 +37,22 @@ def _self_test():
         if "column" not in inspector.where.text() or inspector.amp_table.rowCount() == 0:
             raise RuntimeError("State Inspector did not render the state")
         lines.append(f"State Inspector: {inspector.amp_table.rowCount()} amplitude row(s) rendered")
+        workspace.load_library("grover", {"n": 3, "marked": "101", "iterations": -1})
+        rows, _ = workspace.model.verification()
+        if not rows or rows[0].passed is not True or len(workspace.model.blocks) != 4:
+            raise RuntimeError("Algorithm library did not build Grover correctly")
+        lines.append(f"Algorithm library: Grover {rows[0].output_label} (PASS)")
+        # Lessons and their equation images must be inside the installed package.
+        import os
+        from quantumscope.learn.lessons import builtin_lessons, content_folder
+        from quantumscope.learn.equations import equations_in, image_name
+        lessons = builtin_lessons()
+        missing = [name for lesson in lessons for tex, kind in equations_in(lesson.body)
+                   for name in [image_name(tex, kind, "dark")]
+                   if not os.path.exists(os.path.join(content_folder(), "eq", name))]
+        if not lessons or missing:
+            raise RuntimeError(f"Learn content incomplete: {len(lessons)} lessons, {len(missing)} missing equations")
+        lines.append(f"Learn: {len(lessons)} lessons, all equation images present")
         lines.append("RESULT: PASS")
         status = 0
     except Exception:
@@ -59,6 +75,9 @@ def main():
         return 0
     if "--self-test" in sys.argv:
         return _self_test()
+    # Graphics device and interface size must be set before Qt or OpenGL start.
+    from quantumscope.gui.preferences import apply_startup_environment
+    apply_startup_environment()
     from PySide6.QtWidgets import QApplication
     from quantumscope.gui.main_window import MainWindow
 
@@ -69,14 +88,16 @@ def main():
     app.setOrganizationName("QuantumScope")
     app.setWindowIcon(QIcon(str(files("quantumscope").joinpath("assets/quantumscope.png"))))
     app.setStyle("Fusion")
-    from quantumscope.gui.theme import STYLESHEET
-    from PySide6.QtCore import QSettings
-    from quantumscope.gui.theme import LIGHT_STYLESHEET
-    selected_theme = QSettings("QuantumScope", "QuantumScope").value("appearance/theme", "dark")
-    app.setProperty("quantumscope_light", selected_theme == "light")
-    app.setStyleSheet(LIGHT_STYLESHEET if selected_theme == "light" else STYLESHEET)
+    from quantumscope.gui import preferences as prefs
+    from quantumscope.gui.theme import apply_theme
+    apply_theme(prefs.get("appearance/theme"))
     window = MainWindow()
+    try:   # follow the operating system's light/dark switch when "Follow system" is chosen
+        app.styleHints().colorSchemeChanged.connect(window._follow_system_theme)
+    except AttributeError:
+        pass
     window.show()
+    window.offer_recovery()
     return app.exec()
 
 

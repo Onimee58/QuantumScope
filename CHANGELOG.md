@@ -1,3 +1,138 @@
+## v0.6.0 — Noise and mixed states
+
+### Noise
+- **Density-matrix simulation** (Qt-free, in `physics/noise.py`), used whenever noise is present. Without noise, the exact statevector simulation is unchanged.
+- **Channels:** bit flip, phase flip, depolarizing (1- and 2-qubit), amplitude damping (T₁) and phase damping (T₂), plus readout error.
+  - Depolarizing and damping use exact closed forms applied in place. 8 qubits simulate in about 0.1 s with every column stored; 10 qubits take a few seconds, final column only.
+  - Each closed form is tested against its Kraus form.
+- **Global noise (Noise button):**
+  - presets Ideal, Gentle, Moderate and Very noisy, which are illustrative teaching levels;
+  - separate rates for 1- and 2-qubit gate errors, damping, dephasing and readout;
+  - optional **idle noise** on waiting qubits.
+- **Noise elements:** channels placed on a wire from the new Noise palette, drawn as orange dashed boxes. They can be edited, moved, removed and undone, and never collide with gates, blocks or measurements.
+- **Noise Explorer:** double-click a channel to see its equation, Kraus operators and exact Bloch-sphere map, with a live table of where |0⟩, |1⟩, |+⟩ and |+i⟩ end up, the numeric Kraus matrices, and **Try it**.
+
+### Results under noise
+- **Live view:** probability bars from ρ, **shrinking Bloch arrows**, and purity and fidelity with the ideal state at every step.
+- **Shots** sample the noisy distribution, including readout error on the measured qubits.
+- **State Inspector:** Probabilities and Density matrix tabs, reduced states from the noisy ρ, and noise statistics in the Circuit tab.
+- **Algorithm checks:** PASS/FAIL still judges the ideal circuit, and a note reports the noisy success. For example, Grover with 3 qubits drops from 0.945 to 0.577 under Moderate noise.
+
+### Files and exports
+- Circuits with noise are saved as `.qscope` **schema version 4**. Older versions refuse these files rather than silently dropping the noise. Circuits without noise keep their schema.
+- **Exports:** QASM export writes the ideal circuit with a comment noting that noise was not exported, and PDF export draws noise elements.
+
+### Learn
+- New lectures *Density matrices and mixed states* (Quantum Principles) and *Noise and decoherence* (Quantum Circuits), and the lab *Watch a Bell pair decohere*.
+- **For course authors:** Try it links accept `noise=` (a preset) and `elements=`; lab checks add `noise`, `fidelity` and `purity`. See [LEARN.md](LEARN.md).
+
+### Interface
+- **The gate palette is a compact 3-column grid**, with noise channels in their own grid below it.
+
+### Fixes
+- **Dragging from the palettes:** the grid layout had switched the palettes to drop-only, so nothing could be dragged. A test now drives the real drag path.
+- **Split objectives:** lesson objectives containing a ket (such as |−⟩) were cut in pieces at the separator. They are reworded, and a test prevents it happening again.
+
+### Quality
+- Automated tests: 912 passing (809 in v0.5.2 + 103 new), plus 62 opt-in GUI tests. The 44-step editing replay is unchanged.
+
+## v0.5.2 — Learn & Settings
+
+### Settings
+- **A new Settings window**, titled "Settings", with sections for Appearance, Circuits, Graphics and Files. It has only a Close button, with no maximize or minimize, and a fixed size, so it can no longer fill the whole application window.
+- **Appearance:**
+  - theme: Dark, Light or **Follow system** (tracks the operating system's light/dark switch live);
+  - **interface size** 100–175% for projecting in classrooms, applied after a restart.
+- **Circuits:** default qubit count, default measurement shots, Bloch spheres beside wires, and **ask before clearing a circuit**.
+- **Graphics:**
+  - the **graphics device** (Automatic, Integrated or NVIDIA PRIME offloading on Linux) is now a saved setting, applied at start-up by QuantumScope itself, so `run_nvidia.sh` is optional and the packaged app gets the same choice;
+  - the 3D volume rendering method and graphics information moved here from the Orbital Explorer panel.
+- **Files:**
+  - a default folder for saving and exporting, and a **Recent ▾** menu in the circuit tab;
+  - **autosave with crash recovery:** if QuantumScope did not close normally, it offers to restore the circuit;
+  - the probability report in PDFs can be set to Ask, Always or Never.
+- **Restore defaults** resets every setting. **Restart now** appears when a change needs a restart; the restart drops the old session's graphics and size variables, so the new choice really applies.
+- **Test isolation:** the test suite uses its own settings file and data folder, so it never reads or changes a user's settings.
+
+### Circuit tab
+- **QuantumScope now starts with an empty circuit** sized by Settings → Circuits. The Bell pair stays in Examples….
+- **Toolbar cleanup:**
+  - removed the leftover **Bell example** button and an orphan "Gate" label left from the old placement controls (along with the hidden, unused controls behind it);
+  - Open, Save, Open recent, QASM import/export and PDF export are grouped under a **File** menu.
+- **Gate angle units:** degrees or radians, set in Settings.
+  - **New-gate angle fields** show the chosen unit.
+  - **The gate-edit dialog** reads plain numbers in that unit, while expressions with pi (such as `pi/4`) are always radians.
+- **Bit order in labels:** |q0 q1 …⟩ (textbook) or |… q1 q0⟩ (Qiskit). This is display only, applied everywhere basis states are written. Algorithm parameters and CSV data always list q0 first.
+- **Amplitudes:** exact forms (1/√2) or decimals, with 2–8 decimal places.
+- **Tools → Simplify circuit…:**
+  - **What it does:** cancels neighboring inverse pairs (H·H, X·X, CX·CX, S·S†, T·T†, …), merges consecutive rotations about the same axis (including CP), and removes rotations that equal the identity.
+  - **Preview:** shows every change before applying.
+  - **Safety check:** every result is verified against the full unitary, and global phases are reported honestly. Gates inside blocks are never changed, and Undo restores the original.
+- **Tools → Check equivalence with a saved circuit…:** compares two circuits' unitaries up to global phase. A new vectorized unitary calculation handles 10 qubits in under a second.
+
+### Learn
+- **A 📖 Learn button** on each area's tab bar opens the Learn window. It has a contents tree, search, Back/Forward, text size, and **Export PDF** for printable handouts.
+- **Lectures:**
+  - learning objectives, explanations, and crisp equations pre-rendered for both themes (matrices included);
+  - **▶ Try it** links that set up the matching circuit, algorithm, example or view;
+  - **Check your understanding** questions with reveal-able answers.
+- **Labs:** guided steps that turn **✓ Done** automatically as the student's circuit meets each goal, with a progress counter. Once a later step passes, earlier ones stay done.
+- **My course:** a folder of a teacher's own Markdown lessons, which can use the same links, questions and lab checks. [LEARN.md](LEARN.md) documents the format.
+- **Content: 21 lectures and 6 labs.**
+  - **Quantum Circuits:** qubits and bit order; single-qubit gates; multi-qubit gates and tensor products; entanglement in circuits; measurement; reversible logic; phase kickback and oracles; Grover search; the QFT; circuit cost (depth, T-count, Clifford). Labs: Bell pair, GHZ state, phase kickback, Grover by hand, half adder, and the QFT of a basis state.
+  - **Quantum Principles:** superposition and the Bloch sphere; measurement and the Born rule; double-slit interference; entanglement and Bell states; global and relative phase.
+  - **Hydrogen:** the Schrödinger equation and the reduced mass; quantum numbers and orbitals; probability density and radial probability; energy levels and spectra; superposition and quantum beats; what the model leaves out (spin, fine structure, Lamb shift, hyperfine).
+  - **Further reading** is left for the course author to add in the Markdown files.
+- **Built-in content is tested:**
+  - every equation has an up-to-date image;
+  - every Try it link works;
+  - every question has exactly one correct answer;
+  - every lab has a scripted solution that completes it;
+  - every quoted number (hydrogen energies, spectral lines, beat periods, radii, Grover probabilities) is checked against the app's physics.
+
+  The packaged-app self-test also checks that the lessons ship with the app.
+- **Fixes:**
+  - **QASM Converter tab:** it was always open at start-up, and its close button did nothing. It now opens from **+ → QASM Converter**, closes normally, and keeps its text when reopened.
+  - **First experiment tab:** the first experiment opened in an area (for example the Double-Slit Experiment in Quantum Principles) could not be closed. Only the Hydrogen Explorer and Gate Circuit Simulator are permanent now.
+  - **tree views** were unthemed (white) in the dark theme;
+  - **disabled buttons** in the light theme used the dark theme's colors.
+
+### Quality
+- Automated tests: 809 passing (577 existing + 232 new), plus 36 opt-in GUI tests. The 44-step editing replay is unchanged.
+- The packaged-app self-test also checks that all 27 lessons and their equation images ship with the app.
+
+## v0.5.1 — Algorithms and examples
+
+- **Blocks:** named groups of real gates that act as one operation.
+  - **Collapsed**, a block is a labeled box.
+  - **Expanded** (double-click), it shows its gates inside a light dashed outline with a Collapse chip.
+  - **Locked:** contents can't be edited, and a block reserves its whole wire span.
+  - **Right-click actions:** Expand/Collapse, Edit block… (rebuilds with new parameters), Show contents… (gate list, and the matrix for blocks of up to 3 qubits), Ungroup (make the gates editable) and Remove. All are covered by Undo.
+  - **Same physics:** simulation is identical collapsed or expanded, and the State Inspector always counts the real gates inside.
+- **Algorithms menu:** Deutsch, Deutsch–Jozsa, Bernstein–Vazirani, Grover search and the quantum Fourier transform (with QFT†).
+  - Oracles, diffusion and QFT are blocks.
+  - Ancillas start in |−⟩, and Grover uses Toffoli-based multi-controlled Z with work qubits that return to |0⟩.
+  - Each algorithm has a **specification check on the current circuit**: constant versus balanced, the hidden string s, Grover's sin²((2k+1)θ) for the oracles actually present, and QFT against the DFT matrix.
+- **New reversible examples** with truth-table checks: full adder, 2-bit comparator, controlled increment, Toffoli as AND, and Fredkin multiplexer. Their inputs are set with initial states.
+- **New gate CP(λ)** (controlled phase), across the palette, simulator, Gate Explorer, QASM (`cp`, and `cu1` on import), PDF and Clifford classification.
+- **Gate Explorer:**
+  - a **Worked identity** tab (for example H Z H = X, step by step on every basis state);
+  - a **Try it in the circuit** button, which uses starting states that make the gate's effect visible.
+- **Files:**
+  - circuits with blocks save as `.qscope` **version 3**, which older versions refuse instead of misreading; other circuits keep their format;
+  - QASM export writes blocks as their gates, marked by `// block:` comments;
+  - PDF export draws blocks.
+- **Fixes:**
+  - dialogs (Gate Explorer, parameter and custom-state dialogs) were unreadable in the dark theme when the operating system used a light color scheme; they now have a dark style;
+  - a multi-qubit gate's angle was lost while its placement was pending, so CP would have become CP(0);
+  - the circuit status line now counts the gates inside blocks.
+- **New user guide:** [ALGORITHMS.md](ALGORITHMS.md).
+- **New Qt-free modules:**
+  - `physics/blocks.py`;
+  - `physics/algorithms.py` (library, block builders, specifications);
+  - `gui/parameter_dialog.py`.
+- Automated tests: 577 passing (468 existing + 109 new), plus 27 opt-in GUI tests. The 44-step editing replay from v0.4.3 is unchanged.
+
 ## v0.5.0 — See inside the state
 
 - **Initial states:**
