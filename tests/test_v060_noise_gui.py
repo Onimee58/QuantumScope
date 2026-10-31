@@ -142,3 +142,21 @@ def test_verification_reports_noisy_success(app):
     w._changed()
     w.verify_circuit()
     assert 'With noise: P(11)' in w.verify_status.text() and 'PASS' in w.verify_status.text()
+
+
+@pytest.mark.parametrize('palette_name,label', [('palette', 'H'), ('palette', 'CX'), ('noise_palette', 'Depolarize')])
+def test_dragging_from_the_palettes_places_items(app, monkeypatch, palette_name, label):
+    """The real drag path: palette drag → mime text → canvas drop → placed item."""
+    from PySide6.QtGui import QDrag
+    from PySide6.QtWidgets import QAbstractItemView
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    palette = getattr(w, palette_name)
+    assert palette.dragEnabled() and palette.dragDropMode() == QAbstractItemView.DragDropMode.DragOnly
+    sent = []
+    monkeypatch.setattr(QDrag, 'exec', lambda self, *a: sent.append(self.mimeData().text()))
+    palette.setCurrentItem(next(palette.item(i) for i in range(palette.count()) if palette.item(i).text() == label))
+    palette.startDrag(None)
+    assert sent == [f'QS_GATE:{label}']
+    w.grid._handle_drop(sent[0], 1, 0)
+    assert w.model.operation_at(1, 0) is not None or w.model.pending is not None

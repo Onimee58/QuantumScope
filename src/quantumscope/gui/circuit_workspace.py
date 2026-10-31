@@ -644,6 +644,8 @@ class CircuitWorkspace(QWidget):
         palette.setFlow(QListView.Flow.LeftToRight);palette.setWrapping(True)
         palette.setMovement(QListView.Movement.Static);palette.setResizeMode(QListView.ResizeMode.Adjust)
         palette.setGridSize(QSize(cell,34));palette.setUniformItemSizes(True);palette.setSpacing(0)
+        # Static movement makes Qt switch the view to drop-only: re-enable dragging gates out.
+        palette.setDragEnabled(True);palette.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
         palette.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         palette.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for i in range(palette.count()):
