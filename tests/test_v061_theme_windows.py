@@ -32,8 +32,15 @@ def test_palette_text_contrast():
 
 
 def test_theme_overrides_a_light_system_palette():
-    QtWidgets = pytest.importorskip('PySide6.QtWidgets')
-    from PySide6.QtGui import QColor, QPalette
+    # Ubuntu CI runners have no graphics libraries: Qt GUI modules exist but fail to load
+    # (libEGL), which pytest.importorskip does not treat as a skip. Skip explicitly.
+    try:
+        from PySide6 import QtWidgets
+        from PySide6.QtGui import QColor, QPalette
+    except ImportError as exc:
+        pytest.skip(f'Qt GUI libraries unavailable: {exc}')
+    import os
+    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')     # no display needed
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     system = QPalette()
     system.setColor(QPalette.ColorRole.Window, QColor('#f0f0f0'))
