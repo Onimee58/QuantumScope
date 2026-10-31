@@ -37,7 +37,6 @@ def test_no_stale_equation_images():
 @pytest.mark.parametrize('lesson', LESSONS, ids=[l.key for l in LESSONS])
 @pytest.mark.parametrize('theme', ['dark', 'light'])
 def test_every_lesson_renders_without_fallbacks(lesson, theme):
-    pytest.importorskip('PySide6.QtGui')
     html = to_html(lesson, theme, EQ, revealed=range(20))
     assert '<h2>' in html and 'font-family:monospace' not in html     # every equation found its image
 
@@ -130,7 +129,6 @@ def test_course_lessons_with_and_without_headers(tmp_path):
 
 
 def test_course_lessons_cannot_inject_html_and_show_unrendered_math(tmp_path):
-    pytest.importorskip('PySide6.QtGui')
     lesson = parse('# T\n<script>alert(1)</script> and $x^2$ and <b>bold</b>', 'course/t.md', str(tmp_path))
     html = to_html(lesson, 'dark', EQ)
     assert '<script>' not in html and '&lt;script&gt;' in html and '&lt;b&gt;' in html
@@ -138,7 +136,6 @@ def test_course_lessons_cannot_inject_html_and_show_unrendered_math(tmp_path):
 
 
 def test_tables_with_escaped_bars():
-    pytest.importorskip('PySide6.QtGui')
     lesson = parse('# T\n| a | b |\n|---|---|\n| \\|0⟩ | x |', 'course/t.md', '.')
     html = to_html(lesson, 'light', EQ)
     assert '<td>|0⟩</td>' in html and '<th>a</th>' in html
@@ -251,3 +248,10 @@ def test_every_area_has_lessons():
     areas = {l.area for l in LESSONS}
     assert areas == {'circuits', 'principles', 'hydrogen'}
     assert sum(l.kind == 'lab' for l in LESSONS) == 6 and len(LESSONS) == 27
+
+
+def test_png_size_matches_the_image_and_needs_no_qt():
+    from PIL import Image
+    from quantumscope.learn.render import png_size
+    name = sorted(os.listdir(EQ))[0]
+    assert png_size(os.path.join(EQ, name)) == Image.open(os.path.join(EQ, name)).size

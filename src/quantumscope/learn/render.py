@@ -54,13 +54,22 @@ def _equation(tex, kind, ctx):
     name = image_name(tex, kind, ctx['theme'])
     path = os.path.join(ctx['eq_folder'], name)
     if os.path.exists(path):
-        from PySide6.QtGui import QImage            # only to read the size (shown at half: 2× renders)
-        image = QImage(path)
-        w, h = image.width() // 2, image.height() // 2
+        width, height = png_size(path)               # images are rendered at 2×: show at half size
+        w, h = width // 2, height // 2
         align = ' align="middle"' if kind == 'inline' else ''
         return f'<img src="{html.escape(path)}" width="{w}" height="{h}"{align}>'
     # No pre-rendered image (e.g. a teacher's own lesson): show the source, readable.
     return f'<span style="font-family:monospace; color:{ctx["p"]["muted"]}">{html.escape(tex)}</span>'
+
+
+def png_size(path):
+    """(width, height) of a PNG, read from its header — no Qt or imaging library needed,
+    so lessons render on machines without graphics libraries (e.g. CI test runners)."""
+    with open(path, 'rb') as handle:
+        header = handle.read(24)
+    if header[:8] != b'\x89PNG\r\n\x1a\n' or header[12:16] != b'IHDR':
+        raise ValueError(f'Not a PNG image: {path}')
+    return int.from_bytes(header[16:20], 'big'), int.from_bytes(header[20:24], 'big')
 
 
 def _protect_math(text, ctx, store):
