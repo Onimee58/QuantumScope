@@ -1,6 +1,8 @@
 """Lesson actions: links of the form qs:… that set up an experiment ("Try it").
 
     qs:circuit?n=2&gates=H:0;CX:0,1&states=0,0&inspector=1
+    qs:circuit?n=2&gates=H:0;CX:0,1&noise=Moderate&elements=depolarizing:1:2:0.4
+                                     (noise: a preset; elements: channel:qubit:column:strength)
     qs:algorithm/grover?n=3&marked=101&iterations=-1
     qs:example/Full adder            (any title from the Examples menu)
     qs:gate/H                        (open the Gate Explorer)
@@ -70,8 +72,22 @@ def parse(link):
         states = [s.strip() for s in params.get('states', '').split(',') if s.strip()] or ['0'] * n
         if len(states) != n or not all(s in PRESETS for s in states):
             raise ValueError('states must give one preset (0, 1, +, -, +i, -i) per qubit')
+        from quantumscope.physics.noise import PRESETS as NOISE_PRESETS, NoiseElement
+        preset = params.get('noise')
+        if preset is not None and preset not in NOISE_PRESETS:
+            raise ValueError(f'Unknown noise preset {preset}')
+        elements = []
+        for token in filter(None, (t.strip() for t in params.get('elements', '').split(';'))):
+            parts = token.split(':')
+            if len(parts) != 4:
+                raise ValueError('elements need channel:qubit:column:strength')
+            element = NoiseElement(parts[0], int(parts[1]), float(parts[3]))
+            if not 0 <= element.qubit < n or int(parts[2]) < 0:
+                raise ValueError(f'Noise element outside the circuit: {token}')
+            elements.append((element, int(parts[2])))
         return Action('circuit', '', {'n': n, 'gates': gates, 'states': [InitialState.preset(s) for s in states],
-                                      'inspector': params.get('inspector') == '1'})
+                                      'inspector': params.get('inspector') == '1',
+                                      'noise_model': NOISE_PRESETS[preset] if preset else None, 'elements': elements})
     if kind == 'algorithm':
         from quantumscope.physics.algorithms import ENTRIES, validate_params
         if target not in ENTRIES:
@@ -82,7 +98,12 @@ def parse(link):
                 values[p.key] = int(params[p.key]) if p.kind == 'int' or (
                     p.kind == 'choice' and isinstance(p.default, int)) else params[p.key]
         validate_params(ENTRIES[target].params, values)
-        return Action('algorithm', target, {'values': values, 'inspector': params.get('inspector') == '1'})
+        from quantumscope.physics.noise import PRESETS as NOISE_PRESETS
+        preset = params.get('noise')
+        if preset is not None and preset not in NOISE_PRESETS:
+            raise ValueError(f'Unknown noise preset {preset}')
+        return Action('algorithm', target, {'values': values, 'inspector': params.get('inspector') == '1',
+                                            'noise_model': NOISE_PRESETS[preset] if preset else None})
     if kind == 'example':
         from quantumscope.physics.algorithms import LIBRARY
         from quantumscope.physics.circuit_examples import EXAMPLE_NAMES

@@ -82,3 +82,12 @@ def test_search_course_folder_and_pdf(setup, tmp_path):
     window.open_lesson('circuits/02-single-qubit-gates')
     path = window.export_pdf(str(tmp_path / 'lesson.pdf'))
     assert path and os.path.getsize(path) > 10000
+
+
+def test_try_it_links_set_and_clear_noise(setup):
+    from quantumscope.physics.noise import PRESETS
+    window, workspace = setup
+    window._link(QUrl('qs:circuit?n=2&gates=H:0;CX:0,1&noise=Moderate&elements=depolarizing:1:2:0.2'))
+    assert workspace.model.noise_model == PRESETS['Moderate'] and len(workspace.model.noise) == 1
+    window._link(QUrl('qs:circuit?n=1&gates=H:0'))
+    assert not workspace.model.noisy                          # a link without noise= starts ideal

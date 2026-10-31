@@ -21,9 +21,14 @@ def run_action(action, workspace, launch=None):
         launch('circuits')
     if action.kind == 'circuit':
         p = action.params
-        workspace.set_circuit(p['n'], p['gates'], initial_states=p['states'])
+        workspace.set_circuit(p['n'], p['gates'], initial_states=p['states'], noise=p.get('elements', ()))
     elif action.kind == 'algorithm':
         workspace.load_library(action.target, action.params['values'])
+    if action.kind in ('circuit', 'algorithm'):
+        from quantumscope.physics.noise import NoiseModel
+        # A link without noise= starts ideal, so every Try it shows exactly what the lesson describes.
+        if workspace.model.set_noise_model(action.params.get('noise_model') or NoiseModel()):
+            workspace._changed()
     elif action.kind == 'example':
         titles = [workspace.examples.itemText(i) for i in range(workspace.examples.count())]
         workspace.load_example(titles.index(action.target))

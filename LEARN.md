@@ -46,6 +46,7 @@ Without a header, the first `# Heading` becomes the title.
 
 | Link | What it does |
 |---|---|
+| `qs:circuit?n=2&gates=H:0;CX:0,1&noise=Moderate&elements=depolarizing:1:2:0.4` | Adds noise. `noise` takes a preset (Ideal, Gentle, Moderate or Very noisy); `elements` takes channels as `channel:qubit:column:strength`, separated by `;`. A link without `noise=` starts with noise off. The same `noise=` works on algorithm links. |
 | `qs:circuit?n=2&gates=H:0;CX:0,1&states=0,0&inspector=1` | Builds a circuit. Gates are `NAME:qubits[:angle]`, separated by `;`, with angles like `pi/2`. `states` gives each qubit's start: `0`, `1`, `+`, `-`, `+i` or `-i`. `inspector=1` also opens the State Inspector. |
 | `qs:algorithm/grover?n=3&marked=101` | Builds an algorithm. The keys are `deutsch`, `deutsch_jozsa`, `bernstein_vazirani`, `grover` and `qft`. |
 | `qs:example/Full adder` | Loads an example from the Examples menu. |
@@ -90,6 +91,9 @@ A step is done when all of its `check:` lines pass. Once a later step passes, th
 | `gates <= 4` | the circuit uses at most 4 gates (also `>=` and `=`) |
 | `uses H,CX` | the circuit contains these gate types |
 | `starts 0:-` | q0 starts in \|−⟩ |
+| `noise depolarizing` | a noise channel of this kind is placed in the circuit |
+| `fidelity <= 0.8` | the fidelity of the (noisy) final state with the ideal one is at most 0.8 (also `>=`) |
+| `purity <= 0.9` | the purity of the (noisy) final state is at most 0.9 (also `>=`) |
 
 ## Editing the built-in lessons (contributors)
 

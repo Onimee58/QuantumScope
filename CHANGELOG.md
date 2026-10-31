@@ -1,3 +1,41 @@
+## v0.6.0 — Noise and mixed states
+
+### Noise
+- **Density-matrix simulation** (Qt-free, in `physics/noise.py`), used whenever noise is present. Without noise, the exact statevector simulation is unchanged.
+- **Channels:** bit flip, phase flip, depolarizing (1- and 2-qubit), amplitude damping (T₁) and phase damping (T₂), plus readout error.
+  - Depolarizing and damping use exact closed forms applied in place. 8 qubits simulate in about 0.1 s with every column stored; 10 qubits take a few seconds, final column only.
+  - Each closed form is tested against its Kraus form.
+- **Global noise (Noise button):**
+  - presets Ideal, Gentle, Moderate and Very noisy, which are illustrative teaching levels;
+  - separate rates for 1- and 2-qubit gate errors, damping, dephasing and readout;
+  - optional **idle noise** on waiting qubits.
+- **Noise elements:** channels placed on a wire from the new Noise palette, drawn as orange dashed boxes. They can be edited, moved, removed and undone, and never collide with gates, blocks or measurements.
+- **Noise Explorer:** double-click a channel to see its equation, Kraus operators and exact Bloch-sphere map, with a live table of where |0⟩, |1⟩, |+⟩ and |+i⟩ end up, the numeric Kraus matrices, and **Try it**.
+
+### Results under noise
+- **Live view:** probability bars from ρ, **shrinking Bloch arrows**, and purity and fidelity with the ideal state at every step.
+- **Shots** sample the noisy distribution, including readout error on the measured qubits.
+- **State Inspector:** Probabilities and Density matrix tabs, reduced states from the noisy ρ, and noise statistics in the Circuit tab.
+- **Algorithm checks:** PASS/FAIL still judges the ideal circuit, and a note reports the noisy success. For example, Grover with 3 qubits drops from 0.945 to 0.577 under Moderate noise.
+
+### Files and exports
+- Circuits with noise are saved as `.qscope` **schema version 4**. Older versions refuse these files rather than silently dropping the noise. Circuits without noise keep their schema.
+- **Exports:** QASM export writes the ideal circuit with a comment noting that noise was not exported, and PDF export draws noise elements.
+
+### Learn
+- New lectures *Density matrices and mixed states* (Quantum Principles) and *Noise and decoherence* (Quantum Circuits), and the lab *Watch a Bell pair decohere*.
+- **For course authors:** Try it links accept `noise=` (a preset) and `elements=`; lab checks add `noise`, `fidelity` and `purity`. See [LEARN.md](LEARN.md).
+
+### Interface
+- **The gate palette is a compact 3-column grid**, with noise channels in their own grid below it.
+
+### Fixes
+- **Dragging from the palettes:** the grid layout had switched the palettes to drop-only, so nothing could be dragged. A test now drives the real drag path.
+- **Split objectives:** lesson objectives containing a ket (such as |−⟩) were cut in pieces at the separator. They are reworded, and a test prevents it happening again.
+
+### Quality
+- Automated tests: 912 passing (809 in v0.5.2 + 103 new), plus 62 opt-in GUI tests. The 44-step editing replay is unchanged.
+
 ## v0.5.2 — Learn & Settings
 
 ### Settings

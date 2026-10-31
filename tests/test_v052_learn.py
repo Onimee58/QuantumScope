@@ -177,6 +177,8 @@ LAB_SOLUTIONS = {
     'circuits/94-lab-half-adder': (3, [Gate('CCX', (0, 1, 2)), Gate('CX', (0, 1))], '110'),
     'circuits/95-lab-qft': (2, [Gate('H', (0,)), Gate('CP', (1, 0), 3.141592653589793 / 2), Gate('H', (1,)),
                                 Gate('SWAP', (0, 1))], '01'),
+    'circuits/96-lab-bell-decoherence': (2, [Gate('H', (0,)), Gate('CX', (0, 1))], '00',
+                                         [('depolarizing', 1, 2, 1.0)]),
 }
 
 
@@ -188,12 +190,14 @@ def test_every_lab_has_a_tested_solution():
 @pytest.mark.parametrize('key', sorted(LAB_SOLUTIONS))
 def test_lab_solution_completes_every_step(key):
     lesson = next(l for l in LESSONS if l.key == key)
-    n, gates, starts = LAB_SOLUTIONS[key]
+    n, gates, starts, *extra = LAB_SOLUTIONS[key]
+    from quantumscope.physics.noise import NoiseElement
+    noise = [(NoiseElement(kind, q, p), c) for kind, q, c, p in (extra[0] if extra else [])]
     states = []
     for ch in starts:
         states.append(InitialState.preset({'0': '0', '1': '1', '+': '+', '-': '-'}[ch]))
     m = CircuitModel(n)
-    m.set_circuit(n, gates, initial_states=states)
+    m.set_circuit(n, gates, initial_states=states, noise=noise)
     assert all(labs.progress(m, steps_of(lesson.body)).values())
 
 
@@ -249,7 +253,7 @@ def test_grover_table_matches_the_formula():
 def test_every_area_has_lessons():
     areas = {l.area for l in LESSONS}
     assert areas == {'circuits', 'principles', 'hydrogen'}
-    assert sum(l.kind == 'lab' for l in LESSONS) == 6 and len(LESSONS) == 27
+    assert sum(l.kind == 'lab' for l in LESSONS) == 7 and len(LESSONS) == 30
 
 
 def test_png_size_matches_the_image_and_needs_no_qt():
@@ -264,3 +268,47 @@ def test_objectives_are_not_split_inside_kets():
     for lesson in LESSONS:
         for objective in lesson.objectives:
             assert '⟩' not in objective and not objective.startswith(('1⟩', '0⟩')), (lesson.key, objective)
+
+
+def test_noise_lecture_numbers_match_the_simulator():
+    from quantumscope.physics import noise as N
+    from quantumscope.physics.circuits import evolution
+    text = lesson_text('circuits/11-noise-and-decoherence')
+    for key, values, shown in (('grover', {'n': 3, 'marked': '101', 'iterations': -1}, 'about 0.577'),
+                               ('bernstein_vazirani', {'n': 3, 's': '101'}, 'probability 0.919')):
+        m = CircuitModel()
+        m.load_library(key, values)
+        m.set_noise_model(N.PRESETS['Moderate'])
+        assert f'{m.noisy_verification()[0][0].probability:.3f}' in shown and shown in text
+    bell = evolution(2, [Gate('H', (0,)), Gate('CX', (0, 1))])[-1]
+    for p, shown in ((0.2, '0.85'), (0.4, '0.7')):
+        rho = N.depolarize(N.density(bell), 2, p, (1,))
+        assert f'{N.fidelity_with_pure(rho, bell):g}' == shown
+
+
+def test_bell_decoherence_lab_steps_follow_the_strength():
+    from quantumscope.physics.noise import NoiseElement
+    lab = next(l for l in LESSONS if l.key == 'circuits/96-lab-bell-decoherence')
+    steps = steps_of(lab.body)
+    m = CircuitModel(2)
+    m.set_circuit(2, [Gate('H', (0,)), Gate('CX', (0, 1))])
+    assert labs.progress(m, steps) == {0: True, 1: False, 2: False}
+    m.set_circuit(2, [Gate('H', (0,)), Gate('CX', (0, 1))], noise=[(NoiseElement('depolarizing', 1, 0.4), 2)])
+    assert labs.progress(m, steps) == {0: True, 1: True, 2: False}
+
+
+@pytest.mark.parametrize('link', ['qs:circuit?n=2&noise=Loud', 'qs:circuit?n=2&elements=depolarizing:5:0:0.1',
+                                  'qs:circuit?n=2&elements=depolarizing:0:0', 'qs:circuit?n=2&elements=boom:0:0:0.1',
+                                  'qs:algorithm/grover?n=2&marked=11&noise=Loud'])
+def test_bad_noise_links_are_rejected(link):
+    with pytest.raises(ValueError):
+        actions.parse(link)
+
+
+def test_noise_lab_checks():
+    from quantumscope.physics.noise import NoiseElement
+    m = CircuitModel(2)
+    m.set_circuit(2, [Gate('H', (0,)), Gate('CX', (0, 1))])
+    assert labs.check(m, 'fidelity >= 1')[0] and labs.check(m, 'purity >= 1')[0] and not labs.check(m, 'noise bit_flip')[0]
+    m.set_circuit(2, [Gate('H', (0,)), Gate('CX', (0, 1))], noise=[(NoiseElement('bit_flip', 0, 0.5), 2)])
+    assert labs.check(m, 'noise bit_flip')[0] and labs.check(m, 'purity <= 0.6')[0]

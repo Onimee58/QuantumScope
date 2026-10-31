@@ -10,6 +10,9 @@ current circuit; a step is done when all of its checks pass:
     gates <= 4                       at most 4 gates (blocks count their real gates)
     uses H,CX                        the circuit contains these gate types
     starts 0:-                       qubit 0 starts in |−⟩ (initial state preset)
+    noise depolarizing               a noise channel of this kind is placed in the circuit
+    fidelity <= 0.8                  fidelity of the (noisy) final state with the ideal one (also >=)
+    purity <= 0.9                    purity Tr(ρ²) of the (noisy) final state (also >=)
 """
 import numpy as np
 
@@ -67,6 +70,17 @@ def check(model, condition):
         qubit, _, preset = rest.partition(':')
         q = int(qubit)
         return q < model.n and model.initial_states[q] == InitialState.preset(preset), f'q{q} should start in |{preset}⟩'
+    if kind == 'noise':
+        present = {e.kind for e in model.noise.values()}
+        return rest.strip() in present, f'place a {rest.strip().replace("_", " ")} channel'
+    if kind in ('fidelity', 'purity'):
+        from quantumscope.physics import noise as N
+        op, value = rest.split()
+        ideal = _final_state(model)
+        rho = model.simulate_noisy(store=False)[1][-1] if model.noisy else N.density(ideal)
+        measure = N.fidelity_with_pure(rho, ideal) if kind == 'fidelity' else N.purity(rho)
+        ok = {'<=': measure <= float(value) + 1e-9, '>=': measure >= float(value) - 1e-9}[op]
+        return ok, f'{kind} is {measure:.3f} (needs {op} {value})'
     raise ValueError(f'Unknown check: {kind}')
 
 
