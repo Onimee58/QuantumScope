@@ -81,7 +81,3 @@ E: S² = Z, not I. The inverse of S is S† (shown as SDG), with i replaced by �
 - Gates are unitary matrices; every gate can be undone.
 - X flips bits, Z flips phases, H creates and removes superpositions; S, T and P adjust the relative phase.
 - Single-qubit gates are rotations of the Bloch sphere; rotation gates use half angles, so a 2π turn gives −I.
-
-## Further reading
-
-- M. A. Nielsen and I. L. Chuang, *Quantum Computation and Quantum Information*, Cambridge University Press — sections 1.3 and 4.2.

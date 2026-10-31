@@ -37,16 +37,20 @@
 - **Lectures:**
   - learning objectives, explanations, and crisp equations pre-rendered for both themes (matrices included);
   - **▶ Try it** links that set up the matching circuit, algorithm, example or view;
-  - **Check your understanding** questions with reveal-able answers;
-  - textbook further reading.
+  - **Check your understanding** questions with reveal-able answers.
 - **Labs:** guided steps that turn **✓ Done** automatically as the student's circuit meets each goal, with a progress counter. Once a later step passes, earlier ones stay done.
 - **My course:** a folder of a teacher's own Markdown lessons, which can use the same links, questions and lab checks. [LEARN.md](LEARN.md) documents the format.
-- **First content:** the lectures *Qubits, state vectors and bit order* and *Single-qubit gates*, and the lab *Make a Bell pair*.
+- **Content: 21 lectures and 6 labs.**
+  - **Quantum Circuits:** qubits and bit order; single-qubit gates; multi-qubit gates and tensor products; entanglement in circuits; measurement; reversible logic; phase kickback and oracles; Grover search; the QFT; circuit cost (depth, T-count, Clifford). Labs: Bell pair, GHZ state, phase kickback, Grover by hand, half adder, and the QFT of a basis state.
+  - **Quantum Principles:** superposition and the Bloch sphere; measurement and the Born rule; double-slit interference; entanglement and Bell states; global and relative phase.
+  - **Hydrogen:** the Schrödinger equation and the reduced mass; quantum numbers and orbitals; probability density and radial probability; energy levels and spectra; superposition and quantum beats; what the model leaves out (spin, fine structure, Lamb shift, hyperfine).
+  - **Further reading** is left for the course author to add in the Markdown files.
 - **Built-in content is tested:**
   - every equation has an up-to-date image;
   - every Try it link works;
   - every question has exactly one correct answer;
-  - every lab can be completed.
+  - every lab has a scripted solution that completes it;
+  - every quoted number (hydrogen energies, spectral lines, beat periods, radii, Grover probabilities) is checked against the app's physics.
 
   The packaged-app self-test also checks that the lessons ship with the app.
 - **Fixes:**

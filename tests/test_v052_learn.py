@@ -160,3 +160,94 @@ def test_lab_checks_on_a_circuit_of_the_wrong_size_are_simply_not_done():
     m = CircuitModel(1)
     for condition in ('state H:0;CX:0,1', 'probability 00=0.5 11=0.5', 'entangled 0', 'entangled 3', 'qubits 2'):
         assert labs.check(m, condition)[0] is False
+
+
+# ---- every lab can be completed -------------------------------------------------------------
+
+from quantumscope.physics.circuits import Gate  # noqa: E402
+from quantumscope.physics.initial_states import InitialState  # noqa: E402
+
+LAB_SOLUTIONS = {
+    'circuits/90-lab-bell-pair': (2, [Gate('H', (0,)), Gate('CX', (0, 1))], '00'),
+    'circuits/91-lab-ghz': (3, [Gate('H', (0,)), Gate('CX', (0, 1)), Gate('CX', (1, 2))], '000'),
+    'circuits/92-lab-phase-kickback': (2, [Gate('CX', (0, 1)), Gate('H', (0,))], '+-'),
+    'circuits/93-lab-grover-by-hand': (2, [Gate('H', (0,)), Gate('H', (1,)), Gate('CZ', (0, 1)),
+                                           Gate('H', (0,)), Gate('H', (1,)), Gate('X', (0,)), Gate('X', (1,)),
+                                           Gate('CZ', (0, 1)), Gate('X', (0,)), Gate('X', (1,)),
+                                           Gate('H', (0,)), Gate('H', (1,))], '00'),
+    'circuits/94-lab-half-adder': (3, [Gate('CCX', (0, 1, 2)), Gate('CX', (0, 1))], '110'),
+    'circuits/95-lab-qft': (2, [Gate('H', (0,)), Gate('CP', (1, 0), 3.141592653589793 / 2), Gate('H', (1,)),
+                                Gate('SWAP', (0, 1))], '01'),
+}
+
+
+def test_every_lab_has_a_tested_solution():
+    labs_present = {l.key for l in LESSONS if l.kind == 'lab'}
+    assert labs_present == set(LAB_SOLUTIONS)
+
+
+@pytest.mark.parametrize('key', sorted(LAB_SOLUTIONS))
+def test_lab_solution_completes_every_step(key):
+    lesson = next(l for l in LESSONS if l.key == key)
+    n, gates, starts = LAB_SOLUTIONS[key]
+    states = []
+    for ch in starts:
+        states.append(InitialState.preset({'0': '0', '1': '1', '+': '+', '-': '-'}[ch]))
+    m = CircuitModel(n)
+    m.set_circuit(n, gates, initial_states=states)
+    assert all(labs.progress(m, steps_of(lesson.body)).values())
+
+
+# ---- numbers quoted in the lessons match the app's physics -------------------------------------
+
+def lesson_text(key):
+    return next(l for l in LESSONS if l.key == key).body
+
+
+def test_hydrogen_energies_and_lines_match_the_model():
+    from scipy import constants as c
+    from quantumscope.physics.hydrogen import HydrogenAtom
+    atom, text = HydrogenAtom(), lesson_text('hydrogen/04-energy-levels-and-spectra')
+    for n in (1, 2, 3, 4):
+        assert f'{atom.state(n, 0, 0).energy_ev:.3f}'.replace('-', '−') in text
+    for (ni, nf), shown in (((2, 1), '121.6 nm'), ((3, 1), '102.6 nm'), ((3, 2), '656.5 nm')):
+        de = atom.state(ni, 0, 0).energy_ev - atom.state(nf, 0, 0).energy_ev
+        assert f'{c.h * c.c / (de * c.e) * 1e9:.1f} nm' == shown and shown in text
+
+
+def test_beat_periods_match_the_model():
+    from quantumscope.physics.dynamics import HydrogenSuperposition
+    from quantumscope.physics.hydrogen import HydrogenAtom
+    atom, text = HydrogenAtom(), lesson_text('hydrogen/05-superposition-and-quantum-beats')
+    for a, b in (((1, 0, 0), (2, 1, 0)), ((1, 0, 0), (3, 2, 0))):
+        period = HydrogenSuperposition(atom.state(*a), atom.state(*b)).beat_period_fs
+        assert f'{period:.4f} fs' in text
+
+
+def test_radii_quoted_in_lessons():
+    import numpy as np
+    from quantumscope.physics.dynamics import enclosing_radius
+    from quantumscope.physics.hydrogen import HydrogenAtom
+    atom = HydrogenAtom()
+    r = np.linspace(0, 80, 400001)
+    integrate = getattr(np, 'trapezoid', None) or np.trapz
+    for (n, l), mean in (((1, 0), 1.5), ((2, 0), 6), ((2, 1), 5), ((3, 2), 10.5)):
+        p = atom.state(n, l, 0).radial_probability(r)
+        assert integrate(r * p, r) / integrate(p, r) == pytest.approx(mean, abs=1e-3)
+    assert f'{enclosing_radius(atom.state(1, 0, 0)):.2f}' == '4.64'
+    assert '4.64' in lesson_text('hydrogen/03-probability-density')
+
+
+def test_grover_table_matches_the_formula():
+    from quantumscope.physics.algorithms import grover_optimal_iterations, grover_success
+    text = lesson_text('circuits/08-grover-search')
+    for n, shown in ((2, '| 4 | 30° | 1 | 1 |'), (3, '| 8 | 20.7° | 2 | 0.945 |'), (4, '| 16 | 14.5° | 3 | 0.961 |')):
+        k = grover_optimal_iterations(n)
+        assert shown in text and f'| {k} |' in shown
+        assert f'{grover_success(n, k):.3f}'.rstrip('0').rstrip('.') in shown
+
+
+def test_every_area_has_lessons():
+    areas = {l.area for l in LESSONS}
+    assert areas == {'circuits', 'principles', 'hydrogen'}
+    assert sum(l.kind == 'lab' for l in LESSONS) == 6 and len(LESSONS) == 27

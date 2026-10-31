@@ -89,7 +89,3 @@ E: The first digit belongs to q0 and the second to q1. In Qiskit order the same 
 - Global phase is unobservable; relative phase matters.
 - $n$ qubits have $2^n$ amplitudes, and independent qubits combine by the tensor product.
 - Basis labels need a bit-order convention; QuantumScope uses q0 leftmost unless you choose otherwise.
-
-## Further reading
-
-- M. A. Nielsen and I. L. Chuang, *Quantum Computation and Quantum Information*, Cambridge University Press — chapter 1 (qubits) and chapter 2 (linear algebra and the tensor product).
