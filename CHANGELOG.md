@@ -54,6 +54,8 @@
 
   The packaged-app self-test also checks that the lessons ship with the app.
 - **Fixes:**
+  - **QASM Converter tab:** it was always open at start-up, and its close button did nothing. It now opens from **+ → QASM Converter**, closes normally, and keeps its text when reopened.
+  - **First experiment tab:** the first experiment opened in an area (for example the Double-Slit Experiment in Quantum Principles) could not be closed. Only the Hydrogen Explorer and Gate Circuit Simulator are permanent now.
   - **tree views** were unthemed (white) in the dark theme;
   - **disabled buttons** in the light theme used the dark theme's colors.
 

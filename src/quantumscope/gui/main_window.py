@@ -281,14 +281,17 @@ class MainWindow(QMainWindow):
             self.workspaces[category] = tabs
         self.workspace = self.workspaces["hydrogen"]
         self.workspace.addTab(explorer, QIcon(str(files("quantumscope").joinpath("assets/quantumscope-24.png"))), "Hydrogen Explorer")
+        self._hydrogen_explorer = explorer          # permanent tab (its 3D view is shared)
         self.workspace.tabBar().setTabButton(0, self.workspace.tabBar().ButtonPosition.RightSide, None)
         from quantumscope.gui.circuit_workspace import CircuitWorkspace
         self.circuit_widget = CircuitWorkspace(self.workspaces["circuits"])
         self.workspaces["circuits"].addTab(self.circuit_widget, "Gate Circuit Simulator")
         self.workspaces["circuits"].tabBar().setTabButton(0, self.workspaces["circuits"].tabBar().ButtonPosition.RightSide, None)
         from quantumscope.gui.qasm_converter import QasmConverter
+        # The converter opens as a tab only when chosen (+ → QASM Converter) and can be closed;
+        # the widget is kept, so reopening it keeps what you were converting.
         self.converter_widget = QasmConverter(self._load_converted_circuit, self.workspaces["circuits"])
-        self.workspaces["circuits"].addTab(self.converter_widget,"QASM Converter")
+        self.converter_widget.hide()
         outer.addWidget(self.categories, 1)
         self.setCentralWidget(shell)
         self._open_experiments = {}
@@ -322,9 +325,17 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Opened {label.strip()}",3500)
 
     def _close_workspace_tab(self,category,index):
+        """Close any experiment tab except the two permanent ones (Hydrogen Explorer and
+        Gate Circuit Simulator), wherever a tab sits — the first experiment opened in an
+        area lands at position 0 and must close like the others."""
         tabs=self.workspaces[category]
-        if index<=0 or category=="circuits":return
         widget=tabs.widget(index)
+        if widget is None or widget is getattr(self,"_hydrogen_explorer",None) or widget is getattr(self,"circuit_widget",None):
+            return
+        if widget is self.converter_widget:
+            tabs.removeTab(index)                    # keep the converter (and its text) for reopening
+            widget.hide()
+            return
         tabs.removeTab(index)
         for key,active in list(self._open_experiments.items()):
             if active is widget:del self._open_experiments[key]
@@ -337,7 +348,10 @@ class MainWindow(QMainWindow):
 
     def _launch_converter(self):
         tabs=self._select_category("circuits")
-        tabs.setCurrentWidget(self.converter_widget)
+        index=tabs.indexOf(self.converter_widget)
+        if index<0:
+            index=tabs.addTab(self.converter_widget,"QASM Converter")
+        tabs.setCurrentIndex(index)
 
     def _load_converted_circuit(self,n,gates,measured=(),layout=None):
         layout=layout or {}

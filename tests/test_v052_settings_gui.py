@@ -199,3 +199,50 @@ def test_tools_simplify_and_equivalence(app, tmp_path, monkeypatch):
     assert w.check_equivalence(path) is True and messages[-1].startswith('Equivalent')
     w.place('Z', 0, 0)
     assert w.check_equivalence(path) is False and messages[-1].startswith('Not equivalent')
+
+
+def test_tabs_open_and_close_correctly(app):
+    """The QASM Converter opens on demand and closes; the first experiment in an area closes;
+    the Hydrogen Explorer and Gate Circuit Simulator stay. (MainWindow itself needs OpenGL,
+    so its tab methods run on a stand-in built from real tab widgets.)"""
+    from quantumscope.gui.main_window import MainWindow
+
+    class Fake:
+        _select_category = MainWindow._select_category
+        _launch_converter = MainWindow._launch_converter
+        _close_workspace_tab = MainWindow._close_workspace_tab
+        _open_experiment = MainWindow._open_experiment
+
+        def __init__(self):
+            self.categories = QtWidgets.QTabWidget()
+            self.workspaces = {c: QtWidgets.QTabWidget() for c in ('hydrogen', 'principles', 'circuits')}
+            for tabs in self.workspaces.values():
+                self.categories.addTab(tabs, 'x')
+            self._hydrogen_explorer = QtWidgets.QWidget()
+            self.workspaces['hydrogen'].addTab(self._hydrogen_explorer, 'Hydrogen Explorer')
+            self.circuit_widget = QtWidgets.QWidget()
+            self.workspaces['circuits'].addTab(self.circuit_widget, 'Gate Circuit Simulator')
+            self.converter_widget = QtWidgets.QLineEdit()
+            self._open_experiments = {}
+
+        def statusBar(self):
+            return QtWidgets.QStatusBar()
+
+    w = Fake()
+    circuits = w.workspaces['circuits']
+    assert circuits.count() == 1                                   # no converter at start-up
+    w._launch_converter()
+    assert circuits.count() == 2 and circuits.currentWidget() is w.converter_widget
+    w.converter_widget.setText('kept')
+    w._close_workspace_tab('circuits', 1)
+    assert circuits.count() == 1
+    w._launch_converter()
+    assert circuits.count() == 2 and w.converter_widget.text() == 'kept'   # reopens with its content
+    w._close_workspace_tab('circuits', 0)                         # the simulator is permanent
+    w._close_workspace_tab('hydrogen', 0)                         # so is the Hydrogen Explorer
+    assert circuits.indexOf(w.circuit_widget) == 0 and w.workspaces['hydrogen'].count() == 1
+    principles = w.workspaces['principles']
+    w._open_experiment('double_slit', 'Double slit', lambda parent: QtWidgets.QWidget(parent))
+    assert principles.count() == 1
+    w._close_workspace_tab('principles', 0)                       # the first experiment in an area closes
+    assert principles.count() == 0 and w._open_experiments == {}
