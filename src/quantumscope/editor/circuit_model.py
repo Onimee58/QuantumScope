@@ -564,6 +564,50 @@ class CircuitModel:
         return [(bid, pl.block.label, len(pl.block.gates), pl.expanded)
                 for bid, pl in sorted(self.blocks.items(), key=lambda x: (x[1].col, x[1].block.low))]
 
+    # ---- circuit tools --------------------------------------------------------------
+    def _optimizable_items(self):
+        """Simulation-order items for physics.optimize: editable gates, and blocks as barriers."""
+        items = []
+        for c, r, seq, g, pl in placed_items(((r, c, g) for (r, c), g in self.gates.items()), self.blocks.values()):
+            if pl is None:
+                items.append(('gate', (r, c), g))
+            else:
+                items.append(('barrier', ('block', pl.col, pl.block.low, seq), tuple(pl.block.span)))
+        return items
+
+    def simplification(self):
+        """(kept gates by key, list of changes, equivalent?, global phase) — nothing is changed yet.
+
+        Gates inside blocks are never changed; blocks act as barriers.
+        """
+        from quantumscope.physics.optimize import equivalent, simplify_sequence
+        items = self._optimizable_items()
+        kept, changes = simplify_sequence(items)
+        if not changes:
+            return kept, [], True, 1.0
+        before = self.ordered()
+        # Rebuild the full order, block gates included, for the equivalence check.
+        flat_after = []
+        gi = 0
+        survivors = [kept[key] if key in kept else None for kind, key, _ in items if kind == 'gate']
+        for c, r, seq, g, pl in placed_items(((r, c, g) for (r, c), g in self.gates.items()), self.blocks.values()):
+            if pl is None:
+                if survivors[gi] is not None:
+                    flat_after.append(survivors[gi])
+                gi += 1
+            else:
+                flat_after.append(g)
+        ok, phase, _ = equivalent(self.n, before, flat_after)
+        return kept, changes, ok, phase
+
+    def apply_simplification(self, kept):
+        """Replace the editable gates with the simplified set (one undo step)."""
+        if set(kept) - set(self.gates):
+            raise EditorError('Simplification no longer matches the circuit')
+        self.snapshot()
+        self.gates = {key: gate for key, gate in kept.items()}
+        return True
+
     # ---- analysis ---------------------------------------------------------------
     def is_edited_example(self):
         return self.example_ops is not None and tuple(self.ordered()) != self.example_ops

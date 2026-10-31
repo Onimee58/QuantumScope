@@ -302,7 +302,8 @@ class StateInspector(QWidget):
         info = reduced_summary(v['state'], v['n'], keep)
         rho = info['rho']
         dim = rho.shape[0]
-        labels = [f'|{i:0{len(keep)}b}⟩' for i in range(dim)]
+        from quantumscope.physics.display import ket
+        labels = [ket(i, len(keep)) for i in range(dim)]
         self.rho_table.setRowCount(dim)
         self.rho_table.setColumnCount(dim)
         self.rho_table.setHorizontalHeaderLabels(labels)

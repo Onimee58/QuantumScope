@@ -84,6 +84,11 @@ def test_workspace_uses_defaults_and_confirms_clear(app, monkeypatch):
     from quantumscope.gui.circuit_workspace import CircuitWorkspace
     w = CircuitWorkspace()
     assert w.shots.value() == 333 and not w.show_blochs.isChecked()
+    assert w.model.gates == {} and w.model.blocks == {}       # v0.5.2 starts with an empty circuit
+    monkeypatch.setattr(QtWidgets.QMessageBox, 'question',
+                        staticmethod(lambda *a, **k: pytest.fail('an empty circuit clears without asking')))
+    w._clear_clicked()
+    w.place('H', 0, 0)
     monkeypatch.setattr(QtWidgets.QMessageBox, 'question',
                         staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.No))
     w._clear_clicked()
@@ -105,7 +110,7 @@ def test_autosave_recent_and_recovery(app, tmp_path, monkeypatch):
     monkeypatch.setattr(QtWidgets.QFileDialog, 'getSaveFileName', staticmethod(lambda *a, **k: (path, '')))
     w.save_native()
     assert prefs.get('files/recent')[0] == os.path.abspath(path)
-    assert w.recent_button.menu().actions()[0].text() == 'saved.qscope'
+    assert w.recent_menu.actions()[0].text() == 'saved.qscope'
 
     class FakeWindow:                                 # MainWindow needs OpenGL; reuse its recovery logic
         circuit_widget = CircuitWorkspace()
@@ -129,3 +134,68 @@ def test_pdf_report_preference(app, tmp_path, monkeypatch):
         prefs.set('files/pdf_report', choice)
         w.export_pdf()
         assert seen[-1] is expected
+
+
+def test_toolbar_cleanup_and_file_menu(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    texts = [b.text() for b in w.findChildren(QtWidgets.QPushButton)] + [l.text() for l in w.findChildren(QtWidgets.QLabel)]
+    assert 'Bell example' not in texts and 'Gate' not in texts            # leftovers removed
+    actions = [a.text() for a in w.file_button.menu().actions() if a.text()]
+    assert actions[:3] == ['Open .qscope…', 'Open recent', 'Save .qscope…'] and 'Export PDF…' in actions
+
+
+def test_angle_units_setting(app):
+    import math
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.angle.setValue(45)
+    w.place('RY', 0, 0)
+    assert w.model.gates[(0, 0)].angle == pytest.approx(math.pi / 4)
+    prefs.set('circuits/angle_units', 'radians')
+    w.apply_preferences()
+    assert w.angle.value() == pytest.approx(math.pi / 4, abs=1e-4) and w.angle.suffix() == ' rad'
+    w.angle.setValue(1.0)
+    w.place('RX', 1, 0)
+    assert w.model.gates[(1, 0)].angle == pytest.approx(1.0)
+    assert w._parse_user_angle('pi/2') == pytest.approx(math.pi / 2)
+    prefs.set('circuits/angle_units', 'degrees')
+    w.apply_preferences()
+    assert w._parse_user_angle('90') == pytest.approx(math.pi / 2) and w._parse_user_angle('pi') == pytest.approx(math.pi)
+
+
+def test_bit_order_and_number_format_settings(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    from quantumscope.physics.circuits import Gate
+    w = CircuitWorkspace()
+    w.set_circuit(2, [Gate('X', (0,)), Gate('H', (1,))])
+    w.open_state_inspector()
+    assert '|10⟩' in w._inspector.dirac.toPlainText()
+    prefs.set('circuits/bit_order', 'q0_right')
+    prefs.set('circuits/number_format', 'decimal')
+    prefs.set('circuits/decimals', 3)
+    w.apply_preferences()
+    text = w._inspector.dirac.toPlainText()
+    assert '|01⟩' in text and '0.707' in text
+    prefs.restore_defaults()
+    w.apply_preferences()
+    assert '|10⟩' in w._inspector.dirac.toPlainText()
+
+
+def test_tools_simplify_and_equivalence(app, tmp_path, monkeypatch):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.place('H', 0, 0)
+    w.place('H', 0, 1)
+    w.place('X', 1, 0)
+    path = str(tmp_path / 'original.qscope')
+    monkeypatch.setattr(QtWidgets.QFileDialog, 'getSaveFileName', staticmethod(lambda *a, **k: (path, '')))
+    w.save_native()
+    monkeypatch.setattr(QtWidgets.QDialog, 'exec', lambda self: QtWidgets.QDialog.DialogCode.Accepted)
+    w.simplify_dialog()
+    assert list(w.model.gates.values()) == [w.model.gates[(1, 0)]]
+    messages = []
+    monkeypatch.setattr(QtWidgets.QMessageBox, 'information', staticmethod(lambda *a, **k: messages.append(a[2])))
+    assert w.check_equivalence(path) is True and messages[-1].startswith('Equivalent')
+    w.place('Z', 0, 0)
+    assert w.check_equivalence(path) is False and messages[-1].startswith('Not equivalent')

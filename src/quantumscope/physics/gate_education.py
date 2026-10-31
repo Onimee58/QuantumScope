@@ -48,8 +48,9 @@ def transformation_rows(name,angle=math.pi/2,phi=0.0,lam=0.0):
         inp=np.zeros(1<<n,complex);inp[index]=1
         out=apply_gate(inp,n,g)
         terms=[(format_amplitude(z),j) for j,z in enumerate(out) if abs(z)>1e-8]
-        expression=' + '.join(f'|{j:0{n}b}>' if a=='1' else f'({a})|{j:0{n}b}>' for a,j in terms)
-        items.append((f'|{index:0{n}b}>',expression.replace('+ (-','- (')))
+        from .display import ket
+        expression=' + '.join(ket(j,n,True) if a=='1' else f'({a}){ket(j,n,True)}' for a,j in terms)
+        items.append((ket(index,n,True),expression.replace('+ (-','- (')))
     return items
 
 
@@ -65,10 +66,20 @@ def _real_text(x):
     return f'{x:.4f}'.rstrip('0').rstrip('.')
 
 
-def format_amplitude(z,tol=1e-9):
-    """Readable complex amplitude: exact forms for common values (1/√2, i, ...)."""
+def format_amplitude(z,tol=1e-9,exact=None):
+    """Readable complex amplitude: exact forms for common values (1/√2, i, ...),
+    or decimals when the display number format is 'decimal' (or exact=False)."""
+    from .display import OPTIONS
     re_,im=(0.0 if abs(z.real)<tol else z.real),(0.0 if abs(z.imag)<tol else z.imag)
     if re_==0 and im==0:return '0'
+    if exact is False or (exact is None and OPTIONS['number_format']=='decimal'):
+        d=OPTIONS['decimals']
+        def num(x):
+            text=f'{x:.{d}f}'.rstrip('0').rstrip('.')
+            return '0' if text in ('-0','') else text
+        if im==0:return num(re_)
+        if re_==0:return num(im)+'i'
+        return f'{num(re_)} {"+" if im>0 else "-"} {num(abs(im))}i'
     if im==0:return _real_text(re_)
     if re_==0:
         return ('-' if im<0 else '')+_imag_text(abs(im))

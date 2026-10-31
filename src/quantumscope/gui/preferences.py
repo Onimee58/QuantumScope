@@ -31,6 +31,10 @@ PREFS = {p.key: p for p in (
     Pref('circuits/default_shots', 1024, minimum=1, maximum=100000),
     Pref('circuits/show_blochs', True, (True, False)),
     Pref('circuits/confirm_clear', True, (True, False)),
+    Pref('circuits/angle_units', 'degrees', ('degrees', 'radians')),
+    Pref('circuits/bit_order', 'q0_left', ('q0_left', 'q0_right')),
+    Pref('circuits/number_format', 'exact', ('exact', 'decimal')),
+    Pref('circuits/decimals', 4, minimum=2, maximum=8),
     # Graphics
     Pref('graphics/device', 'auto', ('auto', 'integrated', 'nvidia'), restart=True),
     Pref('graphics/volume_method', 'Auto (GPU preferred)', ('Auto (GPU preferred)', 'GPU', 'CPU')),
@@ -189,3 +193,10 @@ def resolve_theme(choice, system_is_dark):
     if choice == 'system':
         return 'dark' if system_is_dark else 'light'
     return choice
+
+
+def configure_display(store=None):
+    """Apply the display settings (bit order, number format) to the physics formatting."""
+    from quantumscope.physics import display
+    display.configure(bit_order=get('circuits/bit_order', store), number_format=get('circuits/number_format', store),
+                      decimals=get('circuits/decimals', store))

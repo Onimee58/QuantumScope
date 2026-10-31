@@ -106,7 +106,8 @@ def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial
             for index in order:
                 if probs[index]<1e-11:continue
                 y+=20
-                painter.drawText(margin,y,f'|{index:0{n}b}>    {100*probs[index]:.4f}%')
+                from quantumscope.physics.display import ket
+                painter.drawText(margin,y,f'{ket(index,n,True)}    {100*probs[index]:.4f}%')
             y+=30
             if y+30<height:
                 painter.drawText(margin,y,'Terminal measurements: '+(', '.join('q'+str(q) for q in sorted(measurements)) if measurements else 'none'))

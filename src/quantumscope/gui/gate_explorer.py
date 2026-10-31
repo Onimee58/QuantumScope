@@ -67,7 +67,8 @@ class GateExplorer(QDialog):
             matrix='<p>Measurement is not unitary. It uses computational-basis projectors |0⟩⟨0| and |1⟩⟨1|.</p>'
         else:
             u=gate_matrix(self.name,angle,phi,lam);n=info['qubits']
-            labels=[f'|{i:0{n}b}⟩' for i in range(1<<n)]
+            from quantumscope.physics.display import ket
+            labels=[ket(i,n) for i in range(1<<n)]
             head_row='<tr><td></td>'+''.join(f'<td><b>{l}</b></td>' for l in labels)+'</tr>'
             body=''.join('<tr><td><b>'+labels[r]+'</b></td>'+''.join(f'<td align="center">{format_amplitude(v)}</td>' for v in u[r])+'</tr>' for r in range(len(u)))
             note='' if n==1 else '<p>Qubit order: q0 is the leftmost bit; for controlled gates q0 is the first control.</p>'
@@ -142,7 +143,8 @@ class BlockExplorer(QDialog):
                     state=apply_gate(state,k,Gate(g.name,tuple(local[q] for q in g.targets),g.angle,g.phi,g.lam))
                 cols.append(state)
             u=np.array(cols).T
-            labels=[f'|{i:0{k}b}⟩' for i in range(1<<k)]
+            from quantumscope.physics.display import ket
+            labels=[ket(i,k) for i in range(1<<k)]
             html='<table border="1" cellpadding="5" cellspacing="0"><tr><td></td>'+''.join(f'<td><b>{l}</b></td>' for l in labels)+'</tr>'
             html+=''.join('<tr><td><b>'+labels[r]+'</b></td>'+''.join(f'<td align="center">{format_amplitude(x)}</td>' for x in u[r])+'</tr>' for r in range(1<<k))
             matrix=QTextBrowser();matrix.setHtml('<p>Basis order lists '+', '.join(f'q{q}' for q in block.qubits)+' (first = leftmost bit).</p>'+html+'</table>')

@@ -6,6 +6,7 @@ outputs are checked only for examples with a documented register convention.
 from dataclasses import dataclass
 import numpy as np
 from .circuits import Gate, zero, apply_gate, distribution
+from .display import ket
 
 @dataclass(frozen=True)
 class VerificationRow:
@@ -81,6 +82,6 @@ def inspect_basis(n, gates, max_rows=16):
         state=np.zeros(1<<n,complex);state[value]=1
         for gate in gates: state=apply_gate(state,n,gate)
         p=distribution(state);top=int(np.argmax(p));prob=float(p[top])
-        label=f'|{top:0{n}b}⟩' if prob>1-1e-8 else f'non-deterministic ({prob*100:.1f}% at |{top:0{n}b}⟩)'
-        rows.append(VerificationRow(f'|{value:0{n}b}⟩',label,'—',prob,None))
+        label=ket(top,n) if prob>1-1e-8 else f'non-deterministic ({prob*100:.1f}% at {ket(top,n)})'
+        rows.append(VerificationRow(ket(value,n),label,'—',prob,None))
     return rows, f'First {len(rows)} computational-basis inputs; superposition-producing circuits are not assigned arithmetic PASS/FAIL.'

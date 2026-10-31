@@ -11,6 +11,7 @@ import numpy as np
 
 from .circuits import Gate, unitary
 from .gate_education import angle_text, format_amplitude
+from .display import bits, ket
 
 NOISE = 1e-10   # amplitudes and eigenvalues below this are numerical noise
 
@@ -18,7 +19,7 @@ NOISE = 1e-10   # amplitudes and eigenvalues below this are numerical noise
 # ---- amplitudes -------------------------------------------------------------------
 
 def basis_label(index, n):
-    return f'|{index:0{n}b}⟩'
+    return ket(index, n)
 
 
 def remove_global_phase(state):
@@ -117,7 +118,7 @@ def dirac_latex(state, n, relative_phase=False):
     r"""e.g. '\frac{1}{\sqrt{2}}\lvert 00\rangle + \frac{1}{\sqrt{2}}\lvert 11\rangle'."""
     parts = []
     for amp, i in _terms(state, n, relative_phase):
-        ket = r'\lvert ' + f'{i:0{n}b}' + r'\rangle'
+        ket_tex = r'\lvert ' + bits(i, n) + r'\rangle'
         sign = ''
         if amp.startswith('-') and ' ' not in amp:
             sign, amp = '-', amp[1:]
@@ -132,13 +133,13 @@ def dirac_latex(state, n, relative_phase=False):
             coef = r'\left(' + _latex_amp(amp) + r'\right)'
         else:
             coef = _latex_amp(amp)
-        parts.append(sign + coef + ket)
+        parts.append(sign + coef + ket_tex)
     return _joined(parts) or '0'
 
 
 def state_csv(state, n):
     """CSV with full-precision amplitudes for every basis state."""
-    lines = ['basis,real,imag,magnitude,probability,phase_radians']
+    lines = ['basis,real,imag,magnitude,probability,phase_radians']   # data: basis always q0 first, whatever the display order
     for i, a in enumerate(np.asarray(state, complex)):
         mag = abs(a)
         phase = float(np.angle(a)) if mag > NOISE else 0.0

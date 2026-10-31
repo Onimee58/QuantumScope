@@ -7,10 +7,11 @@ from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QDrag, QFont, QBrush, QWheelEvent, QPdfWriter, QPageSize
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
     QLabel, QPushButton, QListWidget, QTableWidget, QTableWidgetItem, QSpinBox,
-    QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton, QSizePolicy, QDialog, QDialogButtonBox, QLineEdit, QTabWidget, QApplication)
+    QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton, QSizePolicy, QDialog, QDialogButtonBox, QLineEdit, QTabWidget, QApplication, QDoubleSpinBox)
 from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured, from_native_layout, from_qasm_layout
 from quantumscope.physics.circuit_layout import pack_and_order
 from quantumscope.gui.theme import canvas_color
+from quantumscope.physics.display import bits, ket
 from quantumscope.gui import preferences as prefs
 from quantumscope.gui.controls import Debouncer
 from quantumscope.editor.circuit_model import CircuitModel, EditorError
@@ -350,8 +351,8 @@ class ProbabilityBars(QWidget):
         inds=np.argsort(scores)[::-1]
         selected=[int(i) for i in inds if scores[i]>1e-9][:10]
         if not selected:selected=[0]
-        self.theory=[(format(i,f'0{n}b'),float(probs[i])) for i in selected]
-        self.counts={format(i,f'0{n}b'):float(counts[i]/max(1,counts.sum())) for i in selected} if counts is not None else None
+        self.theory=[(bits(i,n),float(probs[i])) for i in selected]
+        self.counts={bits(i,n):float(counts[i]/max(1,counts.sum())) for i in selected} if counts is not None else None
         self.update()
     def set_probabilities(self,probs,n,counts=None):
         self.n=n
@@ -359,8 +360,8 @@ class ProbabilityBars(QWidget):
         if counts is not None:scores=np.maximum(scores,counts/max(1,counts.sum()))
         inds=np.argsort(scores)[::-1]
         selected=[int(i) for i in inds if scores[i]>1e-9][:10] or [0]
-        self.theory=[(format(i,f'0{n}b'),float(probs[i])) for i in selected]
-        self.counts={format(i,f'0{n}b'):float(counts[i]/max(1,counts.sum())) for i in selected} if counts is not None else None
+        self.theory=[(bits(i,n),float(probs[i])) for i in selected]
+        self.counts={bits(i,n):float(counts[i]/max(1,counts.sum())) for i in selected} if counts is not None else None
         self.update()
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -391,6 +392,7 @@ class CircuitWorkspace(QWidget):
     state_changed=Signal()
 
     def __init__(self,parent=None):
+        prefs.configure_display()
         super().__init__(parent);self.model=CircuitModel(prefs.get('circuits/default_qubits'));self.current_path=None;self._inspector=None;
         self._autosave_enabled=False;self._autosave=Debouncer(self,self.autosave_now,1500);self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
         page_layout=QVBoxLayout(self)
@@ -407,32 +409,36 @@ class CircuitWorkspace(QWidget):
         top=QHBoxLayout();outer.addLayout(top)
         top.addWidget(QLabel('Qubits'))
         self.qubits=QSpinBox();self.qubits.setRange(1,MAX_QUBITS);self.qubits.setValue(self.n);top.addWidget(self.qubits)
-        top.addWidget(QLabel('Gate'))
-        self.gate=QComboBox();self.gate.addItems(list(ALL)+['M']);top.addWidget(self.gate)
-        self.rotation_label=QLabel('New gate angle (°)');top.addWidget(self.rotation_label)
-        self.angle=QSpinBox();self.angle.setRange(-360,360);self.angle.setValue(90);top.addWidget(self.angle)
-        self.phi=QSpinBox();self.phi.setRange(-360,360);self.phi.setValue(0);self.phi.setPrefix('φ ');self.phi.setToolTip('U gate phase φ in degrees');top.addWidget(self.phi)
-        self.lam=QSpinBox();self.lam.setRange(-360,360);self.lam.setValue(0);self.lam.setPrefix('λ ');self.lam.setToolTip('U gate phase λ in degrees');top.addWidget(self.lam)
-        self.second_label=QLabel('Target');top.addWidget(self.second_label)
-        self.target=QSpinBox();self.target.setRange(0,self.n-1);top.addWidget(self.target)
-        self.third_label=QLabel('Target (third qubit)')
-        self.target3=QSpinBox();self.target3.setRange(0,self.n-1);self.target3.setValue(2);self.target3.setToolTip('CCX: third qubit is the target; CSWAP: third qubit is the second swap operand.')
-        top.addWidget(self.third_label);top.addWidget(self.target3)
-        self.gate.currentTextChanged.connect(self._update_operand_labels)
-        self.gate.hide()
-        self.target.hide();self.target3.hide();self.second_label.hide();self.third_label.hide()
-        self._update_operand_labels(self.gate.currentText())
-        self.gate.hide();self.target.hide();self.target3.hide();self.second_label.hide();self.third_label.hide()
-        for text,cb in [('Clear',self._clear_clicked),('Bell example',self.example),('Import QASM 2',self.load_qasm),('Export QASM',self.export_qasm),('Export PDF',self.export_pdf),('Open .qscope',self.load_native),('Save .qscope',self.save_native)]:
-            btn=QPushButton(text);btn.clicked.connect(cb);top.addWidget(btn)
+        # New-gate angles follow Settings → Circuits → Gate angles (degrees or radians).
+        self.rotation_label=QLabel('New gate angle');top.addWidget(self.rotation_label)
+        self.angle=QDoubleSpinBox();self.angle.setValue(90);top.addWidget(self.angle)
+        self.phi=QDoubleSpinBox();self.phi.setPrefix('φ ');self.phi.setToolTip('U gate phase φ');top.addWidget(self.phi)
+        self.lam=QDoubleSpinBox();self.lam.setPrefix('λ ');self.lam.setToolTip('U gate phase λ');top.addWidget(self.lam)
+        self._angle_units='degrees';self._set_angle_fields(prefs.get('circuits/angle_units'))
+        top.addStretch()
+        clear=QPushButton('Clear');clear.clicked.connect(self._clear_clicked);top.addWidget(clear)
+        # Push buttons with menus follow the theme's button style.
+        self.file_button=QPushButton('File')
+        self.file_button.setToolTip('Open, save, import and export circuits')
+        file_menu=QMenu(self.file_button)
+        file_menu.addAction('Open .qscope…',self.load_native)
+        self.recent_menu=file_menu.addMenu('Open recent')
+        file_menu.addAction('Save .qscope…',self.save_native)
+        file_menu.addSeparator()
+        file_menu.addAction('Import OpenQASM 2…',self.load_qasm)
+        file_menu.addAction('Export OpenQASM 2…',self.export_qasm)
+        file_menu.addAction('Export PDF…',self.export_pdf)
+        self.file_button.setMenu(file_menu);top.addWidget(self.file_button)
         edits=QHBoxLayout();outer.addLayout(edits)
         for text,cb in [('Undo',self.undo),('Redo',self.redo)]:
             button=QPushButton(text);button.clicked.connect(cb);edits.addWidget(button)
-        self.recent_button=QToolButton();self.recent_button.setText('Recent ▾')
-        self.recent_button.setToolTip('Reopen a recently used circuit')
-        self.recent_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.recent_button.setMenu(QMenu(self.recent_button));edits.addWidget(self.recent_button)
         self._refresh_recent()
+        self.tools_button=QPushButton('Tools')
+        self.tools_button.setToolTip('Simplify the circuit or check it against another circuit')
+        tools=QMenu(self.tools_button)
+        tools.addAction('Simplify circuit…',self.simplify_dialog)
+        tools.addAction('Check equivalence with a saved circuit…',self.check_equivalence)
+        self.tools_button.setMenu(tools);edits.addWidget(self.tools_button)
         self.inspector_button=QPushButton('State Inspector…')
         self.inspector_button.setToolTip('Open amplitudes, statevector, reduced density matrices and circuit statistics')
         self.inspector_button.clicked.connect(self.open_state_inspector);edits.addWidget(self.inspector_button)
@@ -529,23 +535,32 @@ class CircuitWorkspace(QWidget):
         split.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         split.setStretchFactor(1,1)
         self.qubits.valueChanged.connect(self.resize_qubits);self.step.valueChanged.connect(self.show_step)
-        self.example()
+        # Start with an empty circuit (Settings → Circuits sets its size).
+        self._sync_view();self.refresh()
 
-    def _update_operand_labels(self,name):
-        multi=name in DUAL or name in TRIPLE
-        triple=name in TRIPLE
-        self.target.setVisible(multi)
-        self.second_label.setVisible(multi)
-        self.target3.setVisible(triple)
-        self.third_label.setVisible(triple)
-        if name=='CCX':
-            self.second_label.setText('Control 2')
-            self.third_label.setText('Target')
-        elif name=='CSWAP':
-            self.second_label.setText('Swap 1')
-            self.third_label.setText('Swap 2')
-        elif multi:
-            self.second_label.setText('Target' if name in ('CX','CZ','CP') else 'Swap partner')
+    def _set_angle_fields(self,units):
+        """Show new-gate angles in degrees or radians, converting the current values."""
+        convert=(lambda v:v) if units==self._angle_units else (math.radians if units=='radians' else math.degrees)
+        for field in (self.angle,self.phi,self.lam):
+            value=convert(field.value())
+            if units=='radians':
+                field.setDecimals(4);field.setRange(-4*math.pi,4*math.pi);field.setSingleStep(math.pi/8);field.setSuffix(' rad')
+            else:
+                field.setDecimals(2);field.setRange(-720,720);field.setSingleStep(15);field.setSuffix('°')
+            field.setValue(value)
+        self._angle_units=units
+        self.rotation_label.setText('New gate angle' + (' (rad)' if units=='radians' else ' (°)'))
+    def _angle_radians(self,field):
+        return field.value() if self._angle_units=='radians' else math.radians(field.value())
+    def _parse_user_angle(self,text):
+        """An angle typed by the user, in radians. Expressions with pi are radians;
+        plain numbers use the chosen unit (degrees by default)."""
+        value=parse_angle(text)
+        if self._angle_units=='degrees' and 'pi' not in text.lower() and 'π' not in text:
+            value=math.radians(value)
+        return value
+    def _format_user_angle(self,radians):
+        return f'{math.degrees(radians):.10g}' if self._angle_units=='degrees' else f'{radians:.12g}'
 
     # ---- state lives in the Qt-free CircuitModel; these keep the widget API ----
     n=property(lambda self:self.model.n,lambda self,v:setattr(self.model,'n',v))
@@ -564,7 +579,6 @@ class CircuitWorkspace(QWidget):
         n=self.model.n
         if self.qubits.value()!=n:
             self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
-        self.target.setRange(0,n-1);self.target3.setRange(0,n-1)
         if self.grid.rowCount()!=n:
             self.grid.setRowCount(n)
         self.grid.setVerticalHeaderLabels([f'q{i} {s.label} ─' for i,s in enumerate(self.model.initial_states)])
@@ -583,21 +597,72 @@ class CircuitWorkspace(QWidget):
 
     def snapshot(self):self.model.snapshot()
 
+    # ---- circuit tools ------------------------------------------------------------------------
+    @staticmethod
+    def _phase_text(phase):
+        if phase is None or abs(phase-1)<1e-9:return 'exactly the same unitary'
+        from quantumscope.physics.gate_education import angle_text
+        return f'the same unitary up to a global phase of e^(i·{angle_text(float(np.angle(phase)))}), which has no observable effect'
+    def simplify_dialog(self):
+        kept,changes,ok,phase=self.model.simplification()
+        if not changes:
+            QMessageBox.information(self,'Simplify circuit','Nothing to simplify: no neighboring gates cancel or merge.'
+                                    +(' Gates inside blocks are never changed.' if self.model.blocks else ''));return
+        if not ok:   # safety net: never apply a change that alters the circuit
+            QMessageBox.warning(self,'Simplify circuit','The simplification could not be verified, so it was not applied.');return
+        before=len([g for g in self.model.gates]);after=len(kept)
+        dialog=QDialog(self);dialog.setWindowTitle('Simplify circuit');dialog.resize(620,420)
+        v=QVBoxLayout(dialog)
+        v.addWidget(QLabel(f'<b>{before} → {after} gates.</b> Verified: the simplified circuit has {self._phase_text(phase)}.'))
+        listing=QListWidget();listing.addItems(changes);v.addWidget(listing)
+        note=QLabel('Only neighboring gates on the same qubits with nothing in between are combined. '
+                    'Gates inside blocks are never changed. Undo restores the original.');note.setWordWrap(True);v.addWidget(note)
+        buttons=QDialogButtonBox();buttons.addButton('Apply',QDialogButtonBox.ButtonRole.AcceptRole)
+        buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);v.addWidget(buttons)
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            self.model.apply_simplification(kept);self._changed()
+            self.status.setText(f'Simplified: {before} → {after} gates ({len(changes)} change{"s" if len(changes)!=1 else ""}); Undo restores the original')
+    def check_equivalence(self,path=None):
+        from quantumscope.physics.optimize import equivalent
+        from quantumscope.physics.blocks import BlockPlacement,flatten_with_comments
+        if not path:
+            path,_=QFileDialog.getOpenFileName(self,'Compare with a saved circuit',prefs.default_folder(),'QuantumScope (*.qscope)')
+        if not path:return None
+        try:
+            with open(path,encoding='utf-8') as f:n,ops,ms,layout=from_native_layout(f.read())
+        except (OSError,ValueError) as exc:
+            QMessageBox.warning(self,'Check equivalence',str(exc));return None
+        if n!=self.n:
+            QMessageBox.information(self,'Check equivalence',f'Not comparable: this circuit has {self.n} qubits, the saved one has {n}.');return False
+        other,_=flatten_with_comments([(g.targets[0],c,g) for g,c in zip(ops,layout['columns'])],
+                                      [BlockPlacement(b,c,e) for b,c,e in layout['blocks']])
+        same,phase,deviation=equivalent(n,self.ordered(),other)
+        name=os.path.basename(path)
+        text=(f'Equivalent: this circuit and {name} implement {self._phase_text(phase)}.' if same else
+              f'Not equivalent: this circuit and {name} implement different unitaries (largest difference {deviation:.3g}).')
+        QMessageBox.information(self,'Check equivalence',text+'\n\nThe comparison uses the gates only; initial states and measurements are not compared.')
+        return same
+
     # ---- settings, recent files and autosave ------------------------------------------------
     def apply_preferences(self):
         """Settings changed: refresh what depends on them now (defaults apply to new circuits)."""
         self.show_blochs.setChecked(prefs.get('circuits/show_blochs'))
+        self._set_angle_fields(prefs.get('circuits/angle_units'))
+        prefs.configure_display()
         self._refresh_recent()
+        self.refresh()
+        if hasattr(self,'verify_table'):self.verify_circuit()
+        if self._inspector is not None and self._inspector.isVisible():self._inspector.refresh()
     def _refresh_recent(self):
-        if not hasattr(self,'recent_button'):return
-        menu=self.recent_button.menu();menu.clear()
+        if not hasattr(self,'recent_menu'):return
+        menu=self.recent_menu;menu.clear()
         recent=[p for p in prefs.get('files/recent') if os.path.exists(p)]
         for path in recent:
             action=menu.addAction(os.path.basename(path));action.setToolTip(path)
             action.triggered.connect(lambda _=False,p=path:self.load_native(p))
         if not recent:
             empty=menu.addAction('No recent circuits');empty.setEnabled(False)
-        self.recent_button.setEnabled(True)
     def _clear_clicked(self):
         if prefs.get('circuits/confirm_clear') and (self.model.gates or self.model.blocks or self.model.measurements):
             answer=QMessageBox.question(self,'Clear circuit','Remove every gate from this circuit? (Undo can bring it back.)',
@@ -738,8 +803,8 @@ class CircuitWorkspace(QWidget):
 
     def place(self,name,row,col,operands=None):
         try:
-            result=self.model.place(name,row,col,operands,math.radians(self.angle.value()),
-                                    math.radians(self.phi.value()),math.radians(self.lam.value()))
+            result=self.model.place(name,row,col,operands,self._angle_radians(self.angle),
+                                    self._angle_radians(self.phi),self._angle_radians(self.lam))
         except EditorError as exc:self._rejected(exc);return
         if isinstance(result,str):
             self.status.setText(result);self.grid.viewport().update();return
@@ -774,17 +839,18 @@ class CircuitWorkspace(QWidget):
         params=[('angle','θ' if gate.name not in ('P','CP') else 'λ')]
         if gate.name=='U':params.extend([('phi','φ'),('lam','λ')])
         for attr,label in params:
-            field=QLineEdit(f'{getattr(gate,attr):.12g}')
+            field=QLineEdit(self._format_user_angle(getattr(gate,attr)))
             field.setToolTip('Angle in radians. Examples: pi/2, -pi/4, 2*pi')
-            layout.addRow(f'{label} (radians)',field)
+            layout.addRow(f'{label} ({"degrees" if self._angle_units=="degrees" else "radians"})',field)
             edits[attr]=field
-        layout.addRow(QLabel('Use pi, arithmetic, and parentheses; angles are in radians.'))
+        layout.addRow(QLabel('Numbers are in '+('degrees' if self._angle_units=='degrees' else 'radians')
+                             +'; expressions with pi (e.g. pi/4) are always radians.'))
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         layout.addRow(buttons)
         buttons.rejected.connect(dialog.reject)
         def commit():
             try:
-                values={key:parse_angle(field.text()) for key,field in edits.items()}
+                values={key:self._parse_user_angle(field.text()) for key,field in edits.items()}
             except ValueError as exc:
                 QMessageBox.warning(dialog,'Invalid gate parameter',str(exc));return
             self.model.edit_parameters(row,col,values['angle'],values.get('phi'),values.get('lam'))
@@ -893,7 +959,7 @@ class CircuitWorkspace(QWidget):
         self.bars.set_data(state,self.n)
         self.bars.title='Full quantum-state probabilities (before measurement) · cyan: theory'
         probs=distribution(state);inds=np.argsort(probs)[-8:][::-1]
-        self.result.setPlainText('At column '+str(k)+':  '+'  '.join(f'|{i:0{self.n}b}⟩ {probs[i]*100:.1f}%' for i in inds if probs[i]>1e-8))
+        self.result.setPlainText('At column '+str(k)+':  '+'  '.join(f'{ket(i,self.n)} {probs[i]*100:.1f}%' for i in inds if probs[i]>1e-8))
         self.state_changed.emit()
     def _temporary_item(self,col):
         item=self.grid.item(0,col)
@@ -907,14 +973,14 @@ class CircuitWorkspace(QWidget):
             self.bars.set_probabilities(theoretical,len(measured),marginal)
             self.bars.title='Measured '+', '.join('q'+str(q) for q in measured)+' · cyan: theory · orange: shots'
             self.bars.update()
-            detail='   '.join(f'|{i:0{len(measured)}b}⟩ {int(amount)}' for i,amount in enumerate(marginal) if amount)
+            detail='   '.join(f'{ket(i,len(measured))} {int(amount)}' for i,amount in enumerate(marginal) if amount)
             self.result.setPlainText('Measured classical outcomes ('+', '.join('q'+str(q) for q in measured)+'):\n'+detail+'\nFull quantum state remains available in the simulation step view (before measurement).')
         else:
             self.bars.set_data(self.states[-1],self.n,counts)
             self.bars.title='All-qubit diagnostic sampling (no M gates) · cyan: theory · orange: shots'
             self.bars.update()
             ids=np.argsort(counts)[-12:][::-1]
-            self.result.setPlainText('No M gates: diagnostic sampling of all qubits, not circuit measurement.\n'+'   '.join(f'|{i:0{self.n}b}⟩ {counts[i]}' for i in ids if counts[i]))
+            self.result.setPlainText('No M gates: diagnostic sampling of all qubits, not circuit measurement.\n'+'   '.join(f'{ket(i,self.n)} {counts[i]}' for i in ids if counts[i]))
     # ---- blocks -----------------------------------------------------------------------
     def _block_action(self,action,bid,*args):
         try:changed=action(bid,*args)

@@ -145,6 +145,21 @@ class SettingsDialog(QDialog):
         self.show_blochs.setChecked(prefs.get('circuits/show_blochs'))
         self.show_blochs.toggled.connect(lambda on: self._changed('circuits/show_blochs', on))
         form.addRow(self.show_blochs)
+        self.angle_units = self._combo('circuits/angle_units', (('degrees', 'Degrees'), ('radians', 'Radians')))
+        form.addRow('Gate angles', self.angle_units)
+        self.bit_order = self._combo('circuits/bit_order', (('q0_left', '|q0 q1 … qn−1⟩  — q0 leftmost (textbook)'),
+                                                            ('q0_right', '|qn−1 … q1 q0⟩  — q0 rightmost (Qiskit)')))
+        form.addRow('Bit order in labels', self.bit_order)
+        form.addRow(self._note('Changes only how basis states are written; the physics is identical. '
+                               'Algorithm parameters and CSV data always list q0 first.'))
+        self.number_format = self._combo('circuits/number_format', (('exact', 'Exact where possible (1/√2, i/2)'),
+                                                                    ('decimal', 'Decimals (0.7071)')))
+        form.addRow('Amplitudes', self.number_format)
+        self.decimals = QSpinBox()
+        self.decimals.setRange(2, 8)
+        self.decimals.setValue(prefs.get('circuits/decimals'))
+        self.decimals.valueChanged.connect(lambda v: self._changed('circuits/decimals', v))
+        form.addRow('Decimal places', self.decimals)
         self.confirm_clear = QCheckBox('Ask before clearing a circuit')
         self.confirm_clear.setChecked(prefs.get('circuits/confirm_clear'))
         self.confirm_clear.toggled.connect(lambda on: self._changed('circuits/confirm_clear', on))
@@ -243,12 +258,15 @@ class SettingsDialog(QDialog):
     def _reload(self):
         """Show the stored values again (after Restore defaults)."""
         for box, key in ((self.theme, 'appearance/theme'), (self.scale, 'appearance/scale'),
+                         (self.angle_units, 'circuits/angle_units'), (self.bit_order, 'circuits/bit_order'),
+                         (self.number_format, 'circuits/number_format'),
                          (self.device, 'graphics/device'), (self.volume, 'graphics/volume_method'),
                          (self.pdf_report, 'files/pdf_report')):
             box.blockSignals(True)
             box.setCurrentIndex(max(0, box.findData(prefs.get(key))))
             box.blockSignals(False)
-        for widget, key in ((self.default_qubits, 'circuits/default_qubits'), (self.default_shots, 'circuits/default_shots')):
+        for widget, key in ((self.default_qubits, 'circuits/default_qubits'), (self.default_shots, 'circuits/default_shots'),
+                            (self.decimals, 'circuits/decimals')):
             widget.blockSignals(True)
             widget.setValue(prefs.get(key))
             widget.blockSignals(False)

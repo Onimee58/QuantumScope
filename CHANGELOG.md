@@ -16,6 +16,22 @@
 - **Restore defaults** resets every setting. **Restart now** appears when a change needs a restart; the restart drops the old session's graphics and size variables, so the new choice really applies.
 - **Test isolation:** the test suite uses its own settings file and data folder, so it never reads or changes a user's settings.
 
+### Circuit tab
+- **QuantumScope now starts with an empty circuit** sized by Settings → Circuits. The Bell pair stays in Examples….
+- **Toolbar cleanup:**
+  - removed the leftover **Bell example** button and an orphan "Gate" label left from the old placement controls (along with the hidden, unused controls behind it);
+  - Open, Save, Open recent, QASM import/export and PDF export are grouped under a **File** menu.
+- **Gate angle units:** degrees or radians, set in Settings.
+  - **New-gate angle fields** show the chosen unit.
+  - **The gate-edit dialog** reads plain numbers in that unit, while expressions with pi (such as `pi/4`) are always radians.
+- **Bit order in labels:** |q0 q1 …⟩ (textbook) or |… q1 q0⟩ (Qiskit). This is display only, applied everywhere basis states are written. Algorithm parameters and CSV data always list q0 first.
+- **Amplitudes:** exact forms (1/√2) or decimals, with 2–8 decimal places.
+- **Tools → Simplify circuit…:**
+  - **What it does:** cancels neighboring inverse pairs (H·H, X·X, CX·CX, S·S†, T·T†, …), merges consecutive rotations about the same axis (including CP), and removes rotations that equal the identity.
+  - **Preview:** shows every change before applying.
+  - **Safety check:** every result is verified against the full unitary, and global phases are reported honestly. Gates inside blocks are never changed, and Undo restores the original.
+- **Tools → Check equivalence with a saved circuit…:** compares two circuits' unitaries up to global phase. A new vectorized unitary calculation handles 10 qubits in under a second.
+
 ## v0.5.1 — Algorithms and examples
 
 - **Blocks:** named groups of real gates that act as one operation.
