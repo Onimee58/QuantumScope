@@ -44,6 +44,7 @@ class Grid(QTableWidget):
         self._pan_origin=None
         self._move_origin=None
         self._zoom=1.0
+        self._chips={}      # block id -> rectangle of its Collapse chip (expanded blocks)
         self.setToolTip("Middle-drag or Shift+drag empty space to pan; Ctrl+wheel to zoom")
     def paintEvent(self,event):
         super().paintEvent(event)
@@ -58,7 +59,13 @@ class Grid(QTableWidget):
             y=self.visualRect(self.model().index(row,0)).center().y()
             if 0 <= y <= rect.height():
                 p.drawLine(0,y,rect.width(),y)
-        for (row,col),g in self.owner.gates.items():
+        # Free gates plus the real gates of expanded blocks (drawn the same way).
+        blocks=list(self.owner.model.blocks.items())
+        drawn=list(self.owner.gates.items())
+        for _,pl in blocks:
+            if pl.expanded:
+                drawn+=[((g.targets[0],c),g) for g,c in pl.placed_gates()]
+        for (row,col),g in drawn:
             if row>=rows or col>=self.columnCount(): continue
             cell=self.visualRect(self.model().index(row,col))
             if not cell.isValid() or cell.right()<0 or cell.left()>rect.width():continue
@@ -68,8 +75,8 @@ class Grid(QTableWidget):
                 p.setPen(QPen(canvas_color('connector'),2.4))
                 p.drawLine(x,min(ys),x,max(ys))
                 # A control dot and standard targets, including multi-controlled gates.
-                if g.name in ('CX','CZ','CCX','CSWAP'):
-                    controls=g.targets[:-1] if g.name in ('CX','CZ','CCX') else g.targets[:1]
+                if g.name in ('CX','CZ','CCX','CSWAP','CP'):
+                    controls=g.targets[:-1] if g.name in ('CX','CZ','CCX','CP') else g.targets[:1]
                     for q in controls:
                         cy=self.visualRect(self.model().index(q,col)).center().y()
                         p.setPen(Qt.PenStyle.NoPen);p.setBrush(canvas_color('control'))
@@ -86,15 +93,22 @@ class Grid(QTableWidget):
                 for q in (g.targets if g.name=='SWAP' else g.targets[1:]):
                     cy=self.visualRect(self.model().index(q,col)).center().y()
                     p.drawLine(x-7,cy-7,x+7,cy+7);p.drawLine(x-7,cy+7,x+7,cy-7)
-            elif g.name=='CZ':
+            elif g.name in ('CZ','CP'):
                 cy=self.visualRect(self.model().index(g.targets[-1],col)).center().y()
                 p.setBrush(canvas_color('control'));p.setPen(Qt.PenStyle.NoPen);p.drawEllipse(QPoint(x,cy),5,5)
+                if g.name=='CP':
+                    # Both qubits carry a dot (CP is symmetric); the angle sits beside the connector.
+                    c0=self.visualRect(self.model().index(g.targets[0],col)).center().y()
+                    p.drawEllipse(QPoint(x,c0),5,5)
+                    p.setPen(canvas_color('chart_text'));p.setFont(QFont('Sans',8,QFont.Weight.DemiBold))
+                    p.drawText(QRectF(x+7,(c0+cy)/2-9,cell.width()/2,18),Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,'P('+angle_text(g.angle)+')')
             else:
                 p.setPen(QPen(canvas_color('gate_border'),1.7))
                 p.setBrush(canvas_color('gate_fill'));p.drawRoundedRect(box,5,5)
                 p.setPen(canvas_color('gate_text'))
                 p.setFont(QFont('Sans',10,QFont.Weight.DemiBold))
                 p.drawText(box,Qt.AlignmentFlag.AlignCenter,g.name)
+        self._draw_blocks(p,blocks,rect)
         # Draw incomplete multi-qubit placement as a preview, not a committed gate.
         pending = getattr(self.owner, '_pending_gate', None)
         if pending:
@@ -131,7 +145,49 @@ class Grid(QTableWidget):
                 p.drawText(box,Qt.AlignmentFlag.AlignCenter,'M')
         p.end()
 
+    def _block_rect(self,pl):
+        top=self.visualRect(self.model().index(pl.block.low,pl.col))
+        bottom=self.visualRect(self.model().index(pl.block.high,min(pl.end,self.columnCount()-1)))
+        return QRectF(top.left(),top.top(),bottom.right()-top.left(),bottom.bottom()-top.top())
+
+    def _draw_blocks(self,p,blocks,rect):
+        self._chips={}
+        for bid,pl in blocks:
+            if pl.block.high>=self.rowCount() or pl.col>=self.columnCount():continue
+            area=self._block_rect(pl)
+            if area.right()<0 or area.left()>rect.width():continue
+            if pl.expanded:
+                # Light dashed outline with a faint tint: shows how much the block contains.
+                tint=canvas_color('block_tint');tint.setAlphaF(0.07)
+                p.setBrush(tint);p.setPen(QPen(canvas_color('block_outline'),1.3,Qt.PenStyle.DashLine))
+                p.drawRoundedRect(area.adjusted(3,3,-3,-3),7,7)
+                p.setFont(QFont('Sans',8,QFont.Weight.DemiBold))
+                text=f'{pl.block.label}  ·  Collapse ▴'
+                width=p.fontMetrics().horizontalAdvance(text)+14
+                chip=QRectF(area.left()+8,area.top()-2,width,17)
+                p.setPen(QPen(canvas_color('block_border'),1));p.setBrush(canvas_color('block_fill'))
+                p.drawRoundedRect(chip,6,6)
+                p.setPen(canvas_color('block_text'));p.drawText(chip,Qt.AlignmentFlag.AlignCenter,text)
+                self._chips[bid]=chip.toRect()
+            else:
+                box=area.adjusted(7,5,-7,-5)
+                p.setPen(QPen(canvas_color('block_border'),1.8));p.setBrush(canvas_color('block_fill'))
+                p.drawRoundedRect(box,7,7)
+                p.setPen(canvas_color('block_text'))
+                p.setFont(QFont('Sans',10,QFont.Weight.DemiBold))
+                small=box.height()<60
+                p.drawText(box.adjusted(0,0,0,0 if small else -14),Qt.AlignmentFlag.AlignCenter,pl.block.label)
+                if not small:
+                    p.setFont(QFont('Sans',7))
+                    p.drawText(box.adjusted(0,box.height()/2,0,-4),Qt.AlignmentFlag.AlignCenter,
+                               f'{len(pl.block.gates)} gates')
+
     def mousePressEvent(self,event):
+        if event.button()==Qt.MouseButton.LeftButton:
+            point=event.position().toPoint()
+            for bid,chip in self._chips.items():
+                if chip.contains(point):
+                    self.owner.collapse_block(bid);event.accept();return
         if event.button()==Qt.MouseButton.MiddleButton or (event.button()==Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
             self._pan_origin=event.position().toPoint();self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor);event.accept();return
         if event.button()==Qt.MouseButton.LeftButton:
@@ -176,8 +232,7 @@ class Grid(QTableWidget):
     def fit_view(self):
         # Fit the circuit when practical while retaining legible gates on long circuits.
         # For longer circuits the viewport shows a readable subset; users pan to the rest.
-        occupied=max((c for _,c in self.owner.gates),default=0)+2
-        occupied=max(2,occupied)
+        occupied=max(2,self.owner.model.columns)
         width=max(64,min(115,self.viewport().width()//occupied))
         height=max(45,min(78,self.viewport().height()//max(1,self.owner.n)))
         self.horizontalHeader().setDefaultSectionSize(width)
@@ -373,7 +428,13 @@ class CircuitWorkspace(QWidget):
         self.inspector_button.setToolTip('Open amplitudes, statevector, reduced density matrices and circuit statistics')
         self.inspector_button.clicked.connect(self.open_state_inspector);edits.addWidget(self.inspector_button)
         self.show_blochs=QCheckBox('Show Bloch spheres beside wires');self.show_blochs.setChecked(True);edits.addWidget(self.show_blochs)
-        self.examples=QComboBox();self.examples.addItems(['Examples…',*EXAMPLE_NAMES]);self.examples.currentIndexChanged.connect(self.load_example);edits.addWidget(self.examples)
+        from quantumscope.physics.algorithms import LIBRARY
+        self._library_titles={e.title:e.key for e in LIBRARY}
+        self.examples=QComboBox();self.examples.addItems(['Examples…',*EXAMPLE_NAMES,*[e.title for e in LIBRARY if e.menu=='Examples']])
+        self.examples.currentIndexChanged.connect(self.load_example);edits.addWidget(self.examples)
+        self.algorithms=QComboBox();self.algorithms.addItems(['Algorithms…',*[e.title for e in LIBRARY if e.menu=='Algorithms']])
+        self.algorithms.setToolTip('Build an algorithm circuit with oracles and subroutines as expandable blocks')
+        self.algorithms.currentIndexChanged.connect(self.open_algorithm);edits.addWidget(self.algorithms)
         edits.addStretch()
         split=QSplitter(Qt.Orientation.Horizontal)
         # A whole-page scroll area, not a shrinking circuit editor, handles
@@ -475,7 +536,7 @@ class CircuitWorkspace(QWidget):
             self.second_label.setText('Swap 1')
             self.third_label.setText('Swap 2')
         elif multi:
-            self.second_label.setText('Target' if name in ('CX','CZ') else 'Swap partner')
+            self.second_label.setText('Target' if name in ('CX','CZ','CP') else 'Swap partner')
 
     # ---- state lives in the Qt-free CircuitModel; these keep the widget API ----
     n=property(lambda self:self.model.n,lambda self,v:setattr(self.model,'n',v))
@@ -600,7 +661,9 @@ class CircuitWorkspace(QWidget):
         except EditorError as exc:self._rejected(exc);return
         if moved:self._changed()
     def insert_column(self,index):
-        if self.model.insert_column(index):self._changed()
+        try:inserted=self.model.insert_column(index)
+        except EditorError as exc:self._rejected(exc);return
+        if inserted:self._changed()
     def delete_empty_column(self,index):
         try:deleted=self.model.delete_empty_column(index)
         except EditorError as exc:self._rejected(exc);return
@@ -648,6 +711,12 @@ class CircuitWorkspace(QWidget):
         idx=self.grid.indexAt(pos)
         if idx.isValid() and self.model.remove(idx.row(),idx.column()):self._changed()
     def edit_gate_at(self,row,col):
+        op=self.model.operation_at(row,col)
+        if op is not None and op[0]=='block':
+            bid,pl=op[1],op[2]
+            if not pl.expanded:self.expand_block(bid)
+            else:self.status.setText(f'Part of block {pl.block.label}: collapse it, or right-click → Ungroup to edit its gates')
+            return
         found=self.model.editable_gate(row,col)
         if found is None:
             return
@@ -656,7 +725,7 @@ class CircuitWorkspace(QWidget):
         dialog.setWindowTitle(f'Edit {gate.name} gate on q{gate.targets[0]}')
         layout=QFormLayout(dialog)
         edits={}
-        params=[('angle','θ' if gate.name!='P' else 'λ')]
+        params=[('angle','θ' if gate.name not in ('P','CP') else 'λ')]
         if gate.name=='U':params.extend([('phi','φ'),('lam','λ')])
         for attr,label in params:
             field=QLineEdit(f'{getattr(gate,attr):.12g}')
@@ -684,6 +753,8 @@ class CircuitWorkspace(QWidget):
         row,col=idx.row(),idx.column()
         found=self.model.operation_at(row,col)
         if found is None:return
+        if found[0]=='block' and not self.model.pending:
+            self._block_menu(found[1],found[2],pos);return
         menu=QMenu(self)
         if self.model.pending:
             cancel=menu.addAction('Cancel multi-qubit placement')
@@ -695,6 +766,13 @@ class CircuitWorkspace(QWidget):
         if chosen is edit and edit is not None:self.edit_gate_at(row,col)
         elif chosen is delete:self.remove_at(pos)
 
+    def try_gate(self,name,angle=math.pi/2,phi=0.0,lam=0.0):
+        """Load one gate into a small circuit with starting states that make its effect visible."""
+        from quantumscope.physics.gate_education import try_it_circuit
+        n,gates,starts=try_it_circuit(name,angle,phi,lam)
+        self.set_circuit(n,gates,initial_states=[InitialState.preset(k) for k in starts])
+        self.status.setText(f'Trying {name}: initial states '+', '.join(f'q{q} {InitialState.preset(k).label}' for q,k in enumerate(starts))
+                            +' · open the State Inspector to see the resulting state')
     def show_gate_explorer(self,name):
         from quantumscope.gui.gate_explorer import GateExplorer
         dlg=GateExplorer(name,self)
@@ -708,7 +786,7 @@ class CircuitWorkspace(QWidget):
         try:
             from quantumscope.gui.circuit_pdf import write_circuit_pdf
             write_circuit_pdf(path,self.n,self.gates,self.measurements,
-                              include_report=report,initial_states=self.model.initial_states)
+                              include_report=report,initial_states=self.model.initial_states,blocks=self.model.blocks.values())
         except Exception as exc:
             QMessageBox.warning(self,'PDF export failed',str(exc))
 
@@ -722,7 +800,7 @@ class CircuitWorkspace(QWidget):
             item=QTableWidgetItem('');item.setToolTip('Terminal measurement on q'+str(row));self.grid.setItem(row,col,item)
         for (r,c),g in self.gates.items():
             title=g.name + (('→'+','.join('q'+str(q) for q in g.targets[1:])) if len(g.targets)>1 else '')
-            if g.name in ('RX','RY','RZ','P','U'):title+=f'({math.degrees(g.angle):g}°)' 
+            if g.name in ('RX','RY','RZ','P','U','CP'):title+=f'({math.degrees(g.angle):g}°)'
             item=QTableWidgetItem('');item.setToolTip(title);item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.grid.setItem(r,c,item)
         try:
@@ -735,7 +813,10 @@ class CircuitWorkspace(QWidget):
         self.step.setValue(last+1)
         self.show_step(self.step.value())
         self.grid.horizontalScrollBar().setValue(saved_offset)
-        self.status.setText(f'{self.n} qubits • {len(self.gates)} gates • {len(self.occupied_columns)} occupied columns • exact ideal simulation')
+        blocks=len(self.model.blocks)
+        self.status.setText(f'{self.n} qubits • {len(self.model.ordered())} gates'
+                            +(f' ({blocks} block{"s" if blocks!=1 else ""}: double-click to expand, right-click for options)' if blocks else '')
+                            +f' • {len(self.occupied_columns)} occupied columns • exact ideal simulation')
         if has_specification(self.active_example) and hasattr(self,'verify_table'):self.verify_circuit()
     def _sync_timeline(self):
         self.inline_blochs.update()
@@ -786,19 +867,84 @@ class CircuitWorkspace(QWidget):
             self.bars.update()
             ids=np.argsort(counts)[-12:][::-1]
             self.result.setPlainText('No M gates: diagnostic sampling of all qubits, not circuit measurement.\n'+'   '.join(f'|{i:0{self.n}b}⟩ {counts[i]}' for i in ids if counts[i]))
+    # ---- blocks -----------------------------------------------------------------------
+    def _block_action(self,action,bid,*args):
+        try:changed=action(bid,*args)
+        except EditorError as exc:self._rejected(exc);return False
+        if changed:self._changed()
+        return changed
+    def expand_block(self,bid):return self._block_action(self.model.expand_block,bid)
+    def collapse_block(self,bid):return self._block_action(self.model.collapse_block,bid)
+    def ungroup_block(self,bid):return self._block_action(self.model.ungroup_block,bid)
+    def remove_block(self,bid):
+        pl=self.model.blocks.get(bid)
+        if pl is not None and self.model.remove(pl.block.low,pl.col):self._changed()
+    def _block_menu(self,bid,pl,pos):
+        from quantumscope.physics.algorithms import block_edit_spec
+        menu=QMenu(self)
+        title=menu.addAction(f'{pl.block.label} block · {len(pl.block.gates)} gates');title.setEnabled(False)
+        toggle=menu.addAction('Collapse' if pl.expanded else 'Expand to gates')
+        edit=menu.addAction('Edit block…') if block_edit_spec(pl.block) else None
+        contents=menu.addAction('Show contents…')
+        menu.addSeparator()
+        ungroup=menu.addAction('Ungroup (make gates editable)')
+        remove=menu.addAction('Remove block')
+        chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
+        if chosen is toggle:(self.collapse_block if pl.expanded else self.expand_block)(bid)
+        elif edit is not None and chosen is edit:self.edit_block_dialog(bid)
+        elif chosen is contents:self.show_block_contents(bid)
+        elif chosen is ungroup:self.ungroup_block(bid)
+        elif chosen is remove:self.remove_block(bid)
+    def edit_block_dialog(self,bid):
+        from quantumscope.physics.algorithms import block_edit_spec
+        from quantumscope.gui.parameter_dialog import ParameterDialog
+        pl=self.model.blocks[bid]
+        spec=block_edit_spec(pl.block)
+        if spec is None:return
+        params,_=spec
+        dialog=ParameterDialog(f'Edit {pl.block.label}',params,dict(pl.block.params),self,locked=('n',))
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            self._block_action(self.model.edit_block,bid,dialog.values())
+    def show_block_contents(self,bid):
+        from quantumscope.gui.gate_explorer import BlockExplorer
+        BlockExplorer(self.model.blocks[bid].block,self).exec()
+
+    # ---- library ------------------------------------------------------------------------
+    def open_algorithm(self,index):
+        if index==0:return
+        title=self.algorithms.itemText(index)
+        self.algorithms.blockSignals(True);self.algorithms.setCurrentIndex(0);self.algorithms.blockSignals(False)
+        from quantumscope.physics.algorithms import entry
+        from quantumscope.gui.parameter_dialog import ParameterDialog
+        e=entry(self._library_titles[title])
+        dialog=ParameterDialog(e.title,e.params,{},self,description=e.description)
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            self.load_library(e.key,dialog.values())
+    def load_library(self,key,values=None):
+        from quantumscope.physics.algorithms import entry
+        try:note=self.model.load_library(key,values)
+        except ValueError as exc:
+            QMessageBox.warning(self,'Cannot build circuit',str(exc));return
+        self._sync_view();self.grid.horizontalScrollBar().setValue(0);self.refresh()
+        self.verify_circuit()
+        self.status.setText('Loaded '+entry(key).title+' • '+note)
+
     def load_example(self,index):
         if index==0:return
         choice=self.examples.itemText(index)
+        if choice not in EXAMPLE_NAMES:
+            self.examples.blockSignals(True);self.examples.setCurrentIndex(0);self.examples.blockSignals(False)
+            self.load_library(self._library_titles[choice]);return
         self.model.load_example(choice)
         self._sync_view();self.grid.horizontalScrollBar().setValue(0);self.refresh()
         self.verify_circuit()
         self.status.setText('Loaded '+choice+' • illustrative reversible circuit; input bits and work registers shown as gates.'
             +(' Edits are checked against this example’s specification.' if has_specification(choice) else ''))
         self.examples.blockSignals(True);self.examples.setCurrentIndex(0);self.examples.blockSignals(False)
-    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None,initial_states=None):
+    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None,initial_states=None,blocks=()):
         """Load a circuit. Without stored columns, gates are packed so that
         simultaneous gates share a column (simulation order is unchanged)."""
-        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns,initial_states)
+        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns,initial_states,blocks)
         self._sync_view();self.grid.horizontalScrollBar().setValue(0);self.refresh()
     def _layout(self):
         """Gates in simulation order with their columns, for saving."""
@@ -836,7 +982,7 @@ class CircuitWorkspace(QWidget):
         if not path:return
         try:
             with open(path,encoding='utf-8') as f:n,ops,ms,layout=from_native_layout(f.read())
-            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states']);self.current_path=path
+            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks']);self.current_path=path
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'Native import failed',str(exc))
     def save_native(self):
         path,_=QFileDialog.getSaveFileName(self,'Save QuantumScope circuit',self.current_path or 'untitled.qscope','QuantumScope (*.qscope)')
@@ -845,7 +991,8 @@ class CircuitWorkspace(QWidget):
         self.current_path=path
         try:
             gates,columns,mcol,total=self.model.layout()
-            layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states}
+            layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states,
+                    'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()]}
             with open(path,'w',encoding='utf-8') as f:f.write(to_native_measured(self.n,gates,sorted(self.measurements),layout=layout))
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'Save failed',str(exc))
     def load_qasm(self):
@@ -860,7 +1007,8 @@ class CircuitWorkspace(QWidget):
         path,_=QFileDialog.getSaveFileName(self,'Export OpenQASM 2','untitled.qasm','OpenQASM 2 (*.qasm *.qasm2)')
         if not path:return
         if not path.lower().endswith(('.qasm','.qasm2')):path+='.qasm'
-        lines=to_qasm_measured(self.n,self.ordered(),sorted(self.measurements),self.model.initial_states)
+        gates,comments=self.model.qasm_items()
+        lines=to_qasm_measured(self.n,gates,sorted(self.measurements),self.model.initial_states,comments)
         try:
             with open(path,'w',encoding='utf-8') as f:f.write(lines)
         except OSError as exc:QMessageBox.warning(self,'Export failed',str(exc))

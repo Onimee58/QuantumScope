@@ -223,6 +223,9 @@ def is_clifford(gate):
     count as Clifford at multiples of π/2. CX, CZ and SWAP are Clifford;
     CCX and CSWAP are not.
     """
+    if gate.name == 'CP':
+        k = gate.angle / math.pi                 # CP(0) = I, CP(π) = CZ; CP(π/2) (controlled-S) is not Clifford
+        return abs(k - round(k)) < 1e-9
     if len(gate.targets) > 1:
         return gate.name in _CLIFFORD_MULTI
     u = unitary(Gate(gate.name, (0,), gate.angle, gate.phi, gate.lam))
@@ -253,7 +256,7 @@ def analyze_circuit(n, gates, columns=None, measured=()):
         'single_qubit': by_size[1], 'two_qubit': by_size[2], 'three_qubit': by_size[3],
         't_count': counts['T'] + counts['TDG'],
         'clifford': clifford, 'non_clifford': len(gates) - clifford,
-        'parameterized': sum(1 for g in gates if g.name in ('RX', 'RY', 'RZ', 'P', 'U')),
+        'parameterized': sum(1 for g in gates if g.name in ('RX', 'RY', 'RZ', 'P', 'U', 'CP')),
         'drawn_depth': len(set(columns)) if columns is not None else None,
         'minimum_depth': minimum_depth(n, gates),
         'measurements': len(measured),

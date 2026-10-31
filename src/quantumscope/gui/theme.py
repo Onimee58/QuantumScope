@@ -4,6 +4,13 @@ STYLESHEET = """
 QMainWindow, QWidget#workspaceShell { background: #0b101b; color: #e9f2ff; }
 QWidget { color: #dce7f7; font-family: "Inter", "Segoe UI", "Noto Sans", sans-serif; font-size: 12px; }
 QMenu { background: #141e2d; color: #e5effc; border: 1px solid #304058; padding: 6px; }
+QDialog { background: #101824; color: #dce7f7; }
+QDialog QLabel, QDialog QCheckBox, QDialog QRadioButton { color: #dce7f7; background: transparent; }
+QDialog QTextBrowser { background: #0d1520; color: #dce7f7; border: 1px solid #304058; border-radius: 6px; }
+QDialog QTabWidget::pane { background: #101824; border: 1px solid #304058; border-radius: 6px; }
+QDialog QTabBar::tab { background: #172434; color: #c8d8ea; border: 1px solid #304058; padding: 6px 12px; border-top-left-radius: 6px; border-top-right-radius: 6px; }
+QDialog QTabBar::tab:selected { background: #234766; color: #ffffff; }
+QMessageBox { background: #101824; }
 QMenu::item { padding: 8px 20px; border-radius: 4px; }
 QMenu::item:selected { background: #214666; }
 QWidget#workspaceHeader { background: #111d2e; border: 1px solid #263a52; border-radius: 13px; }
@@ -167,6 +174,11 @@ CANVAS = {
         'header_current': '#1c6987',
         'header_past':    '#223648',
         'header_future':  '#29313c',
+        'block_fill':     '#2b2552',  # collapsed block box
+        'block_border':   '#a993f2',
+        'block_text':     '#f3efff',
+        'block_outline':  '#7f68cf',  # dashed outline of an expanded block
+        'block_tint':     '#7f68cf',  # drawn at low opacity inside the outline (decorative)
     },
     'light': {
         'surface':        '#f5f9fe',
@@ -199,6 +211,11 @@ CANVAS = {
         'header_current': '#b9dff0',
         'header_past':    '#dceaf5',
         'header_future':  '#eef3f8',
+        'block_fill':     '#ebe5fb',
+        'block_border':   '#5a3eb4',
+        'block_text':     '#2b1869',
+        'block_outline':  '#8a74d1',
+        'block_tint':     '#8a74d1',
     },
 }
 
@@ -216,6 +233,7 @@ CONTRAST_REQUIREMENTS = (
     ('pass', 'surface', 4.5), ('fail', 'surface', 4.5),
     ('header_text', 'header_current', 4.5), ('header_text', 'header_past', 4.5),
     ('header_text', 'header_future', 4.5),
+    ('block_border', 'surface', 3.0), ('block_text', 'block_fill', 4.5), ('block_outline', 'surface', 3.0),
 )
 
 

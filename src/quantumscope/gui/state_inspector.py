@@ -340,6 +340,11 @@ class StateInspector(QWidget):
             ('Minimum depth', a['minimum_depth']),
             ('Terminal measurements', a['measurements']),
         ]
+        if a.get('blocks'):
+            from collections import Counter
+            counts = Counter((label, n) for label, n, _ in a['blocks'])
+            stats.append(('Blocks (gates inside)', ', '.join(f'{label} ×{k} ({n} gates each)' if k > 1 else f'{label} ({n} gates)'
+                                                         for (label, n), k in counts.items())))
         self.stats.setRowCount(len(stats))
         for r, (name, value) in enumerate(stats):
             self.stats.setItem(r, 0, _item(name, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter))

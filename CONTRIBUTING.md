@@ -4,7 +4,7 @@ Please open an issue to discuss larger changes. Keep the numerical physics backe
 
 ## Code layout
 
-- `src/quantumscope/physics/` — simulation, file formats, examples and verification. No Qt.
+- `src/quantumscope/physics/` — simulation, file formats, examples and verification. No Qt. `blocks.py` defines blocks; `algorithms.py` holds the algorithm/example library: add an entry there with its parameters, builder and specification, and it appears in the menus and is tested automatically.
 - `src/quantumscope/editor/` — `CircuitModel`, the circuit editor's state and editing rules (placement, moving, columns, measurements, undo/redo). No Qt.
 - `src/quantumscope/gui/` — PySide6 widgets. Widgets translate input into model calls and draw the result; put new editing rules in the model, with unit tests, not in the widget.
 

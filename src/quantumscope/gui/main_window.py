@@ -300,7 +300,7 @@ class MainWindow(QMainWindow):
     def _load_converted_circuit(self,n,gates,measured=(),layout=None):
         layout=layout or {}
         self.circuit_widget.set_circuit(n,gates,layout.get('columns'),measured,
-            layout.get('measurement_column'),layout.get('total_columns'),layout.get('initial_states'))
+            layout.get('measurement_column'),layout.get('total_columns'),layout.get('initial_states'),layout.get('blocks') or ())
         self._launch_circuits()
 
     def _show_hydrogen(self):

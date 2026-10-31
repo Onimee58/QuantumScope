@@ -37,6 +37,11 @@ def _self_test():
         if "column" not in inspector.where.text() or inspector.amp_table.rowCount() == 0:
             raise RuntimeError("State Inspector did not render the state")
         lines.append(f"State Inspector: {inspector.amp_table.rowCount()} amplitude row(s) rendered")
+        workspace.load_library("grover", {"n": 3, "marked": "101", "iterations": -1})
+        rows, _ = workspace.model.verification()
+        if not rows or rows[0].passed is not True or len(workspace.model.blocks) != 4:
+            raise RuntimeError("Algorithm library did not build Grover correctly")
+        lines.append(f"Algorithm library: Grover {rows[0].output_label} (PASS)")
         lines.append("RESULT: PASS")
         status = 0
     except Exception:

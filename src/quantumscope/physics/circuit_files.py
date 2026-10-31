@@ -8,6 +8,7 @@ import math
 from .circuits import Gate, ALL, DUAL, TRIPLE, MAX_QUBITS, parse_qasm, parse_qasm_detailed, zero
 from .circuit_layout import pack_and_order, validate_columns
 from .initial_states import InitialState, defaults, all_default, preparation_gates
+from .blocks import Block, BlockPlacement, check_layout, flatten_with_comments
 
 FORMAT = 'quantumscope-circuit'
 
@@ -47,8 +48,10 @@ def from_native(text):
     return n,gates
 
 def _initial_states(obj,n):
-    """Initial states stored in a schema-2 document (|0⟩ for schema 1)."""
-    if obj.get('schema_version')!=2:
+    """Initial states stored in a schema-2 or schema-3 document (|0⟩ for schema 1)."""
+    if obj.get('schema_version')==3 and 'initial_states' not in obj:
+        return defaults(n)
+    if obj.get('schema_version') not in (2,3):
         if 'initial_states' in obj:raise ValueError('initial_states requires schema_version 2')
         return defaults(n)
     records=obj.get('initial_states')
@@ -60,7 +63,7 @@ def to_qasm(n, gates):
     validate(n,gates)
     lines=['OPENQASM 2.0;','include "qelib1.inc";',f'qreg q[{n}];']
     for g in gates:
-        params=(f'({g.angle:.17g},{g.phi:.17g},{g.lam:.17g})' if g.name=='U' else f'({g.angle:.17g})' if g.name in ('RX','RY','RZ','P') else '')
+        params=(f'({g.angle:.17g},{g.phi:.17g},{g.lam:.17g})' if g.name=='U' else f'({g.angle:.17g})' if g.name in ('RX','RY','RZ','P','CP') else '')
         lines.append(f'{"u3" if g.name=="U" else g.name.lower()}{params} '+','.join(f'q[{q}]' for q in g.targets)+';')
     return '\n'.join(lines)+'\n'
 
@@ -78,7 +81,12 @@ def convert(text,source_format,notes=None):
         states=layout['initial_states']
         if notes is not None and not all_default(states):
             notes.append('OpenQASM 2 has no initial states, so they were written as preparation gates at the start.')
-        return to_qasm_measured(n,gates,measured,states)
+        placements=[BlockPlacement(b,c,e) for b,c,e in layout['blocks']]
+        free=[(g.targets[0],c,g) for g,c in zip(gates,layout['columns'])]
+        flat,comments=flatten_with_comments(free,placements)
+        if notes is not None and placements:
+            notes.append('Blocks were written as their gates, each marked with a // block comment.')
+        return to_qasm_measured(n,flat,measured,states,comments)
     raise ValueError('Unknown source format')
 
 # Terminal measurements are deliberately distinct from unitary Gate instances.
@@ -106,6 +114,15 @@ def to_native_measured(n,gates,measured=(),layout=None):
         if not all_default(states):
             data['schema_version']=2
             data['initial_states']=[s.to_record() for s in states]
+    blocks=(layout or {}).get('blocks') or []
+    if blocks:
+        # Schema 3 (v0.5.1): blocks are stored with their real gates, so the file
+        # does not depend on how a later version builds them. Older versions refuse it.
+        placements=[BlockPlacement(b,c,bool(e)) for b,c,e in blocks]
+        if (layout or {}).get('columns') is not None:
+            check_layout(n,gates,list(layout['columns']),placements)
+        data['schema_version']=3
+        data['blocks']=[{'column':pl.col,'expanded':pl.expanded,**pl.block.to_record()} for pl in placements]
     data['terminal_measurements']=_measure_indices(n,measured)
     if layout is not None:
         columns=list(layout.get('columns') or [])
@@ -132,14 +149,27 @@ def _from_native_any(text):
     """(n, gates, measured, initial states, document) for schema 1 or 2."""
     try: obj=json.loads(text)
     except json.JSONDecodeError as exc: raise ValueError('Invalid .qscope JSON') from exc
-    if not isinstance(obj,dict) or obj.get('format')!=FORMAT or obj.get('schema_version') not in (1,2):
+    if not isinstance(obj,dict) or obj.get('format')!=FORMAT or obj.get('schema_version') not in (1,2,3):
         raise ValueError('Unsupported .qscope file format or version')
     n=obj.get('qubits')
     if type(n) is not int:raise ValueError('Invalid circuit structure')
     states=_initial_states(obj,n)
-    plain=dict(obj);plain['schema_version']=1;plain.pop('initial_states',None)
+    plain=dict(obj);plain['schema_version']=1;plain.pop('initial_states',None);plain.pop('blocks',None)
     n,gates,measured=from_native_measured(json.dumps(plain))
     return n,gates,measured,states,obj
+
+def _blocks_in(obj,n):
+    if obj.get('schema_version')!=3:
+        if 'blocks' in obj:raise ValueError('blocks require schema_version 3')
+        return []
+    records=obj.get('blocks')
+    if not isinstance(records,list) or len(records)>1000:raise ValueError('Invalid blocks')
+    out=[]
+    for r in records:
+        if not isinstance(r,dict) or type(r.get('column')) is not int or r['column']<0 or not isinstance(r.get('expanded',False),bool):
+            raise ValueError('Invalid block placement')
+        out.append((Block.from_record(r,n),r['column'],r.get('expanded',False)))
+    return out
 
 def from_native_layout(text):
     """Return (n, gates, measured, layout).
@@ -148,6 +178,7 @@ def from_native_layout(text):
     simultaneous gates share a column instead of one gate per column.
     """
     n,gates,measured,states,data=_from_native_any(text)
+    blocks=_blocks_in(data,n)
     stored=[op.get('column') for op in data['operations']]
     if gates and all(c is not None for c in stored):
         validate_columns(gates,stored);columns=stored
@@ -155,7 +186,8 @@ def from_native_layout(text):
         raise ValueError('Layout columns must be given for every operation or none')
     else:
         gates,columns=pack_and_order(n,gates)
-    last=max(columns,default=-1)
+    check_layout(n,gates,columns,[BlockPlacement(b,c,e) for b,c,e in blocks])
+    last=max(list(columns)+[BlockPlacement(b,c,e).end for b,c,e in blocks],default=-1)
     mcol=data.get('measurement_column')
     if mcol is not None and (type(mcol) is not int or mcol<=last or mcol>100000):
         raise ValueError('Invalid measurement column')
@@ -163,16 +195,26 @@ def from_native_layout(text):
     total=data.get('total_columns')
     if total is not None and (type(total) is not int or total<1 or total>100000):
         raise ValueError('Invalid total column count')
-    return n,gates,measured,{'columns':columns,'measurement_column':mcol if measured else None,'total_columns':total,'initial_states':states}
+    return n,gates,measured,{'columns':columns,'measurement_column':mcol if measured else None,'total_columns':total,'initial_states':states,'blocks':blocks}
 
-def to_qasm_measured(n,gates,measured=(),initial_states=None):
+def to_qasm_measured(n,gates,measured=(),initial_states=None,comments=None):
     """OpenQASM 2 text. Non-|0⟩ initial states become preparation gates at the
-    start (OpenQASM 2 has no initial-state syntax), marked with comments."""
+    start (OpenQASM 2 has no initial-state syntax), marked with comments.
+    comments maps a gate index to a comment written just before that gate
+    (used to mark where each block's expanded gates begin)."""
     measured=_measure_indices(n,measured)
     prep=preparation_gates(initial_states) if initial_states is not None else []
     if initial_states is not None and len(initial_states)!=n:raise ValueError('Need one initial state per qubit')
     qasm=to_qasm(n,prep+list(gates))
     lines=qasm.rstrip().splitlines()
+    if comments:
+        header,body=lines[:3],lines[3:]
+        marked=[]
+        for i,line in enumerate(body):
+            if i>=len(prep) and (i-len(prep)) in comments:
+                marked.append('// '+''.join(ch if ord(ch)<128 else '?' for ch in comments[i-len(prep)]))
+            marked.append(line)
+        lines=header+marked
     if prep:
         ascii_label=lambda s:s.label.replace('⟩','>').replace('−','-').replace('ψ','psi')
         described=', '.join(f'q{q}={ascii_label(s)}'+('' if s.preset_key else f'(theta={s.theta:.17g}, phi={s.phi:.17g})')

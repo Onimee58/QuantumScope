@@ -1,3 +1,35 @@
+## v0.5.1 — Algorithms and examples
+
+- **Blocks:** named groups of real gates that act as one operation.
+  - **Collapsed**, a block is a labeled box.
+  - **Expanded** (double-click), it shows its gates inside a light dashed outline with a Collapse chip.
+  - **Locked:** contents can't be edited, and a block reserves its whole wire span.
+  - **Right-click actions:** Expand/Collapse, Edit block… (rebuilds with new parameters), Show contents… (gate list, and the matrix for blocks of up to 3 qubits), Ungroup (make the gates editable) and Remove. All are covered by Undo.
+  - **Same physics:** simulation is identical collapsed or expanded, and the State Inspector always counts the real gates inside.
+- **Algorithms menu:** Deutsch, Deutsch–Jozsa, Bernstein–Vazirani, Grover search and the quantum Fourier transform (with QFT†).
+  - Oracles, diffusion and QFT are blocks.
+  - Ancillas start in |−⟩, and Grover uses Toffoli-based multi-controlled Z with work qubits that return to |0⟩.
+  - Each algorithm has a **specification check on the current circuit**: constant versus balanced, the hidden string s, Grover's sin²((2k+1)θ) for the oracles actually present, and QFT against the DFT matrix.
+- **New reversible examples** with truth-table checks: full adder, 2-bit comparator, controlled increment, Toffoli as AND, and Fredkin multiplexer. Their inputs are set with initial states.
+- **New gate CP(λ)** (controlled phase), across the palette, simulator, Gate Explorer, QASM (`cp`, and `cu1` on import), PDF and Clifford classification.
+- **Gate Explorer:**
+  - a **Worked identity** tab (for example H Z H = X, step by step on every basis state);
+  - a **Try it in the circuit** button, which uses starting states that make the gate's effect visible.
+- **Files:**
+  - circuits with blocks save as `.qscope` **version 3**, which older versions refuse instead of misreading; other circuits keep their format;
+  - QASM export writes blocks as their gates, marked by `// block:` comments;
+  - PDF export draws blocks.
+- **Fixes:**
+  - dialogs (Gate Explorer, parameter and custom-state dialogs) were unreadable in the dark theme when the operating system used a light color scheme; they now have a dark style;
+  - a multi-qubit gate's angle was lost while its placement was pending, so CP would have become CP(0);
+  - the circuit status line now counts the gates inside blocks.
+- **New user guide:** [ALGORITHMS.md](ALGORITHMS.md).
+- **New Qt-free modules:**
+  - `physics/blocks.py`;
+  - `physics/algorithms.py` (library, block builders, specifications);
+  - `gui/parameter_dialog.py`.
+- Automated tests: 577 passing (468 existing + 109 new), plus 27 opt-in GUI tests. The 44-step editing replay from v0.4.3 is unchanged.
+
 ## v0.5.0 — See inside the state
 
 - **Initial states:**
