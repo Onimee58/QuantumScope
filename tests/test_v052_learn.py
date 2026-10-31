@@ -312,3 +312,24 @@ def test_noise_lab_checks():
     assert labs.check(m, 'fidelity >= 1')[0] and labs.check(m, 'purity >= 1')[0] and not labs.check(m, 'noise bit_flip')[0]
     m.set_circuit(2, [Gate('H', (0,)), Gate('CX', (0, 1))], noise=[(NoiseElement('bit_flip', 0, 0.5), 2)])
     assert labs.check(m, 'noise bit_flip')[0] and labs.check(m, 'purity <= 0.6')[0]
+
+
+def test_quiz_rendering_states():
+    from quantumscope.learn.lessons import parse
+    lesson = parse('# T\n```quiz\nQ: 1 + 1?\n- 3\n* 2\nE: Because.\n```', 'course/t.md', '.')
+    fresh = to_html(lesson, 'dark', EQ)
+    assert 'qsquiz:0:0' in fresh and 'qsquiz:0:1' in fresh and 'Show answer' in fresh
+    wrong = to_html(lesson, 'dark', EQ, answers={0: 0})
+    assert 'Not quite' in wrong and 'qsquiz:0:1' in wrong and 'Because.' not in wrong
+    right = to_html(lesson, 'light', EQ, answers={0: 1})
+    assert 'Correct!' in right and 'Because.' in right and 'qsquiz:0:' not in right
+    revealed = to_html(lesson, 'dark', EQ, revealed={0})
+    assert 'Because.' in revealed and 'Correct!' not in revealed
+
+
+def test_quiz_feedback_colors_are_readable():
+    from quantumscope.gui.theme import contrast_ratio
+    from quantumscope.learn.render import PALETTES
+    for name in ('dark', 'light'):
+        p = PALETTES[name]
+        assert contrast_ratio(p['wrong'], p['note_bg']) >= 4.5 and contrast_ratio(p['answer'], p['note_bg']) >= 4.5

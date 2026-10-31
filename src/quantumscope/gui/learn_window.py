@@ -58,6 +58,7 @@ class LearnWindow(QWidget):
         self.lesson = None
         self.history, self.position = [], -1
         self.revealed = {}                 # lesson key -> set of revealed quiz numbers
+        self.answers = {}                  # lesson key -> {quiz number: chosen option index}
         self.font_size = 15
         layout = QVBoxLayout(self)
         split = QSplitter()
@@ -114,8 +115,11 @@ class LearnWindow(QWidget):
         split.addWidget(main)
         split.setSizes([280, 820])
         self.refresh_contents()
-        if workspace is not None and hasattr(workspace, 'state_changed'):
-            workspace.state_changed.connect(self._circuit_changed)
+        # Labs tick off live: listen to the circuit editor, whether it was given directly
+        # (tests) or belongs to the main window (the real app).
+        editor = workspace if workspace is not None else getattr(host, 'circuit_widget', None)
+        if editor is not None and hasattr(editor, 'state_changed'):
+            editor.state_changed.connect(self._circuit_changed)
 
     # ---- contents -------------------------------------------------------------------------
     def lessons(self):
@@ -216,7 +220,8 @@ class LearnWindow(QWidget):
         position = self.reader.verticalScrollBar().value()
         steps = self._lab_steps()
         html = to_html(self.lesson, self._theme(), os.path.join(content_folder(), 'eq'),
-                       self.revealed.get(self.lesson.key, set()), steps, self.font_size)
+                       self.revealed.get(self.lesson.key, set()), steps, self.font_size,
+                       self.answers.get(self.lesson.key, {}))
         self.reader.document().setBaseUrl(QUrl.fromLocalFile(self.lesson.folder + os.sep))
         self.reader.setHtml(html)
         self.reader.verticalScrollBar().setValue(0 if scroll_top else position)
@@ -254,7 +259,11 @@ class LearnWindow(QWidget):
     def _link(self, url):
         text = url.toString()
         if text.startswith('qsquiz:'):
-            self.revealed.setdefault(self.lesson.key, set()).add(int(text.split(':', 1)[1]))
+            parts = text.split(':')
+            if len(parts) == 3:                        # an option was chosen: check it at once
+                self.answers.setdefault(self.lesson.key, {})[int(parts[1])] = int(parts[2])
+            else:                                      # "Show answer"
+                self.revealed.setdefault(self.lesson.key, set()).add(int(parts[1]))
             self.render()
             return
         if not text.startswith('qs:'):
