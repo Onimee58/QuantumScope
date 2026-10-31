@@ -471,7 +471,7 @@ class MainWindow(QMainWindow):
         self.renderer.setCurrentText(prefs.get("graphics/volume_method"))
         self.renderer.hide()
 
-        camera_box = QGroupBox("Camera & scientific display")
+        camera_box = QGroupBox("Camera && scientific display")
         cf = QFormLayout(camera_box)
         cf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.camera_view = QComboBox()

@@ -550,7 +550,7 @@ class CircuitWorkspace(QWidget):
         self.bloch_scroller.hide() # Inline per-wire view replaces separate stacked sphere panel
         self.bars=ProbabilityBars();self.bars.setMinimumHeight(165);v.addWidget(self.bars,2)
         self.result=QTextEdit();self.result.setReadOnly(True);self.result.setMaximumHeight(105);v.addWidget(self.result)
-        self.verify_panel=QGroupBox('Circuit Verification & Truth Table')
+        self.verify_panel=QGroupBox('Circuit Verification && Truth Table')
         verify_layout=QVBoxLayout(self.verify_panel)
         controls=QHBoxLayout()
         self.verify_button=QPushButton('Verify circuit / Show truth table');self.verify_button.clicked.connect(self.verify_circuit);controls.addWidget(self.verify_button)
