@@ -1,4 +1,4 @@
-## v0.5.2 — Learn & Settings (in progress)
+## v0.5.2 — Learn & Settings
 
 ### Settings
 - **A new Settings window**, titled "Settings", with sections for Appearance, Circuits, Graphics and Files. It has only a Close button, with no maximize or minimize, and a fixed size, so it can no longer fill the whole application window.
@@ -58,6 +58,10 @@
   - **First experiment tab:** the first experiment opened in an area (for example the Double-Slit Experiment in Quantum Principles) could not be closed. Only the Hydrogen Explorer and Gate Circuit Simulator are permanent now.
   - **tree views** were unthemed (white) in the dark theme;
   - **disabled buttons** in the light theme used the dark theme's colors.
+
+### Quality
+- Automated tests: 809 passing (577 existing + 232 new), plus 36 opt-in GUI tests. The 44-step editing replay is unchanged.
+- The packaged-app self-test also checks that all 27 lessons and their equation images ship with the app.
 
 ## v0.5.1 — Algorithms and examples
 
