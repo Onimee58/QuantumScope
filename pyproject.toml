@@ -28,4 +28,4 @@ testpaths = ["tests"]
 line-length = 100
 
 [tool.setuptools.package-data]
-quantumscope = ["assets/*.png", "assets/*.svg", "assets/*.ico"]
+quantumscope = ["assets/*.png", "assets/*.svg", "assets/*.ico", "learn/content/*/*.md", "learn/content/eq/*.png"]

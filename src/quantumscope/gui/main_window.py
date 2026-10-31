@@ -143,6 +143,25 @@ class MainWindow(QMainWindow):
         apply_theme(choice)
         if hasattr(self, "circuit_widget"):
             self.circuit_widget.apply_theme()
+        if getattr(self, "_learn", None) is not None:
+            self._learn.apply_theme()
+
+    # ---- Learn ------------------------------------------------------------------------
+    def open_learn(self, area="circuits"):
+        from quantumscope.gui.learn_window import LearnWindow
+        if getattr(self, "_learn", None) is None:
+            self._learn = LearnWindow(host=self, parent=self)
+        self._learn.show_area(area)
+        self._learn.show()
+        self._learn.raise_()
+        self._learn.activateWindow()
+
+    def launch_view(self, view):
+        """Open a view by name (used by lesson "Try it" links)."""
+        {"circuits": self._launch_circuits, "converter": self._launch_converter,
+         "orbital": self._show_hydrogen, "dynamics2d": self.show_dynamics, "dynamics3d": self.show_dynamics_3d,
+         "doubleslit": self._launch_double_slit, "superposition": self._launch_superposition,
+         "entanglement": self._launch_entanglement}[view]()
 
     def apply_preferences(self):
         from quantumscope.gui import preferences as prefs
@@ -245,7 +264,19 @@ class MainWindow(QMainWindow):
             plus.setToolTip("New experiment")
             plus.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
             plus.setMenu(self._experiment_menu(plus,category))
-            tabs.setCornerWidget(plus, Qt.Corner.TopRightCorner)
+            # Each area has a Learn button next to "+": lectures and labs for that area.
+            corner = QWidget(tabs)
+            corner_row = QHBoxLayout(corner)
+            corner_row.setContentsMargins(0, 0, 0, 0)
+            corner_row.setSpacing(4)
+            learn = QToolButton(corner)
+            learn.setObjectName("tabAddButton")
+            learn.setText("📖 Learn")
+            learn.setToolTip("Lectures and labs for this area")
+            learn.clicked.connect(lambda _=False, cat=category: self.open_learn(cat))
+            corner_row.addWidget(learn)
+            corner_row.addWidget(plus)
+            tabs.setCornerWidget(corner, Qt.Corner.TopRightCorner)
             self.categories.addTab(tabs, title)
             self.workspaces[category] = tabs
         self.workspace = self.workspaces["hydrogen"]

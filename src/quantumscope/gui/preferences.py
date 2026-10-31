@@ -43,6 +43,8 @@ PREFS = {p.key: p for p in (
     Pref('files/recent', ()),                          # most recent first
     Pref('files/autosave', True, (True, False)),
     Pref('files/pdf_report', 'ask', ('ask', 'always', 'never')),
+    # Learn
+    Pref('learn/course_folder', ''),                   # a teacher's folder of .md lessons
 )}
 
 MAX_RECENT = 8

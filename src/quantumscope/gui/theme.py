@@ -5,6 +5,10 @@ QMainWindow, QWidget#workspaceShell { background: #0b101b; color: #e9f2ff; }
 QWidget { color: #dce7f7; font-family: "Inter", "Segoe UI", "Noto Sans", sans-serif; font-size: 12px; }
 QMenu { background: #141e2d; color: #e5effc; border: 1px solid #304058; padding: 6px; }
 QDialog { background: #101824; color: #dce7f7; }
+QTreeView, QTreeWidget { background: #0d1520; color: #dce7f7; border: 1px solid #304058; border-radius: 6px; }
+QTreeView::item { padding: 3px; }
+QTreeView::item:selected { background: #1c6987; color: #ffffff; }
+QTreeView::item:disabled { color: #7f93a8; }
 QDialog QLabel, QDialog QCheckBox, QDialog QRadioButton { color: #dce7f7; background: transparent; }
 QDialog QTextBrowser { background: #0d1520; color: #dce7f7; border: 1px solid #304058; border-radius: 6px; }
 QDialog QTabWidget::pane { background: #101824; border: 1px solid #304058; border-radius: 6px; }
@@ -91,6 +95,11 @@ QPushButton { background: #e4eef7; color: #23435c; border-color: #b0c7db; }
 QPushButton:hover { background: #d1e6f4; }
 QStatusBar { background: #e9f0f7; color: #38546a; border-color: #bed0df; }
 QMenu { background: #ffffff; color: #243c50; border-color: #b8cfdf; }
+QTreeView, QTreeWidget { background: #ffffff; color: #1b364e; border: 1px solid #b4cada; border-radius: 6px; }
+QTreeView::item { padding: 3px; }
+QTreeView::item:selected { background: #b9dff0; color: #10324a; }
+QTreeView::item:disabled { color: #6b8296; }
+QPushButton:disabled { background: #eef3f8; color: #8aa0b3; border-color: #cbd9e5; }
 QMenu::item:selected { background: #ceeafa; }
 QToolButton#headerTool { background: #e4eef7; color: #226276; border-color: #b2cede; }
 QToolButton#tabAddButton { background: #e7f1fa; color: #17657d; border-color: #b2cede; }

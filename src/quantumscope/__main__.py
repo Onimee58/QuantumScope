@@ -42,6 +42,17 @@ def _self_test():
         if not rows or rows[0].passed is not True or len(workspace.model.blocks) != 4:
             raise RuntimeError("Algorithm library did not build Grover correctly")
         lines.append(f"Algorithm library: Grover {rows[0].output_label} (PASS)")
+        # Lessons and their equation images must be inside the installed package.
+        import os
+        from quantumscope.learn.lessons import builtin_lessons, content_folder
+        from quantumscope.learn.equations import equations_in, image_name
+        lessons = builtin_lessons()
+        missing = [name for lesson in lessons for tex, kind in equations_in(lesson.body)
+                   for name in [image_name(tex, kind, "dark")]
+                   if not os.path.exists(os.path.join(content_folder(), "eq", name))]
+        if not lessons or missing:
+            raise RuntimeError(f"Learn content incomplete: {len(lessons)} lessons, {len(missing)} missing equations")
+        lines.append(f"Learn: {len(lessons)} lessons, all equation images present")
         lines.append("RESULT: PASS")
         status = 0
     except Exception:

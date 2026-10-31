@@ -32,6 +32,27 @@
   - **Safety check:** every result is verified against the full unitary, and global phases are reported honestly. Gates inside blocks are never changed, and Undo restores the original.
 - **Tools → Check equivalence with a saved circuit…:** compares two circuits' unitaries up to global phase. A new vectorized unitary calculation handles 10 qubits in under a second.
 
+### Learn
+- **A 📖 Learn button** on each area's tab bar opens the Learn window. It has a contents tree, search, Back/Forward, text size, and **Export PDF** for printable handouts.
+- **Lectures:**
+  - learning objectives, explanations, and crisp equations pre-rendered for both themes (matrices included);
+  - **▶ Try it** links that set up the matching circuit, algorithm, example or view;
+  - **Check your understanding** questions with reveal-able answers;
+  - textbook further reading.
+- **Labs:** guided steps that turn **✓ Done** automatically as the student's circuit meets each goal, with a progress counter. Once a later step passes, earlier ones stay done.
+- **My course:** a folder of a teacher's own Markdown lessons, which can use the same links, questions and lab checks. [LEARN.md](LEARN.md) documents the format.
+- **First content:** the lectures *Qubits, state vectors and bit order* and *Single-qubit gates*, and the lab *Make a Bell pair*.
+- **Built-in content is tested:**
+  - every equation has an up-to-date image;
+  - every Try it link works;
+  - every question has exactly one correct answer;
+  - every lab can be completed.
+
+  The packaged-app self-test also checks that the lessons ship with the app.
+- **Fixes:**
+  - **tree views** were unthemed (white) in the dark theme;
+  - **disabled buttons** in the light theme used the dark theme's colors.
+
 ## v0.5.1 — Algorithms and examples
 
 - **Blocks:** named groups of real gates that act as one operation.
