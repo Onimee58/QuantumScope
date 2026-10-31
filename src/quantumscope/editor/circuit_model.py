@@ -20,6 +20,7 @@ from quantumscope.physics.initial_states import DEFAULT, InitialState, all_defau
 from quantumscope.physics.state_analysis import analyze_circuit
 from quantumscope.physics.blocks import Block, BlockPlacement, check_layout, flatten_with_comments, placed_items
 from quantumscope.physics.noise import NoiseElement, NoiseModel
+from quantumscope.physics.dynamic import Conditioned, Measure, Reset
 
 from quantumscope.physics.circuits import PARAMETERIZED  # noqa: E402  (includes CP)
 UNDO_LIMIT = 80
@@ -53,7 +54,8 @@ class CircuitModel:
         self.pending = None        # (name, col, operand rows) during multi-qubit placement
         self.initial_states = defaults(n)   # per-qubit starting state, |0⟩ by default
         self.blocks = {}           # block id -> BlockPlacement (collapsed or expanded)
-        self.noise = {}            # (row, col) -> NoiseElement placed on a wire
+        self.wires = {}            # (row, col) -> single-wire item: NoiseElement, Measure (M→c) or Reset
+        self.conditions = {}       # gate key (row, col) -> (classical bit, value): 'apply only if c = v'
         self.noise_model = NoiseModel()   # global noise (off by default)
         self._next_block = 1
         self.active_entry = None   # (library key, ((param, value), ...)) for algorithms and new examples
@@ -65,7 +67,7 @@ class CircuitModel:
     def columns(self):
         """Visible columns: always one spare after the last operation (two when empty)."""
         last = max([c for _, c in self.gates] + list(self.measurements.values())
-                   + [pl.end for pl in self.blocks.values()] + [c for _, c in self.noise], default=-1)
+                   + [pl.end for pl in self.blocks.values()] + [c for _, c in self.wires], default=-1)
         return max(2, last + 2, self.reserved_columns)
 
     def _placed(self):
@@ -105,8 +107,10 @@ class CircuitModel:
         for key, gate in self.gates.items():
             if key[1] == col and row in gate.targets:
                 return ('gate', key, gate)
-        if (row, col) in self.noise:
-            return ('noise', (row, col), self.noise[(row, col)])
+        if (row, col) in self.wires:
+            item = self.wires[(row, col)]
+            kind = 'measure' if isinstance(item, Measure) else 'reset' if isinstance(item, Reset) else 'noise'
+            return (kind, (row, col), item)
         if self.measurements.get(row) == col:
             return ('measurement', (row, col), None)
         return None
@@ -115,7 +119,7 @@ class CircuitModel:
     def _record(self):
         return (self.n, self.reserved_columns, dict(self.gates), dict(self.measurements),
                 self.active_example, self.example_ops, tuple(self.initial_states),
-                dict(self.blocks), self.active_entry, dict(self.noise), self.noise_model)
+                dict(self.blocks), self.active_entry, dict(self.wires), self.noise_model, dict(self.conditions))
 
     def snapshot(self):
         self.undo_stack.append(self._record())
@@ -124,8 +128,10 @@ class CircuitModel:
 
     def _restore(self, record):
         (self.n, self.reserved_columns, gates, measurements,
-         self.active_example, self.example_ops, states, blocks, self.active_entry, noise, self.noise_model) = record
-        self.noise = dict(noise)
+         self.active_example, self.example_ops, states, blocks, self.active_entry, noise, self.noise_model,
+         conditions) = record
+        self.wires = dict(noise)
+        self.conditions = dict(conditions)
         self.gates, self.measurements = dict(gates), dict(measurements)
         self.initial_states = list(states)
         self.blocks = dict(blocks)
@@ -153,7 +159,8 @@ class CircuitModel:
         self.reserved_columns = 2
         self.initial_states = defaults(self.n)
         self.blocks, self.active_entry = {}, None
-        self.noise = {}
+        self.wires = {}
+        self.conditions = {}
 
     def load_bell(self):
         """The quick 'Bell example' button (not a verified example)."""
@@ -165,10 +172,11 @@ class CircuitModel:
         self.measurements = {}
         self.initial_states = defaults(self.n)
         self.blocks, self.active_entry = {}, None
-        self.noise = {}
+        self.wires = {}
+        self.conditions = {}
 
     def set_circuit(self, n, ops, columns=None, measured=(), measurement_column=None, total_columns=None,
-                    initial_states=None, blocks=(), noise=(), noise_model=None):
+                    initial_states=None, blocks=(), noise=(), noise_model=None, classical=(), conditions=()):
         """Replace the circuit. Without columns, gates are packed (simulation unchanged).
         initial_states defaults to |0⟩ on every qubit. blocks is a list of
         (Block, column, expanded) placed alongside the gates."""
@@ -182,11 +190,11 @@ class CircuitModel:
             validate_columns(ops, columns)
         placements = [BlockPlacement(b, c, bool(e)) for b, c, e in blocks]
         check_layout(n, ops, columns, placements)
-        noise = list(noise)
+        noise = list(noise) + list(classical)
         taken = {(q, c) for g, c in zip(ops, columns) for q in g.targets}
         taken |= {(q, c) for pl in placements for c in range(pl.col, pl.end + 1) for q in pl.block.span}
         for element, c in noise:
-            if not isinstance(element, NoiseElement) or not 0 <= element.qubit < n or c < 0 or (element.qubit, c) in taken:
+            if not isinstance(element, (NoiseElement, Measure, Reset)) or not 0 <= element.qubit < n or c < 0 or (element.qubit, c) in taken:
                 raise ValueError('A noise element overlaps another operation or lies outside the circuit')
             taken.add((element.qubit, c))
         last = max(list(columns) + [pl.end for pl in placements] + [c for _, c in noise], default=-1)
@@ -204,7 +212,14 @@ class CircuitModel:
         self.initial_states = states
         self.blocks = {}
         self.active_entry = None
-        self.noise = {(element.qubit, c): element for element, c in noise}
+        self.wires = {(element.qubit, c): element for element, c in noise}
+        keys = {(g.targets[0], c) for g, c in zip(ops, columns)}
+        self.conditions = {}
+        for key, cbit, value in conditions:
+            if tuple(key) not in keys:
+                raise ValueError('A classical condition refers to a gate that is not in the circuit')
+            Conditioned(Gate('X', (0,)), cbit, value)          # validates the bit and value
+            self.conditions[tuple(key)] = (cbit, value)
         if noise_model is not None:
             self.noise_model = noise_model
         for pl in placements:
@@ -255,7 +270,7 @@ class CircuitModel:
         self.gates = {pos: g for pos, g in self.gates.items() if all(q < n for q in g.targets)}
         self.measurements = {q: c for q, c in self.measurements.items() if q < n}
         self.blocks = {bid: pl for bid, pl in self.blocks.items() if pl.block.high < n}
-        self.noise = {(r, c): e for (r, c), e in self.noise.items() if r < n}
+        self.wires = {(r, c): e for (r, c), e in self.wires.items() if r < n}
         self.n = n
         self.initial_states = (self.initial_states + defaults(n))[:n]
         if self.pending and any(q >= n for q in self.pending[2]):
@@ -297,7 +312,7 @@ class CircuitModel:
             self.pending = (name, col, (row,))
             self._pending_params = (angle, phi, lam)     # CP keeps its angle until committed
             return f'{name}: target anchored on q{row}; select remaining qubit(s) in column {col + 1} (Esc to cancel)'
-        if (row, col) in self.gates or self.measurements.get(row) == col or (row, col) in self.noise:
+        if (row, col) in self.gates or self.measurements.get(row) == col or (row, col) in self.wires:
             raise EditorError('Cell occupied: select or remove the existing gate first')
         inside = self._block_covering(row, col)
         if inside is not None:
@@ -328,7 +343,7 @@ class CircuitModel:
             inside = self._block_covering(q, col)
             if inside is not None:
                 raise EditorError(f'Qubit q{q} is inside block {inside.block.label} in this column')
-            if (q, col) in self.noise:
+            if (q, col) in self.wires:
                 raise EditorError('Qubit collision in column; choose another column')
         self.snapshot()
         param = name in PARAMETERIZED
@@ -379,7 +394,7 @@ class CircuitModel:
         kind, key, gate = found
         if kind == 'block':
             return self._move_block(key, src_row, src_col, dst_row, dst_col)
-        if kind == 'noise':
+        if kind in ('noise', 'measure', 'reset'):
             return self._move_noise(key, dst_row, dst_col)
         if kind == 'gate':
             delta = dst_row - src_row
@@ -388,7 +403,7 @@ class CircuitModel:
                 raise EditorError('Cannot move operation outside available qubits')
             others = {k: v for k, v in self.gates.items() if k != key}
             if any(c == dst_col and set(v.targets) & set(targets) for (_, c), v in others.items()) or any(
-                    self._block_covering(q, dst_col) is not None or (q, dst_col) in self.noise for q in targets):
+                    self._block_covering(q, dst_col) is not None or (q, dst_col) in self.wires for q in targets):
                 raise EditorError('Destination occupied by another operation')
             if any(q in self.measurements for q in targets) or (
                     self.measurements and dst_col >= min(self.measurements.values())):
@@ -396,11 +411,13 @@ class CircuitModel:
             self.snapshot()
             self.gates.pop(key)
             self.gates[(targets[0], dst_col)] = Gate(gate.name, targets, gate.angle, gate.phi, gate.lam)
+            if key in self.conditions:                       # a condition travels with its gate
+                self.conditions[(targets[0], dst_col)] = self.conditions.pop(key)
         else:
             if dst_row in self.measurements and dst_row != src_row:
                 raise EditorError('Target qubit already measured')
             if (any(c >= dst_col for (_, c) in self.gates) or any(pl.end >= dst_col for pl in self.blocks.values())
-                    or any(c >= dst_col for (_, c) in self.noise)):
+                    or any(c >= dst_col for (_, c) in self.wires)):
                 raise EditorError('Measurement must follow all unitary columns')
             if any(c != dst_col for q, c in self.measurements.items() if q != src_row):
                 raise EditorError('Measurements must occupy a shared terminal column')
@@ -426,12 +443,13 @@ class CircuitModel:
         self.measurements = {r: c + delta if c >= start else c for r, c in self.measurements.items()}
         self.blocks = {bid: (BlockPlacement(pl.block, pl.col + delta, pl.expanded) if pl.col >= start else pl)
                        for bid, pl in self.blocks.items()}
-        self.noise = {(r, c + delta if c >= start else c): e for (r, c), e in self.noise.items()}
+        self.wires = {(r, c + delta if c >= start else c): e for (r, c), e in self.wires.items()}
+        self.conditions = {(r, c + delta if c >= start else c): v for (r, c), v in self.conditions.items()}
 
     def _column_empty(self, index):
         return (not any(c == index for _, c in self.gates) and index not in self.measurements.values()
                 and not any(pl.col <= index <= pl.end for pl in self.blocks.values())
-                and not any(c == index for _, c in self.noise))
+                and not any(c == index for _, c in self.wires))
 
     def delete_empty_column(self, index):
         if not 0 <= index < self.columns:
@@ -452,10 +470,11 @@ class CircuitModel:
         kind, key, _ = found
         if kind == 'gate':
             self.gates.pop(key)
+            self.conditions.pop(key, None)
         elif kind == 'block':
             self.blocks.pop(key)
-        elif kind == 'noise':
-            self.noise.pop(key)
+        elif kind in ('noise', 'measure', 'reset'):
+            self.wires.pop(key)
         else:
             self.measurements.pop(row)
         return True
@@ -494,25 +513,31 @@ class CircuitModel:
         if self.measurements and col >= min(self.measurements.values()):
             raise EditorError('Noise must come before terminal measurements')
         self.snapshot()
-        self.noise[(row, col)] = element
+        self.wires[(row, col)] = element
         return True
 
     def _move_noise(self, key, dst_row, dst_col):
         if not (0 <= dst_row < self.n and 0 <= dst_col < self.columns):
             return False
-        element = self.noise[key]
+        element = self.wires[key]
         if (dst_row, dst_col) != key and not self._cell_free(dst_row, dst_col):
             raise EditorError('Destination occupied by another operation')
         if self.measurements and dst_col >= min(self.measurements.values()):
             raise EditorError('Noise must come before terminal measurements')
         self.snapshot()
-        self.noise.pop(key)
-        self.noise[(dst_row, dst_col)] = NoiseElement(element.kind, dst_row, element.p)
+        self.wires.pop(key)
+        if isinstance(element, NoiseElement):
+            moved = NoiseElement(element.kind, dst_row, element.p)
+        elif isinstance(element, Measure):
+            moved = Measure(dst_row, element.cbit)
+        else:
+            moved = Reset(dst_row)
+        self.wires[(dst_row, dst_col)] = moved
         return True
 
     def edit_noise(self, row, col, p=None, kind=None):
-        element = self.noise.get((row, col))
-        if element is None:
+        element = self.wires.get((row, col))
+        if not isinstance(element, NoiseElement):
             raise EditorError('No noise channel here')
         try:
             updated = NoiseElement(kind or element.kind, row, element.p if p is None else p)
@@ -521,8 +546,90 @@ class CircuitModel:
         if updated == element:
             return False
         self.snapshot()
-        self.noise[(row, col)] = updated
+        self.wires[(row, col)] = updated
         return True
+
+    def place_measure(self, row, col, cbit=None):
+        """Mid-circuit measurement of qubit `row` into classical bit `cbit` (default: c<row>)."""
+        return self._place_wire(Measure(row, row if cbit is None else cbit), row, col)
+
+    def place_reset(self, row, col):
+        return self._place_wire(Reset(row), row, col)
+
+    def _place_wire(self, item, row, col):
+        if not (0 <= row < self.n and 0 <= col < self.columns):
+            return False
+        if not self._cell_free(row, col):
+            raise EditorError('Cell occupied: choose an empty cell')
+        if self.measurements and col >= min(self.measurements.values()):
+            raise EditorError('Mid-circuit operations must come before the final measurements')
+        self.snapshot()
+        self.wires[(row, col)] = item
+        return True
+
+    def set_measure_bit(self, row, col, cbit):
+        item = self.wires.get((row, col))
+        if not isinstance(item, Measure):
+            raise EditorError('No mid-circuit measurement here')
+        try:
+            updated = Measure(row, cbit)
+        except ValueError as exc:
+            raise EditorError(str(exc)) from exc
+        if updated == item:
+            return False
+        self.snapshot()
+        self.wires[(row, col)] = updated
+        return True
+
+    def set_condition(self, row, col, cbit, value=1):
+        """Make the gate at (row, col) run only when classical bit `cbit` equals `value`."""
+        found = self.operation_at(row, col)
+        if found is None or found[0] != 'gate':
+            raise EditorError('Only a gate outside blocks can be conditioned')
+        try:
+            Conditioned(found[2], cbit, value)
+        except ValueError as exc:
+            raise EditorError(str(exc)) from exc
+        if self.conditions.get(found[1]) == (cbit, value):
+            return False
+        self.snapshot()
+        self.conditions[found[1]] = (cbit, value)
+        return True
+
+    def clear_condition(self, row, col):
+        found = self.operation_at(row, col)
+        if found is None or found[1] not in self.conditions:
+            return False
+        self.snapshot()
+        self.conditions.pop(found[1])
+        return True
+
+    def simulate_branches(self, store=None):
+        """(occupied columns, branch history) from the dynamic engine.
+
+        Within a column, gates (including conditioned ones) act first, then the
+        single-wire items: a condition therefore sees measurements from earlier columns.
+        """
+        from quantumscope.physics.dynamic import simulate as branch_simulate
+        from quantumscope.physics.noise import MAX_STORED_QUBITS
+        columns = {}
+        for c, r, _, g, pl in placed_items(((r, c, g) for (r, c), g in self.gates.items()), self.blocks.values()):
+            condition = self.conditions.get((r, c)) if pl is None else None
+            columns.setdefault(c, []).append(Conditioned(g, *condition) if condition else g)
+        for (r, c), item in sorted(self.wires.items(), key=lambda x: (x[0][1], x[0][0])):
+            columns.setdefault(c, []).append(item)
+        occupied = sorted(columns)
+        store = (self.n <= MAX_STORED_QUBITS) if store is None else store
+        readout = self.noise_model.readout if self.noise_model.enabled else 0.0
+        history = branch_simulate(self.n, [columns[c] for c in occupied], self.initial_vector(), self.noise_model,
+                                  readout, store)
+        return occupied, history
+
+    def classical_layout(self):
+        """[(Measure or Reset, column)] and [((row, col), cbit, value)] for saving."""
+        items = [(e, c) for (r, c), e in sorted(self.wires.items(), key=lambda x: (x[0][1], x[0][0]))
+                 if isinstance(e, (Measure, Reset))]
+        return items, [(key, cbit, value) for key, (cbit, value) in sorted(self.conditions.items())]
 
     def set_noise_model(self, model):
         if not isinstance(model, NoiseModel):
@@ -534,9 +641,20 @@ class CircuitModel:
         return True
 
     @property
+    def noise(self):
+        """The placed noise elements only (a read-only view of the single-wire items)."""
+        return {k: v for k, v in self.wires.items() if isinstance(v, NoiseElement)}
+
+    @property
+    def dynamic(self):
+        """True when the circuit measures mid-circuit, resets, or conditions gates on classical bits."""
+        return bool(self.conditions) or any(isinstance(v, (Measure, Reset)) for v in self.wires.values())
+
+    @property
     def noisy(self):
-        """True when the circuit is simulated with noise (global model on, or noise elements placed)."""
-        return self.noise_model.active or bool(self.noise)
+        """True when the circuit needs the density-matrix (mixed-state) simulation: noise of any
+        kind, or a dynamic circuit (its averaged state is mixed)."""
+        return self.noise_model.active or bool(self.wires) or bool(self.conditions)
 
     def simulate_noisy(self, store=None):
         """Density-matrix simulation with the global model and placed noise elements.
@@ -544,11 +662,15 @@ class CircuitModel:
         Returns (occupied columns, density matrices before/after each occupied column,
         or just before/final for registers too large to store every column).
         """
+        if self.dynamic:
+            from quantumscope.physics.dynamic import averaged
+            occupied, history = self.simulate_branches(store)
+            return occupied, [averaged(branches) for branches in history]
         from quantumscope.physics.noise import simulate as noise_simulate
         columns = {}
         for c, _, _, g in self._placed():
             columns.setdefault(c, []).append(g)
-        for (r, c), element in sorted(self.noise.items(), key=lambda x: (x[0][1], x[0][0])):
+        for (r, c), element in sorted(self.wires.items(), key=lambda x: (x[0][1], x[0][0])):
             columns.setdefault(c, []).append(element)
         occupied = sorted(columns)
         history = noise_simulate(self.n, [columns[c] for c in occupied], self.initial_vector(), self.noise_model, store)
@@ -556,7 +678,8 @@ class CircuitModel:
 
     def noise_layout(self):
         """[(NoiseElement, column)] for saving."""
-        return [(e, c) for (r, c), e in sorted(self.noise.items(), key=lambda x: (x[0][1], x[0][0]))]
+        return [(e, c) for (r, c), e in sorted(self.wires.items(), key=lambda x: (x[0][1], x[0][0]))
+                if isinstance(e, NoiseElement)]
 
     # ---- blocks -------------------------------------------------------------------
     def _block_covering(self, row, col, ignore=None):
@@ -576,7 +699,7 @@ class CircuitModel:
             raise EditorError('Cannot move the block outside the circuit')
         for c in range(col, col + width):
             for q in block.span:
-                if self._block_covering(q, c, ignore) is not None or self.measurements.get(q) == c or (q, c) in self.noise or any(
+                if self._block_covering(q, c, ignore) is not None or self.measurements.get(q) == c or (q, c) in self.wires or any(
                         gc == c and q in g.targets for (_, gc), g in self.gates.items()):
                     raise EditorError('Destination occupied by another operation')
         if any(q in self.measurements for q in block.qubits) or (
@@ -690,6 +813,8 @@ class CircuitModel:
 
         Gates inside blocks are never changed; blocks act as barriers.
         """
+        if self.dynamic:
+            raise EditorError('Simplify works on circuits without mid-circuit measurements, resets or conditions')
         from quantumscope.physics.optimize import equivalent, simplify_sequence
         items = self._optimizable_items()
         kept, changes = simplify_sequence(items)
@@ -736,7 +861,7 @@ class CircuitModel:
         Truth-table examples test every basis input of the ideal gates, so they
         have no noisy counterpart; algorithm specifications use the final state.
         """
-        if self.active_entry is None or not self.noisy:
+        if self.active_entry is None or not self.noisy or self.dynamic:
             return None
         from quantumscope.physics.algorithms import entry
         key, params = self.active_entry

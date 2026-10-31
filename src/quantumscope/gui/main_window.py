@@ -357,7 +357,7 @@ class MainWindow(QMainWindow):
         layout=layout or {}
         self.circuit_widget.set_circuit(n,gates,layout.get('columns'),measured,
             layout.get('measurement_column'),layout.get('total_columns'),layout.get('initial_states'),layout.get('blocks') or (),
-            layout.get('noise') or (),layout.get('noise_model'))
+            layout.get('noise') or (),layout.get('noise_model'),layout.get('classical') or (),layout.get('conditions') or ())
         self._launch_circuits()
 
     def _show_hydrogen(self):

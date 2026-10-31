@@ -720,7 +720,9 @@ class CircuitWorkspace(QWidget):
         from quantumscope.physics.gate_education import angle_text
         return f'the same unitary up to a global phase of e^(i·{angle_text(float(np.angle(phase)))}), which has no observable effect'
     def simplify_dialog(self):
-        kept,changes,ok,phase=self.model.simplification()
+        try:kept,changes,ok,phase=self.model.simplification()
+        except EditorError as exc:
+            QMessageBox.information(self,'Simplify circuit',str(exc)+'.');return
         if not changes:
             QMessageBox.information(self,'Simplify circuit','Nothing to simplify: no neighboring gates cancel or merge.'
                                     +(' Gates inside blocks are never changed.' if self.model.blocks else ''));return
@@ -749,6 +751,9 @@ class CircuitWorkspace(QWidget):
             with open(path,encoding='utf-8') as f:n,ops,ms,layout=from_native_layout(f.read())
         except (OSError,ValueError) as exc:
             QMessageBox.warning(self,'Check equivalence',str(exc));return None
+        if self.model.dynamic or layout.get('classical') or layout.get('conditions'):
+            QMessageBox.information(self,'Check equivalence','Equivalence compares unitaries, so it needs circuits without '
+                                    'mid-circuit measurements, resets or classical conditions.');return None
         if n!=self.n:
             QMessageBox.information(self,'Check equivalence',f'Not comparable: this circuit has {self.n} qubits, the saved one has {n}.');return False
         other,_=flatten_with_comments([(g.targets[0],c,g) for g,c in zip(ops,layout['columns'])],
@@ -1245,10 +1250,10 @@ class CircuitWorkspace(QWidget):
         self.status.setText('Loaded '+choice+' • illustrative reversible circuit; input bits and work registers shown as gates.'
             +(' Edits are checked against this example’s specification.' if has_specification(choice) else ''))
         self.examples.blockSignals(True);self.examples.setCurrentIndex(0);self.examples.blockSignals(False)
-    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None,initial_states=None,blocks=(),noise=(),noise_model=None):
+    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None,initial_states=None,blocks=(),noise=(),noise_model=None,classical=(),conditions=()):
         """Load a circuit. Without stored columns, gates are packed so that
         simultaneous gates share a column (simulation order is unchanged)."""
-        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns,initial_states,blocks,noise,noise_model)
+        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns,initial_states,blocks,noise,noise_model,classical,conditions)
         self._sync_view();self.grid.horizontalScrollBar().setValue(0);self.refresh()
     def _layout(self):
         """Gates in simulation order with their columns, for saving."""
@@ -1296,13 +1301,14 @@ class CircuitWorkspace(QWidget):
         """Load a .qscope document (raises ValueError if it is invalid)."""
         n,ops,ms,layout=from_native_layout(text)
         self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks'],
-                         layout.get('noise',()),layout.get('noise_model'))
+                         layout.get('noise',()),layout.get('noise_model'),layout.get('classical',()),layout.get('conditions',()))
     def serialize(self):
         """The current circuit as a .qscope document."""
         gates,columns,mcol,total=self.model.layout()
         layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states,
                 'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()],
                 'noise':self.model.noise_layout(),'noise_model':self.model.noise_model}
+        layout['classical'],layout['conditions']=self.model.classical_layout()
         return to_native_measured(self.n,gates,sorted(self.measurements),layout=layout)
     def _suggest(self,name):
         """A file-dialog starting path in the preferred folder."""
