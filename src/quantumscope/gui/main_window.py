@@ -134,39 +134,50 @@ class MainWindow(QMainWindow):
         return menu
 
     def _show_settings(self):
-        """Small, honest preferences panel; more settings can be added later."""
-        dialog = QDialog(self)
-        dialog.setWindowTitle("QuantumScope Settings")
-        dialog.setMinimumWidth(370)
-        dialog.setWindowIcon(self.windowIcon())
-        layout = QVBoxLayout(dialog)
-        heading = QLabel("Appearance")
-        heading.setStyleSheet("font-weight: 700; font-size: 16px;")
-        layout.addWidget(heading)
-        layout.addWidget(QLabel("Interface theme"))
-        themes = QComboBox(dialog)
-        themes.addItems(["Dark", "Light"])
-        settings = QSettings("QuantumScope", "QuantumScope")
-        themes.setCurrentIndex(1 if settings.value("appearance/theme", "dark") == "light" else 0)
-        layout.addWidget(themes)
-        note = QLabel("Theme changes apply immediately and are saved for your next launch.")
-        note.setWordWrap(True)
-        layout.addWidget(note)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(dialog.accept)
-        layout.addWidget(buttons)
-        def set_theme(index):
-            from quantumscope.gui.theme import STYLESHEET, LIGHT_STYLESHEET
-            choice = "light" if index == 1 else "dark"
-            settings.setValue("appearance/theme", choice)
-            QApplication.instance().setProperty("quantumscope_light", choice == "light")
-            QApplication.instance().setStyleSheet(LIGHT_STYLESHEET if choice == "light" else STYLESHEET)
-            if hasattr(self, "circuit_widget"):
-                self.circuit_widget.apply_theme()
-            for widget in QApplication.instance().allWidgets():
-                widget.update()
-        themes.currentIndexChanged.connect(set_theme)
-        dialog.exec()
+        from quantumscope.gui.settings_dialog import SettingsDialog
+        SettingsDialog(self).exec()
+
+    # ---- hooks used by the Settings window ---------------------------------------------
+    def apply_theme(self, choice):
+        from quantumscope.gui.theme import apply_theme
+        apply_theme(choice)
+        if hasattr(self, "circuit_widget"):
+            self.circuit_widget.apply_theme()
+
+    def apply_preferences(self):
+        from quantumscope.gui import preferences as prefs
+        if hasattr(self, "renderer"):
+            self.renderer.setCurrentText(prefs.get("graphics/volume_method"))
+        if hasattr(self, "circuit_widget"):
+            self.circuit_widget.apply_preferences()
+
+    def graphics_information(self):
+        """Renderer, vendor and OpenGL version of the 3D view's actual context."""
+        self._update_gpu_diagnostics()
+        return self.gpu_diagnostics.text()
+
+    def restart_application(self):
+        """Relaunch QuantumScope so start-up settings (graphics device, size) take effect."""
+        from quantumscope.gui import preferences as prefs
+        answer = QMessageBox.question(
+            self, "Restart QuantumScope",
+            "QuantumScope will close and start again with the new settings. Save your work first.\nRestart now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        command = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "quantumscope"]
+        try:
+            subprocess.Popen(command, env=prefs.restart_environment(), start_new_session=True,
+                             cwd=str(Path.home()), close_fds=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "Restart failed", str(exc))
+            return
+        self.close()
+
+    def _follow_system_theme(self, *_):
+        from quantumscope.gui import preferences as prefs
+        if prefs.get("appearance/theme") == "system":
+            self.apply_theme("system")
 
     def _header_button(self, label, tooltip, action):
         button = QToolButton(self)
@@ -407,18 +418,12 @@ class MainWindow(QMainWindow):
         vf.addRow("Cloud visibility", self.opacity)
         controls.addWidget(view_box)
 
-        graphics_box = QGroupBox("Graphics")
-        gf = QFormLayout(graphics_box)
-        gf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        self.renderer = QComboBox()
+        # Volume rendering method and graphics device now live in Settings → Graphics.
+        from quantumscope.gui import preferences as prefs
+        self.renderer = QComboBox(self)
         self.renderer.addItems(["Auto (GPU preferred)", "GPU", "CPU"])
-        gf.addRow("Volume rendering method", self.renderer)
-        note = QLabel("This selects the VTK density-cloud mapper, NOT the physical GPU. "
-                      "The active Intel/NVIDIA graphics device is selected at application startup. "
-                      "Surface rendering is independent of this setting.")
-        note.setWordWrap(True)
-        gf.addRow(note)
-        controls.addWidget(graphics_box)
+        self.renderer.setCurrentText(prefs.get("graphics/volume_method"))
+        self.renderer.hide()
 
         camera_box = QGroupBox("Camera & scientific display")
         cf = QFormLayout(camera_box)
@@ -442,21 +447,9 @@ class MainWindow(QMainWindow):
         self.camera_view.currentIndexChanged.connect(self._change_camera)
         self.zoom_factor.valueChanged.connect(self._change_camera)
 
-        diagnostic_box = QGroupBox("Graphics diagnostics")
-        df = QVBoxLayout(diagnostic_box)
-        self.gpu_diagnostics = QLabel("OpenGL context information pending")
-        self.gpu_diagnostics.setWordWrap(True)
-        self.gpu_diagnostics.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        df.addWidget(self.gpu_diagnostics)
-        inspect_button = QPushButton("Refresh renderer information")
-        inspect_button.clicked.connect(self._update_gpu_diagnostics)
-        df.addWidget(inspect_button)
-        if sys.platform.startswith("linux"):
-            restart_gpu = QPushButton("Restart using NVIDIA (Linux)")
-            restart_gpu.setToolTip("Restart using XCB/GLX and NVIDIA PRIME offloading")
-            restart_gpu.clicked.connect(self._restart_on_nvidia)
-            df.addWidget(restart_gpu)
-        controls.addWidget(diagnostic_box)
+        # Graphics information is shown in Settings → Graphics.
+        self.gpu_diagnostics = QLabel("OpenGL context information pending", self)
+        self.gpu_diagnostics.hide()
 
         self.export_scale = QSpinBox()
         self.export_scale.setRange(1, 4)
@@ -658,32 +651,6 @@ class MainWindow(QMainWindow):
                             self.camera_view.currentText(), self.zoom_factor.value())
             self.compare_plotter.render()
 
-    def _restart_on_nvidia(self):
-        """GPU selection is process-wide: a new Qt/OpenGL context is required."""
-        if not sys.platform.startswith("linux"):
-            return
-        choice = QMessageBox.question(
-            self, "Restart on NVIDIA",
-            "This closes QuantumScope and restarts it with NVIDIA PRIME offloading.\n"
-            "Unsaved visualization settings will be reset. Continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if choice != QMessageBox.StandardButton.Yes:
-            return
-        env = os.environ.copy()
-        env.update({"QT_QPA_PLATFORM": "xcb", "QT_XCB_GL_INTEGRATION": "xcb_glx",
-                    "__NV_PRIME_RENDER_OFFLOAD": "1", "__GLX_VENDOR_LIBRARY_NAME": "nvidia"})
-        # Use the current interpreter (source installation) or executable (packaged build).
-        command = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "quantumscope"]
-        try:
-            subprocess.Popen(command, env=env, start_new_session=True,
-                             cwd=str(Path.home()), close_fds=True)
-        except OSError as exc:
-            QMessageBox.warning(self, "NVIDIA launch failed", str(exc))
-            return
-        self.close()
-
     def _update_gpu_diagnostics(self):
         """Query the *current VTK GL context*; environment hints aren't proof."""
         try:
@@ -800,7 +767,54 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 QMessageBox.critical(self, "Export error", str(exc))
 
+    # ---- crash recovery ---------------------------------------------------------------
+    def _session_marker(self):
+        from quantumscope.gui import preferences as prefs
+        return os.path.join(prefs.data_folder(), "session.running")
+
+    def offer_recovery(self):
+        """If the last session ended without a clean exit, offer its autosaved circuit.
+
+        A marker file exists while QuantumScope runs and is removed on a normal
+        exit, so a leftover marker means the previous session crashed or was killed.
+        """
+        from quantumscope.gui import preferences as prefs
+        workspace = getattr(self, "circuit_widget", None)
+        if workspace is None:
+            return
+        marker = self._session_marker()
+        autosave = workspace.autosave_path()
+        crashed = os.path.exists(marker)
+        if crashed and prefs.get("files/autosave") and os.path.exists(autosave):
+            answer = QMessageBox.question(
+                self, "Recover circuit",
+                "QuantumScope did not close normally last time.\n"
+                "Recover the circuit you were working on?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+            if answer == QMessageBox.StandardButton.Yes:
+                try:
+                    with open(autosave, encoding="utf-8") as handle:
+                        workspace.load_text(handle.read())
+                    self._launch_circuits()
+                    workspace.status.setText("Recovered the circuit from your last session")
+                except (OSError, ValueError) as exc:
+                    QMessageBox.warning(self, "Recovery failed", str(exc))
+        try:
+            with open(marker, "w", encoding="utf-8") as handle:
+                handle.write(str(os.getpid()))
+        except OSError:
+            pass
+        workspace.enable_autosave(True)
+
     def closeEvent(self, event):
+        workspace = getattr(self, "circuit_widget", None)
+        if workspace is not None:
+            workspace.enable_autosave(False)
+            for path in (workspace.autosave_path(), self._session_marker()):
+                try:
+                    os.remove(path)          # a clean exit leaves nothing to recover
+                except OSError:
+                    pass
         self.plotter.close()
         self.compare_plotter.close()
         super().closeEvent(event)

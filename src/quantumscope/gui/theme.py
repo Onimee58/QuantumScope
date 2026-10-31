@@ -265,3 +265,26 @@ def contrast_ratio(foreground, background):
         return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
     hi, lo = sorted((luminance(foreground), luminance(background)), reverse=True)
     return (hi + 0.05) / (lo + 0.05)
+
+
+def system_is_dark():
+    """True when the operating system's color scheme is dark (Qt 6.5+), else False."""
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        return QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+    except (ImportError, AttributeError):
+        return False
+
+
+def apply_theme(choice):
+    """Apply 'dark', 'light' or 'system' to the running application; returns 'dark' or 'light'."""
+    from PySide6.QtWidgets import QApplication
+    from quantumscope.gui.preferences import resolve_theme
+    resolved = resolve_theme(choice, system_is_dark())
+    app = QApplication.instance()
+    app.setProperty('quantumscope_light', resolved == 'light')
+    app.setStyleSheet(LIGHT_STYLESHEET if resolved == 'light' else STYLESHEET)
+    for widget in app.allWidgets():
+        widget.update()
+    return resolved

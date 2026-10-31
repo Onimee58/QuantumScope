@@ -1,3 +1,21 @@
+## v0.5.2 — Learn & Settings (in progress)
+
+### Settings
+- **A new Settings window**, titled "Settings", with sections for Appearance, Circuits, Graphics and Files. It has only a Close button, with no maximize or minimize, and a fixed size, so it can no longer fill the whole application window.
+- **Appearance:**
+  - theme: Dark, Light or **Follow system** (tracks the operating system's light/dark switch live);
+  - **interface size** 100–175% for projecting in classrooms, applied after a restart.
+- **Circuits:** default qubit count, default measurement shots, Bloch spheres beside wires, and **ask before clearing a circuit**.
+- **Graphics:**
+  - the **graphics device** (Automatic, Integrated or NVIDIA PRIME offloading on Linux) is now a saved setting, applied at start-up by QuantumScope itself, so `run_nvidia.sh` is optional and the packaged app gets the same choice;
+  - the 3D volume rendering method and graphics information moved here from the Orbital Explorer panel.
+- **Files:**
+  - a default folder for saving and exporting, and a **Recent ▾** menu in the circuit tab;
+  - **autosave with crash recovery:** if QuantumScope did not close normally, it offers to restore the circuit;
+  - the probability report in PDFs can be set to Ask, Always or Never.
+- **Restore defaults** resets every setting. **Restart now** appears when a change needs a restart; the restart drops the old session's graphics and size variables, so the new choice really applies.
+- **Test isolation:** the test suite uses its own settings file and data folder, so it never reads or changes a user's settings.
+
 ## v0.5.1 — Algorithms and examples
 
 - **Blocks:** named groups of real gates that act as one operation.

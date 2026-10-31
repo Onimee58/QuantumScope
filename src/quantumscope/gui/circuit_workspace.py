@@ -1,5 +1,6 @@
 """Interactive gate circuit editor and exact simulator."""
 import math
+import os
 import html
 import numpy as np
 from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer, QRectF, Signal
@@ -10,6 +11,8 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, Q
 from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured, from_native_layout, from_qasm_layout
 from quantumscope.physics.circuit_layout import pack_and_order
 from quantumscope.gui.theme import canvas_color
+from quantumscope.gui import preferences as prefs
+from quantumscope.gui.controls import Debouncer
 from quantumscope.editor.circuit_model import CircuitModel, EditorError
 from quantumscope.physics.initial_states import InitialState, PRESETS, PRESET_ORDER
 from quantumscope.physics.gate_education import angle_text
@@ -388,7 +391,8 @@ class CircuitWorkspace(QWidget):
     state_changed=Signal()
 
     def __init__(self,parent=None):
-        super().__init__(parent);self.model=CircuitModel(3);self.current_path=None;self._inspector=None;self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
+        super().__init__(parent);self.model=CircuitModel(prefs.get('circuits/default_qubits'));self.current_path=None;self._inspector=None;
+        self._autosave_enabled=False;self._autosave=Debouncer(self,self.autosave_now,1500);self._play_timer=QTimer(self);self._play_timer.timeout.connect(self._advance)
         page_layout=QVBoxLayout(self)
         page_layout.setContentsMargins(0,0,0,0)
         self.page_scroll=QScrollArea(self)
@@ -419,15 +423,20 @@ class CircuitWorkspace(QWidget):
         self.target.hide();self.target3.hide();self.second_label.hide();self.third_label.hide()
         self._update_operand_labels(self.gate.currentText())
         self.gate.hide();self.target.hide();self.target3.hide();self.second_label.hide();self.third_label.hide()
-        for text,cb in [('Clear',self.clear),('Bell example',self.example),('Import QASM 2',self.load_qasm),('Export QASM',self.export_qasm),('Export PDF',self.export_pdf),('Open .qscope',self.load_native),('Save .qscope',self.save_native)]:
+        for text,cb in [('Clear',self._clear_clicked),('Bell example',self.example),('Import QASM 2',self.load_qasm),('Export QASM',self.export_qasm),('Export PDF',self.export_pdf),('Open .qscope',self.load_native),('Save .qscope',self.save_native)]:
             btn=QPushButton(text);btn.clicked.connect(cb);top.addWidget(btn)
         edits=QHBoxLayout();outer.addLayout(edits)
         for text,cb in [('Undo',self.undo),('Redo',self.redo)]:
             button=QPushButton(text);button.clicked.connect(cb);edits.addWidget(button)
+        self.recent_button=QToolButton();self.recent_button.setText('Recent ▾')
+        self.recent_button.setToolTip('Reopen a recently used circuit')
+        self.recent_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.recent_button.setMenu(QMenu(self.recent_button));edits.addWidget(self.recent_button)
+        self._refresh_recent()
         self.inspector_button=QPushButton('State Inspector…')
         self.inspector_button.setToolTip('Open amplitudes, statevector, reduced density matrices and circuit statistics')
         self.inspector_button.clicked.connect(self.open_state_inspector);edits.addWidget(self.inspector_button)
-        self.show_blochs=QCheckBox('Show Bloch spheres beside wires');self.show_blochs.setChecked(True);edits.addWidget(self.show_blochs)
+        self.show_blochs=QCheckBox('Show Bloch spheres beside wires');self.show_blochs.setChecked(prefs.get('circuits/show_blochs'));edits.addWidget(self.show_blochs)
         from quantumscope.physics.algorithms import LIBRARY
         self._library_titles={e.title:e.key for e in LIBRARY}
         self.examples=QComboBox();self.examples.addItems(['Examples…',*EXAMPLE_NAMES,*[e.title for e in LIBRARY if e.menu=='Examples']])
@@ -511,7 +520,7 @@ class CircuitWorkspace(QWidget):
         verify_layout.addWidget(self.verify_table)
         v.addWidget(self.verify_panel)
         shots=QHBoxLayout();v.addLayout(shots);shots.addWidget(QLabel('Shots'))
-        self.shots=QSpinBox();self.shots.setRange(1,100000);self.shots.setValue(1024);shots.addWidget(self.shots)
+        self.shots=QSpinBox();self.shots.setRange(1,100000);self.shots.setValue(prefs.get('circuits/default_shots'));shots.addWidget(self.shots)
         run=QPushButton('Run measurement shots');run.clicked.connect(self.measure);shots.addWidget(run)
         # Maintain the complete ten-wire canvas even when the host tab is short.
         # The page scrolls instead of allowing the splitter to compress it.
@@ -573,6 +582,43 @@ class CircuitWorkspace(QWidget):
         self.status.setText(str(exc))
 
     def snapshot(self):self.model.snapshot()
+
+    # ---- settings, recent files and autosave ------------------------------------------------
+    def apply_preferences(self):
+        """Settings changed: refresh what depends on them now (defaults apply to new circuits)."""
+        self.show_blochs.setChecked(prefs.get('circuits/show_blochs'))
+        self._refresh_recent()
+    def _refresh_recent(self):
+        if not hasattr(self,'recent_button'):return
+        menu=self.recent_button.menu();menu.clear()
+        recent=[p for p in prefs.get('files/recent') if os.path.exists(p)]
+        for path in recent:
+            action=menu.addAction(os.path.basename(path));action.setToolTip(path)
+            action.triggered.connect(lambda _=False,p=path:self.load_native(p))
+        if not recent:
+            empty=menu.addAction('No recent circuits');empty.setEnabled(False)
+        self.recent_button.setEnabled(True)
+    def _clear_clicked(self):
+        if prefs.get('circuits/confirm_clear') and (self.model.gates or self.model.blocks or self.model.measurements):
+            answer=QMessageBox.question(self,'Clear circuit','Remove every gate from this circuit? (Undo can bring it back.)',
+                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
+            if answer!=QMessageBox.StandardButton.Yes:return
+        self.clear()
+    def autosave_path(self):
+        return os.path.join(prefs.data_folder(),'autosave.qscope')
+    def enable_autosave(self,on=True):
+        self._autosave_enabled=on
+        if on:self._autosave()
+    def autosave_now(self):
+        """Write the circuit to the autosave file (used for crash recovery)."""
+        if not self._autosave_enabled or not prefs.get('files/autosave'):return
+        try:
+            text=self.serialize()
+            tmp=self.autosave_path()+'.tmp'
+            with open(tmp,'w',encoding='utf-8') as f:f.write(text)
+            os.replace(tmp,self.autosave_path())    # never leave a half-written file
+        except (OSError,ValueError):
+            pass
 
     # ---- initial states ----------------------------------------------------------
     def set_initial_state(self,qubit,state):
@@ -779,10 +825,11 @@ class CircuitWorkspace(QWidget):
         dlg.exec()
 
     def export_pdf(self):
-        path,_=QFileDialog.getSaveFileName(self,'Export circuit to PDF','circuit.pdf','PDF files (*.pdf)')
+        path,_=QFileDialog.getSaveFileName(self,'Export circuit to PDF',self._suggest('circuit.pdf'),'PDF files (*.pdf)')
         if not path:return
         if not path.lower().endswith('.pdf'):path+='.pdf'
-        report=(QMessageBox.question(self,'PDF export contents','Include a summary of the final state probabilities?',QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)==QMessageBox.StandardButton.Yes)
+        choice=prefs.get('files/pdf_report')
+        report=choice=='always' or (choice=='ask' and QMessageBox.question(self,'PDF export contents','Include a summary of the final state probabilities?',QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)==QMessageBox.StandardButton.Yes)
         try:
             from quantumscope.gui.circuit_pdf import write_circuit_pdf
             write_circuit_pdf(path,self.n,self.gates,self.measurements,
@@ -814,6 +861,7 @@ class CircuitWorkspace(QWidget):
         self.show_step(self.step.value())
         self.grid.horizontalScrollBar().setValue(saved_offset)
         blocks=len(self.model.blocks)
+        if self._autosave_enabled:self._autosave()
         self.status.setText(f'{self.n} qubits • {len(self.model.ordered())} gates'
                             +(f' ({blocks} block{"s" if blocks!=1 else ""}: double-click to expand, right-click for options)' if blocks else '')
                             +f' • {len(self.occupied_columns)} occupied columns • exact ideal simulation')
@@ -977,26 +1025,38 @@ class CircuitWorkspace(QWidget):
                 self.verify_table.setItem(i,j,item)
         self.verify_status.setText(note + (f'  {sum(r.passed is True for r in rows)}/{len(rows)} PASS' if rows and rows[0].passed is not None else ''))
 
-    def load_native(self):
-        path,_=QFileDialog.getOpenFileName(self,'Open QuantumScope circuit','','QuantumScope (*.qscope)')
+    def load_native(self,path=None):
+        if not path:
+            path,_=QFileDialog.getOpenFileName(self,'Open QuantumScope circuit',os.path.dirname(self.current_path or '') or prefs.default_folder(),'QuantumScope (*.qscope)')
         if not path:return
         try:
-            with open(path,encoding='utf-8') as f:n,ops,ms,layout=from_native_layout(f.read())
-            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks']);self.current_path=path
+            with open(path,encoding='utf-8') as f:self.load_text(f.read())
+            self.current_path=path;prefs.add_recent(path);self._refresh_recent()
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'Native import failed',str(exc))
+    def load_text(self,text):
+        """Load a .qscope document (raises ValueError if it is invalid)."""
+        n,ops,ms,layout=from_native_layout(text)
+        self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks'])
+    def serialize(self):
+        """The current circuit as a .qscope document."""
+        gates,columns,mcol,total=self.model.layout()
+        layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states,
+                'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()]}
+        return to_native_measured(self.n,gates,sorted(self.measurements),layout=layout)
+    def _suggest(self,name):
+        """A file-dialog starting path in the preferred folder."""
+        return os.path.join(os.path.dirname(self.current_path) if self.current_path else prefs.default_folder(),name)
     def save_native(self):
-        path,_=QFileDialog.getSaveFileName(self,'Save QuantumScope circuit',self.current_path or 'untitled.qscope','QuantumScope (*.qscope)')
+        path,_=QFileDialog.getSaveFileName(self,'Save QuantumScope circuit',self.current_path or self._suggest('untitled.qscope'),'QuantumScope (*.qscope)')
         if not path:return
         if not path.lower().endswith('.qscope'):path+='.qscope'
         self.current_path=path
         try:
-            gates,columns,mcol,total=self.model.layout()
-            layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states,
-                    'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()]}
-            with open(path,'w',encoding='utf-8') as f:f.write(to_native_measured(self.n,gates,sorted(self.measurements),layout=layout))
+            with open(path,'w',encoding='utf-8') as f:f.write(self.serialize())
+            prefs.add_recent(path);self._refresh_recent()
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'Save failed',str(exc))
     def load_qasm(self):
-        path,_=QFileDialog.getOpenFileName(self,'Open OpenQASM 2 file','','OpenQASM 2 (*.qasm *.qasm2);;Text files (*.txt)')
+        path,_=QFileDialog.getOpenFileName(self,'Open OpenQASM 2 file',prefs.default_folder(),'OpenQASM 2 (*.qasm *.qasm2);;Text files (*.txt)')
         if not path:return
         try:
             with open(path,encoding='utf-8') as f:n,ops,ms,layout,notes=from_qasm_layout(f.read())
@@ -1004,7 +1064,7 @@ class CircuitWorkspace(QWidget):
             self._show_notes('QASM import notes',notes)
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'QASM import rejected',str(exc))
     def export_qasm(self):
-        path,_=QFileDialog.getSaveFileName(self,'Export OpenQASM 2','untitled.qasm','OpenQASM 2 (*.qasm *.qasm2)')
+        path,_=QFileDialog.getSaveFileName(self,'Export OpenQASM 2',self._suggest('untitled.qasm'),'OpenQASM 2 (*.qasm *.qasm2)')
         if not path:return
         if not path.lower().endswith(('.qasm','.qasm2')):path+='.qasm'
         gates,comments=self.model.qasm_items()
