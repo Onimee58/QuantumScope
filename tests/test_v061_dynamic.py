@@ -314,7 +314,8 @@ def test_reset_and_terminal_measurements_in_qasm():
     assert any(isinstance(item, D.Reset) for item in m.wires.values())
 
 
-@pytest.mark.parametrize('bad', ['creg r[2];\nif(r==1) x q[0];', 'if(zz==1) x q[0];', 'creg a1[1];\nif(a1==2) x q[0];'])
+# Multi-bit register conditions are supported since v0.6.2; out-of-range values are still rejected.
+@pytest.mark.parametrize('bad', ['creg r[2];\nif(r==4) x q[0];', 'if(zz==1) x q[0];', 'creg a1[1];\nif(a1==2) x q[0];'])
 def test_unsupported_conditions_are_rejected(bad):
     with pytest.raises(ValueError):
         from_qasm_layout('OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[1];\n' + bad)

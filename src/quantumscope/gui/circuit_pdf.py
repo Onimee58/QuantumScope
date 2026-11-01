@@ -115,7 +115,8 @@ def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial
             painter.setPen(QPen(QColor('#b06a00'),1));painter.setBrush(QColor('#fff4dc'))
             painter.drawRoundedRect(QRectF(x-26,y-34,52,14),4,4)
             painter.setPen(QColor('#3d2a00'));painter.setFont(QFont('Sans',8))
-            painter.drawText(QRectF(x-26,y-34,52,14),Qt.AlignmentFlag.AlignCenter,f'c{cbit}={value}')
+            from quantumscope.physics.dynamic import condition_text
+            painter.drawText(QRectF(x-26,y-34,52,14),Qt.AlignmentFlag.AlignCenter,condition_text(cbit,value).replace(' ',''))
         painter.setFont(QFont('Sans',12))
         for q,c in measurements.items():
             x=55+110*c;y=35+lane*q

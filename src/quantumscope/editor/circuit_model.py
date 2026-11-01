@@ -20,7 +20,12 @@ from quantumscope.physics.initial_states import DEFAULT, InitialState, all_defau
 from quantumscope.physics.state_analysis import analyze_circuit
 from quantumscope.physics.blocks import Block, BlockPlacement, check_layout, flatten_with_comments, placed_items
 from quantumscope.physics.noise import NoiseElement, NoiseModel
-from quantumscope.physics.dynamic import Conditioned, Measure, Reset
+from quantumscope.physics.dynamic import Conditioned, Measure, Reset, condition_parts
+
+
+def item_bits(condition):
+    """The classical bits a stored (bit, value) or ((bits), (values)) condition reads."""
+    return condition_parts(*condition)[0]
 
 from quantumscope.physics.circuits import PARAMETERIZED  # noqa: E402  (includes CP)
 UNDO_LIMIT = 80
@@ -55,7 +60,7 @@ class CircuitModel:
         self.initial_states = defaults(n)   # per-qubit starting state, |0⟩ by default
         self.blocks = {}           # block id -> BlockPlacement (collapsed or expanded)
         self.wires = {}            # (row, col) -> single-wire item: NoiseElement, Measure (M→c) or Reset
-        self.conditions = {}       # gate key (row, col) -> (classical bit, value): 'apply only if c = v'
+        self.conditions = {}       # gate key (row, col) -> (bit, value) or ((bits…), (values…)): 'apply only if …'
         self.noise_model = NoiseModel()   # global noise (off by default)
         self._next_block = 1
         self.active_entry = None   # (library key, ((param, value), ...)) for algorithms and new examples
@@ -218,8 +223,8 @@ class CircuitModel:
         for key, cbit, value in conditions:
             if tuple(key) not in keys:
                 raise ValueError('A classical condition refers to a gate that is not in the circuit')
-            Conditioned(Gate('X', (0,)), cbit, value)          # validates the bit and value
-            self.conditions[tuple(key)] = (cbit, value)
+            Conditioned(Gate('X', (0,)), cbit, value)          # validates the bit(s) and value(s)
+            self.conditions[tuple(key)] = (tuple(cbit), tuple(value)) if isinstance(cbit, (tuple, list)) else (cbit, value)
         if noise_model is not None:
             self.noise_model = noise_model
         for pl in placements:
@@ -254,10 +259,11 @@ class CircuitModel:
             condition = None
             if isinstance(item, Conditioned):
                 condition, item = (item.cbit, item.value), item.gate
+                needs = max((ready.get(b, 0) for b in item_bits(condition)), default=0)
             wires = item.span if isinstance(item, Block) else range(min(item.targets), max(item.targets) + 1)
             col = max(free[q] for q in wires)
             if condition:
-                col = max(col, ready.get(condition[0], 0))
+                col = max(col, needs)
             for q in wires:
                 free[q] = col + 1
             if isinstance(item, Block):
@@ -598,7 +604,10 @@ class CircuitModel:
         return True
 
     def set_condition(self, row, col, cbit, value=1):
-        """Make the gate at (row, col) run only when classical bit `cbit` equals `value`."""
+        """Make the gate at (row, col) run only when classical bit `cbit` equals `value`, or, with
+        tuples, when several bits have the given values (e.g. (0, 1), (1, 0): "c0c1 = 10")."""
+        if isinstance(cbit, (tuple, list)):
+            cbit, value = tuple(cbit), tuple(value)
         found = self.operation_at(row, col)
         if found is None or found[0] != 'gate':
             raise EditorError('Only a gate outside blocks can be conditioned')

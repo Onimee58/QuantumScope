@@ -53,18 +53,50 @@ class Reset:
 
 @dataclass(frozen=True)
 class Conditioned:
-    """A gate applied only when classical bit `cbit` equals `value`."""
+    """A gate applied only when classical bits have given values.
+
+    Single bit: Conditioned(gate, 1, 1) means "if c1 = 1".
+    Several bits: Conditioned(gate, (0, 1), (1, 0)) means "if c0c1 = 10".
+    """
     gate: Gate
-    cbit: int
-    value: int = 1
+    cbit: object                 # an int, or a tuple of ints for a multi-bit condition
+    value: object = 1            # an int, or a tuple of 0/1 values (one per bit)
 
     def __post_init__(self):
-        if not (isinstance(self.cbit, int) and 0 <= self.cbit < MAX_BITS) or self.value not in (0, 1):
+        bits, values = condition_parts(self.cbit, self.value)
+        if not bits or len(set(bits)) != len(bits) or len(bits) != len(values):
+            raise ValueError('Invalid classical condition')
+        if not all(isinstance(b, int) and 0 <= b < MAX_BITS for b in bits) or not all(v in (0, 1) for v in values):
             raise ValueError('Invalid classical condition')
 
     @property
+    def bits(self):
+        return condition_parts(self.cbit, self.value)[0]
+
+    @property
+    def values(self):
+        return condition_parts(self.cbit, self.value)[1]
+
+    def holds(self, record):
+        return all(record[b] == v for b, v in zip(self.bits, self.values))
+
+    @property
     def label(self):
-        return f'if c{self.cbit} = {self.value}'
+        return 'if ' + condition_text(self.cbit, self.value)
+
+
+def condition_parts(cbit, value):
+    """(bits, values) as tuples, for a single-bit or multi-bit condition."""
+    if isinstance(cbit, (tuple, list)):
+        values = tuple(value) if isinstance(value, (tuple, list)) else ()
+        return tuple(cbit), values
+    return (cbit,), (value,)
+
+
+def condition_text(cbit, value):
+    """'c1 = 1' or 'c0c1 = 10'."""
+    bits, values = condition_parts(cbit, value)
+    return ''.join(f'c{b}' for b in bits) + ' = ' + ''.join(str(v) for v in values)
 
 
 def item_from_record(record):
@@ -141,7 +173,7 @@ def bits_needed(columns):
             if isinstance(item, Measure):
                 used.append(item.cbit)
             elif isinstance(item, Conditioned):
-                used.append(item.cbit)
+                used.extend(item.bits)
     return max(used) + 1
 
 
@@ -182,7 +214,7 @@ def simulate(n, columns, initial_state, model, readout=0.0, store=True):
                 gate, condition = (item.gate, item) if isinstance(item, Conditioned) else (item, None)
                 updated = []
                 for b in branches:
-                    if condition is None or b.bits[condition.cbit] == condition.value:
+                    if condition is None or condition.holds(b.bits):
                         sigma = gate_noise(apply_unitary(b.sigma, n, gate), n, gate, model)
                         updated.append(Branch(b.bits, sigma))
                     else:

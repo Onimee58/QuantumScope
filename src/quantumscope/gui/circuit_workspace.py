@@ -187,17 +187,20 @@ class Grid(QTableWidget):
                 p.drawText(box.adjusted(0,1,0,-box.height()/2+2),Qt.AlignmentFlag.AlignCenter,'|0⟩')
                 p.setFont(QFont('Sans',7))
                 p.drawText(box.adjusted(0,box.height()/2-2,0,-1),Qt.AlignmentFlag.AlignCenter,'reset')
+        from quantumscope.physics.dynamic import condition_text
         for (row,col),(cbit,value) in model.conditions.items():
             gate=model.gates.get((row,col))
             if gate is None or col>=self.columnCount():continue
             target=gate.targets[-1]
             if target>=rows:continue
             cell=QRectF(self.visualRect(self.model().index(target,col)))
-            badge=QRectF(cell.center().x()-22,cell.top()-1,44,13)
+            text=condition_text(cbit,value).replace(' ','')
+            width=max(44,7*len(text)+8)
+            badge=QRectF(cell.center().x()-width/2,cell.top()-1,width,13)
             p.setPen(QPen(canvas_color('measure_border'),1.2));p.setBrush(canvas_color('measure_fill'))
             p.drawRoundedRect(badge,4,4)
             p.setPen(canvas_color('measure_text'));p.setFont(QFont('Sans',7,QFont.Weight.Bold))
-            p.drawText(badge,Qt.AlignmentFlag.AlignCenter,f'c{cbit}={value}')
+            p.drawText(badge,Qt.AlignmentFlag.AlignCenter,text)
 
     def _draw_noise(self,p,rows):
         """Noise channels: a dashed orange box, never mistaken for a gate."""
@@ -676,6 +679,24 @@ class CircuitWorkspace(QWidget):
         self.status.setText(str(exc))
 
     def snapshot(self):self.model.snapshot()
+    def _several_bits_dialog(self,bits,current=None):
+        """Choose 0, 1 or 'any' for each classical bit; returns ((bits…), (values…)) or None."""
+        from quantumscope.physics.dynamic import condition_parts
+        known=dict(zip(*condition_parts(*current))) if current else {}
+        dialog=QDialog(self);dialog.setWindowTitle('Run only if…')
+        form=QFormLayout(dialog)
+        form.addRow(QLabel('The gate runs only when every chosen bit has its value (for example c0c1 = 10).'))
+        boxes={}
+        for k in bits:
+            box=QComboBox();box.addItems(['any','0','1'])
+            box.setCurrentText(str(known[k]) if k in known else 'any');form.addRow(f'c{k}',box);boxes[k]=box
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel);form.addRow(buttons)
+        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject)
+        if dialog.exec()!=QDialog.DialogCode.Accepted:return None
+        chosen=[(k,int(b.currentText())) for k,b in boxes.items() if b.currentText()!='any']
+        if not chosen:return None
+        if len(chosen)==1:return chosen[0]
+        return tuple(k for k,_ in chosen),tuple(v for _,v in chosen)
     def _exec_menu(self,menu,pos):
         """Show a right-click menu at a canvas position (one place, so tests can choose an entry)."""
         return menu.exec(self.grid.viewport().mapToGlobal(pos))
@@ -1120,22 +1141,31 @@ class CircuitWorkspace(QWidget):
             when=menu.addMenu('Run only if…')
             always=when.addAction('Always (no condition)');always.setCheckable(True);always.setChecked(current is None)
             conditions[always]=None
+            from quantumscope.physics.dynamic import condition_parts
             bits=sorted({item.cbit for item in self.model.wires.values() if isinstance(item,Measure)}
-                        |({current[0]} if current else set()))
+                        |(set(condition_parts(*current)[0]) if current else set()))
             if not bits:
                 hint=when.addAction('Add an M→c measurement first');hint.setEnabled(False)
             for k in bits:
                 for value in (1,0):
                     action=when.addAction(f'c{k} = {value}');action.setCheckable(True)
                     action.setChecked(current==(k,value));conditions[action]=(k,value)
+            if len(bits)>=2:
+                several=when.addAction('Several bits…');several.setCheckable(True)
+                several.setChecked(bool(current) and isinstance(current[0],tuple))
+                conditions[several]=('several',bits)
         delete=menu.addAction('Remove measurement' if found[0]=='measurement' else 'Remove gate')
         chosen=self._exec_menu(menu,pos)
         if chosen is edit and edit is not None:self.edit_gate_at(row,col)
         elif chosen is delete:self.remove_at(pos)
         elif chosen in conditions:
+            choice=conditions[chosen]
+            if choice and choice[0]=='several':
+                choice=self._several_bits_dialog(choice[1],self.model.conditions.get(found[1]))
+                if choice is None:return
             try:
-                changed=(self.model.clear_condition(row,col) if conditions[chosen] is None
-                         else self.model.set_condition(row,col,*conditions[chosen]))
+                changed=(self.model.clear_condition(row,col) if choice is None
+                         else self.model.set_condition(row,col,*choice))
             except EditorError as exc:self._rejected(exc);return
             if changed:self._changed()
 

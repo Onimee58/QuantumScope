@@ -51,9 +51,9 @@ def from_native(text):
 
 def _initial_states(obj,n):
     """Initial states stored in a schema-2, 3 or 4 document (|0⟩ for schema 1)."""
-    if obj.get('schema_version') in (3,4,5) and 'initial_states' not in obj:
+    if obj.get('schema_version') in (3,4,5,6) and 'initial_states' not in obj:
         return defaults(n)
-    if obj.get('schema_version') not in (2,3,4,5):
+    if obj.get('schema_version') not in (2,3,4,5,6):
         if 'initial_states' in obj:raise ValueError('initial_states requires schema_version 2')
         return defaults(n)
     records=obj.get('initial_states')
@@ -141,7 +141,14 @@ def to_native_measured(n,gates,measured=(),layout=None):
         # Schema 5 (v0.6.1): mid-circuit measurement, reset and classical conditions.
         data['schema_version']=5
         data['classical']=[{**item.to_record(),'column':c} for item,c in classical]
-        data['conditions']=[{'row':key[0],'column':key[1],'cbit':cbit,'value':value} for key,cbit,value in conditions]
+        data['conditions']=[]
+        for key,cbit,value in conditions:
+            if isinstance(cbit,(tuple,list)):
+                # Schema 6 (v0.6.2): conditions on several classical bits at once.
+                data['schema_version']=6
+                data['conditions'].append({'row':key[0],'column':key[1],'cbits':list(cbit),'values':list(value)})
+            else:
+                data['conditions'].append({'row':key[0],'column':key[1],'cbit':cbit,'value':value})
     data['terminal_measurements']=_measure_indices(n,measured)
     if layout is not None:
         columns=list(layout.get('columns') or [])
@@ -168,7 +175,7 @@ def _from_native_any(text):
     """(n, gates, measured, initial states, document) for schema 1 or 2."""
     try: obj=json.loads(text)
     except json.JSONDecodeError as exc: raise ValueError('Invalid .qscope JSON') from exc
-    if not isinstance(obj,dict) or obj.get('format')!=FORMAT or obj.get('schema_version') not in (1,2,3,4,5):
+    if not isinstance(obj,dict) or obj.get('format')!=FORMAT or obj.get('schema_version') not in (1,2,3,4,5,6):
         raise ValueError('Unsupported .qscope file format or version')
     n=obj.get('qubits')
     if type(n) is not int:raise ValueError('Invalid circuit structure')
@@ -180,7 +187,7 @@ def _from_native_any(text):
 
 def _noise_in(obj,n):
     """(noise model, [(NoiseElement, column)]) stored in a schema-4 document."""
-    if obj.get('schema_version') not in (4,5):
+    if obj.get('schema_version') not in (4,5,6):
         if 'noise' in obj or 'noise_model' in obj:raise ValueError('noise requires schema_version 4')
         return NoiseModel(),[]
     model=NoiseModel.from_record(obj['noise_model']) if 'noise_model' in obj else NoiseModel()
@@ -197,7 +204,7 @@ def _noise_in(obj,n):
 
 def _classical_in(obj,n):
     """([(Measure/Reset, column)], [((row, column), cbit, value)]) in a schema-5 document."""
-    if obj.get('schema_version')!=5:
+    if obj.get('schema_version') not in (5,6):
         if 'classical' in obj or 'conditions' in obj:raise ValueError('mid-circuit operations require schema_version 5')
         return [],[]
     items=[]
@@ -208,13 +215,21 @@ def _classical_in(obj,n):
         items.append((item,r['column']))
     conditions=[]
     for r in obj.get('conditions',[]):
-        if not isinstance(r,dict) or not all(type(r.get(k)) is int for k in ('row','column','cbit','value')):
+        if not isinstance(r,dict) or not all(type(r.get(k)) is int for k in ('row','column')):
             raise ValueError('Invalid classical condition')
-        conditions.append(((r['row'],r['column']),r['cbit'],r['value']))
+        if 'cbits' in r:                              # several bits (schema 6)
+            bits,values=r.get('cbits'),r.get('values')
+            if obj.get('schema_version')!=6 or not isinstance(bits,list) or not isinstance(values,list) \
+                    or not all(type(x) is int for x in bits+values):
+                raise ValueError('Invalid classical condition')
+            conditions.append(((r['row'],r['column']),tuple(bits),tuple(values)))
+        else:
+            if not all(type(r.get(k)) is int for k in ('cbit','value')):raise ValueError('Invalid classical condition')
+            conditions.append(((r['row'],r['column']),r['cbit'],r['value']))
     return items,conditions
 
 def _blocks_in(obj,n):
-    if obj.get('schema_version') not in (3,4,5):
+    if obj.get('schema_version') not in (3,4,5,6):
         if 'blocks' in obj:raise ValueError('blocks require schema_version 3')
         return []
     records=obj.get('blocks',[])                # a schema-4 file may have noise but no blocks
@@ -352,15 +367,73 @@ def dynamic_sequence(n, gates, columns, blocks=(), classical=(), conditions=()):
     return [op for c in sorted(by_column) for op in by_column[c]]
 
 
+def _classical_registers(sequence):
+    """Map classical bits to OpenQASM 2 registers.
+
+    Bits that appear together in a multi-bit condition share one register r<i> (OpenQASM 2
+    compares whole registers); every other bit gets its own one-bit register m<k>.
+    Returns {bit: (register name, index)} and {register name: size}.
+    """
+    from .dynamic import condition_parts
+    used = set()
+    parent = {}
+
+    def find(b):
+        while parent.setdefault(b, b) != b:
+            b = parent[b]
+        return b
+    for op in sequence:
+        if op[0] == 'measure':
+            used.add(op[1].cbit)
+        elif op[0] == 'gate' and op[2]:
+            bits = condition_parts(*op[2])[0]
+            used.update(bits)
+            for b in bits[1:]:
+                parent[find(b)] = find(bits[0])
+    groups = {}
+    for b in sorted(used):
+        groups.setdefault(find(b), []).append(b)
+    where, sizes = {}, {}
+    shared = 0
+    for members in sorted(groups.values()):
+        if len(members) == 1:
+            where[members[0]] = (f'm{members[0]}', 0)
+            sizes[f'm{members[0]}'] = 1
+        else:
+            name = f'r{shared}'
+            shared += 1
+            sizes[name] = len(members)
+            for j, b in enumerate(sorted(members)):
+                where[b] = (name, j)
+    return where, sizes
+
+
+def _condition_lines(condition, where, sizes, line):
+    """`if(reg==value) …;` lines for a condition. A condition on part of a shared register becomes
+    one line per full-register value matching it — exactly one of them can be true."""
+    from .dynamic import condition_parts
+    bits, values = condition_parts(*condition)
+    name = where[bits[0]][0]
+    fixed = {where[b][1]: v for b, v in zip(bits, values)}
+    free = [j for j in range(sizes[name]) if j not in fixed]
+    lines = []
+    for combo in range(1 << len(free)):
+        assignment = dict(fixed)
+        for k, j in enumerate(free):
+            assignment[j] = (combo >> k) & 1
+        value = sum(bit << j for j, bit in assignment.items())          # register bit j has weight 2^j
+        lines.append(f'if({name}=={value}) {line}')
+    return lines
+
+
 def to_qasm_dynamic(n, sequence, measured=(), initial_states=None):
     """OpenQASM 2 for a circuit with mid-circuit measurement, conditions and reset."""
     measured = _measure_indices(n, measured)
     prep = preparation_gates(initial_states) if initial_states is not None else []
-    nbits = 1 + max([op[1].cbit for op in sequence if op[0] == 'measure']
-                    + [op[2][0] for op in sequence if op[0] == 'gate' and op[2]], default=-1)
+    where, sizes = _classical_registers(sequence)
     gate_line = lambda g: to_qasm(n, [g]).rstrip().splitlines()[-1]
     lines = ['OPENQASM 2.0;', 'include "qelib1.inc";', f'qreg q[{n}];']
-    lines += [f'creg m{k}[1];' for k in range(nbits)]
+    lines += [f'creg {name}[{size}];' for name, size in sorted(sizes.items(), key=lambda x: (x[0][0] != 'm', x[0]))]
     if measured:
         lines.append(f'creg c[{n}];')
     if prep:
@@ -372,14 +445,14 @@ def to_qasm_dynamic(n, sequence, measured=(), initial_states=None):
             lines.append('// ' + ''.join(ch if ord(ch) < 128 else '?' for ch in op[1]))
         elif op[0] == 'gate':
             line = gate_line(op[1])
-            lines.append(f'if(m{op[2][0]}=={op[2][1]}) {line}' if op[2] else line)
+            lines.extend(_condition_lines(op[2], where, sizes, line) if op[2] else [line])
         elif op[0] == 'measure':
-            lines.append(f'measure q[{op[1].qubit}] -> m{op[1].cbit}[0];')
+            name, j = where[op[1].cbit]
+            lines.append(f'measure q[{op[1].qubit}] -> {name}[{j}];')
         else:
             lines.append(f'reset q[{op[1].qubit}];')
     lines += [f'measure q[{q}] -> c[{q}];' for q in measured]
     return '\n'.join(lines) + '\n'
-
 
 
 def _is_dynamic_qasm(statements):
@@ -452,11 +525,12 @@ def from_qasm_dynamic(text):
             reg, value, stmt = cond.group(1), int(cond.group(2)), cond.group(3)
             if reg not in registers:
                 raise ValueError(f'Unknown classical register {reg}')
-            if registers[reg] != 1:
-                raise ValueError('Conditions on multi-bit registers are not supported yet: use one-bit registers')
-            if value not in (0, 1):
-                raise ValueError('A one-bit register can only equal 0 or 1')
-            condition = (bit_of.setdefault((reg, 0), len(bit_of)), value)
+            size = registers[reg]
+            if not 0 <= value < (1 << size):
+                raise ValueError(f'{reg} has {size} bit(s), so it cannot equal {value}')
+            bits = tuple(bit_of.setdefault((reg, j), len(bit_of)) for j in range(size))
+            values = tuple((value >> j) & 1 for j in range(size))          # register bit j has weight 2^j
+            condition = (bits[0], values[0]) if size == 1 else (bits, values)
         _, parsed = parse_qasm(header + stmt + ';')
         if len(parsed) != 1:
             raise ValueError(f'Unsupported statement: {stmt}')
@@ -479,11 +553,12 @@ def from_qasm_dynamic(text):
             g, condition = op[1], op[2]
             col = max(free[q] for q in g.targets)
             if condition:
-                col = max(col, ready.get(condition[0], 0))
+                from .dynamic import condition_parts
+                col = max([col] + [ready.get(b, 0) for b in condition_parts(*condition)[0]])
             gates.append(g)
             columns.append(col)
             if condition:
-                conditions.append(((g.targets[0], col), condition[0], condition[1]))
+                conditions.append(((g.targets[0], col), *condition))
             for q in g.targets:
                 free[q] = col + 1
         else:
