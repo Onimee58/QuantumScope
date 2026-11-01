@@ -5,7 +5,7 @@ from quantumscope.physics.circuits import evolution
 from quantumscope.physics.gate_education import angle_text
 from quantumscope.physics.initial_states import defaults, product_state
 
-def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial_states=None,blocks=(),noise=None):
+def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial_states=None,blocks=(),noise=None,classical=None,conditions=None):
     """Render the full circuit with scalable Qt vector primitives, not a screenshot.
     Each wire is labeled with its initial state (|0⟩ unless given). blocks are
     BlockPlacement objects: collapsed ones draw as labeled boxes, expanded ones
@@ -19,7 +19,10 @@ def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial
         if pl.expanded:
             gates.update({(g.targets[0],c):g for g,c in pl.placed_gates()})
     noise=dict(noise or {})
-    columns=max([c for _,c in gates]+list(measurements.values())+[pl.end for pl in blocks]+[c for _,c in noise],default=0)+1
+    classical=dict(classical or {})                   # (row, col) -> Measure or Reset
+    conditions=dict(conditions or {})                 # gate key (row, col) -> (cbit, value)
+    columns=max([c for _,c in gates]+list(measurements.values())+[pl.end for pl in blocks]+[c for _,c in noise]
+                +[c for _,c in classical],default=0)+1
     writer=QPdfWriter(str(filename));writer.setResolution(96)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.A3))
     painter=QPainter(writer)
@@ -96,6 +99,24 @@ def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial
             short={'bit_flip':'BF','phase_flip':'PF','depolarizing':'DEP','amplitude_damping':'AD','phase_damping':'PD'}[element.kind]
             painter.drawText(QRectF(x-30,y-20,60,40),Qt.AlignmentFlag.AlignCenter,f'{short}\n{element.p:g}')
             painter.setFont(QFont('Sans',12))
+        for (q,c),item in classical.items():         # mid-circuit measurements (M→c) and resets
+            x=55+110*c;y=35+lane*q
+            measure=hasattr(item,'cbit')
+            painter.setPen(QPen(QColor('#b06a00') if measure else QColor('#2f4f6f'),2))
+            painter.setBrush(QColor('#fff4dc') if measure else QColor('#e8f1f8'))
+            painter.drawRoundedRect(QRectF(x-30,y-20,60,40),6,6)
+            painter.setPen(QColor('#3d2a00') if measure else QColor('#1b3550'));painter.setFont(QFont('Sans',9))
+            painter.drawText(QRectF(x-30,y-20,60,40),Qt.AlignmentFlag.AlignCenter,
+                             f'M\n→c{item.cbit}' if measure else '|0⟩\nreset')
+        for (q,c),(cbit,value) in conditions.items():  # 'if c = v' badges above conditioned gates
+            gate=gates.get((q,c))
+            if gate is None:continue
+            x=55+110*c;y=35+lane*gate.targets[-1]
+            painter.setPen(QPen(QColor('#b06a00'),1));painter.setBrush(QColor('#fff4dc'))
+            painter.drawRoundedRect(QRectF(x-26,y-34,52,14),4,4)
+            painter.setPen(QColor('#3d2a00'));painter.setFont(QFont('Sans',8))
+            painter.drawText(QRectF(x-26,y-34,52,14),Qt.AlignmentFlag.AlignCenter,f'c{cbit}={value}')
+        painter.setFont(QFont('Sans',12))
         for q,c in measurements.items():
             x=55+110*c;y=35+lane*q
             painter.setPen(QPen(QColor('#ae7221'),2));painter.setBrush(QColor('#fff4dc'))

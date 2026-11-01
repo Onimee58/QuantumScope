@@ -113,3 +113,21 @@ def test_save_and_reopen_keeps_everything(teleport, tmp_path, monkeypatch):
     teleport.load_native()
     assert teleport.model.wires == wires and teleport.model.conditions == conditions
     assert np.allclose(teleport.noisy_view[1][-1], final)
+
+
+def test_qasm_and_pdf_export_of_a_dynamic_circuit(teleport, tmp_path, monkeypatch):
+    monkeypatch.setattr(QtWidgets.QMessageBox, 'warning', staticmethod(lambda *a, **k: pytest.fail(str(a[2]))))
+    for name, action in (('t.qasm', teleport.export_qasm), ('t.pdf', teleport.export_pdf)):
+        path = str(tmp_path / name)
+        monkeypatch.setattr(QtWidgets.QFileDialog, 'getSaveFileName', staticmethod(lambda *a, p=path, **k: (p, '')))
+        monkeypatch.setattr(QtWidgets.QMessageBox, 'question',
+                            staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.No))
+        action()
+        assert os.path.getsize(path) > 100
+    text = (tmp_path / 't.qasm').read_text()
+    assert 'if(m1==1) x q[2];' in text and 'noise' not in text
+    monkeypatch.setattr(QtWidgets.QFileDialog, 'getOpenFileName', staticmethod(lambda *a, **k: (str(tmp_path / 't.qasm'), '')))
+    monkeypatch.setattr(teleport, '_show_notes', lambda *a: None)
+    teleport.clear()
+    teleport.load_qasm()
+    assert teleport.model.dynamic and len(teleport.model.conditions) == 2

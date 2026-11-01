@@ -80,6 +80,9 @@ def convert(text,source_format,notes=None):
         return to_native_measured(n,gates,measured,layout=layout)
     if source_format=='qscope':
         n,gates,measured,layout=from_native_layout(text)
+        if layout.get('classical') or layout.get('conditions'):
+            sequence=dynamic_sequence(n,gates,layout['columns'],layout['blocks'],layout['classical'],layout['conditions'])
+            return to_qasm_dynamic(n,sequence,measured,layout['initial_states'])
         states=layout['initial_states']
         if notes is not None and not all_default(states):
             notes.append('OpenQASM 2 has no initial states, so they were written as preparation gates at the start.')
@@ -312,6 +315,9 @@ def from_qasm_layout(text):
     column and are reported in notes rather than dropped silently.
     """
     import re
+    statements=[' '.join(x.split()) for x in re.sub(r'//[^\n]*','',text).split(';') if x.strip()]
+    if _is_dynamic_qasm(statements):
+        return from_qasm_dynamic(text)
     n,gates,measured=from_qasm_measured(text)
     # Recover barrier positions from the unitary part of the program.
     stripped=re.sub(r'//[^\n]*','',text)
@@ -320,3 +326,179 @@ def from_qasm_layout(text):
     gates,columns=pack_and_order(n,gates,fences)
     last=max(columns,default=-1)
     return n,gates,measured,{'columns':columns,'measurement_column':last+1 if measured else None,'total_columns':None,'initial_states':defaults(n)},notes
+
+
+# ---- dynamic circuits in OpenQASM 2 (v0.6.1) ----------------------------------------------------
+# Each classical bit k becomes its own one-bit register m<k>, so that OpenQASM 2's
+# register conditions `if(m1==1) …` express single-bit conditions exactly.
+
+def dynamic_sequence(n, gates, columns, blocks=(), classical=(), conditions=()):
+    """Operations in simulation order: ('gate', Gate, (cbit, value) or None), ('measure', Measure),
+    ('reset', Reset) or ('comment', text). Within a column, gates come before measurements and
+    resets, matching the simulator."""
+    from .blocks import placed_items
+    condition_of = {tuple(key): (cbit, value) for key, cbit, value in conditions}
+    by_column = {}
+    seen_blocks = set()
+    placements = [BlockPlacement(b, c, e) for b, c, e in blocks]
+    for c, r, _, g, pl in placed_items(((g.targets[0], col, g) for g, col in zip(gates, columns)), placements):
+        ops = by_column.setdefault(c, [])
+        if pl is not None and id(pl) not in seen_blocks:
+            seen_blocks.add(id(pl))
+            ops.append(('comment', f'block: {pl.block.label}'))
+        ops.append(('gate', g, condition_of.get((r, c)) if pl is None else None))
+    for item, c in sorted(classical, key=lambda x: (x[1], x[0].qubit)):
+        by_column.setdefault(c, []).append(('measure' if hasattr(item, 'cbit') else 'reset', item))
+    return [op for c in sorted(by_column) for op in by_column[c]]
+
+
+def to_qasm_dynamic(n, sequence, measured=(), initial_states=None):
+    """OpenQASM 2 for a circuit with mid-circuit measurement, conditions and reset."""
+    measured = _measure_indices(n, measured)
+    prep = preparation_gates(initial_states) if initial_states is not None else []
+    nbits = 1 + max([op[1].cbit for op in sequence if op[0] == 'measure']
+                    + [op[2][0] for op in sequence if op[0] == 'gate' and op[2]], default=-1)
+    gate_line = lambda g: to_qasm(n, [g]).rstrip().splitlines()[-1]
+    lines = ['OPENQASM 2.0;', 'include "qelib1.inc";', f'qreg q[{n}];']
+    lines += [f'creg m{k}[1];' for k in range(nbits)]
+    if measured:
+        lines.append(f'creg c[{n}];')
+    if prep:
+        lines.append('// Initial-state preparation from QuantumScope')
+        lines += [gate_line(g) for g in prep]
+        lines.append('// Circuit')
+    for op in sequence:
+        if op[0] == 'comment':
+            lines.append('// ' + ''.join(ch if ord(ch) < 128 else '?' for ch in op[1]))
+        elif op[0] == 'gate':
+            line = gate_line(op[1])
+            lines.append(f'if(m{op[2][0]}=={op[2][1]}) {line}' if op[2] else line)
+        elif op[0] == 'measure':
+            lines.append(f'measure q[{op[1].qubit}] -> m{op[1].cbit}[0];')
+        else:
+            lines.append(f'reset q[{op[1].qubit}];')
+    lines += [f'measure q[{q}] -> c[{q}];' for q in measured]
+    return '\n'.join(lines) + '\n'
+
+
+
+def _is_dynamic_qasm(statements):
+    """True for programs that need the dynamic importer (if, reset, or measurements followed
+    by more operations, or into anything other than a matching c[i])."""
+    import re
+    seen_measure = False
+    for stmt in statements:
+        if re.match(r'(if\s*\(|reset\b)', stmt, re.I):
+            return True
+        m = re.fullmatch(r'measure\s+\w+\[(\d+)\]\s*->\s*(\w+)\[(\d+)\]', stmt, re.I)
+        if m:
+            seen_measure = True
+            if m.group(2) != 'c' or m.group(1) != m.group(3):
+                return True
+        elif seen_measure and not re.match(r'(creg|barrier)\b', stmt, re.I):
+            return True
+    return False
+
+
+def from_qasm_dynamic(text):
+    """(n, gates, measured, layout, notes) for programs with mid-circuit operations.
+
+    Single-bit conditions only: `if(r==v)` where r is a one-bit register. Operations are
+    packed into the earliest column after everything they depend on.
+    """
+    import re
+    from .dynamic import Measure, Reset
+    stripped = re.sub(r'//[^\n]*', '', text)
+    statements = [' '.join(x.split()) for x in stripped.split(';') if x.strip()]
+    n = None
+    registers = {}                       # name -> size
+    bit_of = {}                          # (register, index) -> classical bit number
+    ops = []                             # ('gate', Gate, cond) / ('measure', Measure) / ('reset', Reset) / ('fence',)
+    header = None
+    for stmt in statements:
+        if re.match(r'(OPENQASM|include)\b', stmt, re.I):
+            continue
+        q = re.fullmatch(r'qreg\s+(\w+)\[(\d+)\]', stmt, re.I)
+        if q:
+            if n is not None:
+                raise ValueError('Only one quantum register is supported')
+            n = int(q.group(2))
+            header = f'OPENQASM 2.0;include "qelib1.inc";qreg {q.group(1)}[{n}];'
+            continue
+        c = re.fullmatch(r'creg\s+(\w+)\[(\d+)\]', stmt, re.I)
+        if c:
+            registers[c.group(1)] = int(c.group(2))
+            continue
+        if n is None:
+            raise ValueError('qreg must come before operations')
+        if re.match(r'barrier\b', stmt, re.I):
+            ops.append(('fence',))
+            continue
+        m = re.fullmatch(r'measure\s+\w+\[(\d+)\]\s*->\s*(\w+)\[(\d+)\]', stmt, re.I)
+        if m:
+            reg, index = m.group(2), int(m.group(3))
+            if reg not in registers or index >= registers[reg]:
+                raise ValueError(f'Unknown classical bit {reg}[{index}]')
+            bit = bit_of.setdefault((reg, index), len(bit_of))
+            ops.append(('measure', Measure(int(m.group(1)), bit)))
+            continue
+        r = re.fullmatch(r'reset\s+\w+\[(\d+)\]', stmt, re.I)
+        if r:
+            ops.append(('reset', Reset(int(r.group(1)))))
+            continue
+        cond = re.fullmatch(r'if\s*\(\s*(\w+)\s*==\s*(\d+)\s*\)\s*(.+)', stmt, re.I)
+        condition = None
+        if cond:
+            reg, value, stmt = cond.group(1), int(cond.group(2)), cond.group(3)
+            if reg not in registers:
+                raise ValueError(f'Unknown classical register {reg}')
+            if registers[reg] != 1:
+                raise ValueError('Conditions on multi-bit registers are not supported yet: use one-bit registers')
+            if value not in (0, 1):
+                raise ValueError('A one-bit register can only equal 0 or 1')
+            condition = (bit_of.setdefault((reg, 0), len(bit_of)), value)
+        _, parsed = parse_qasm(header + stmt + ';')
+        if len(parsed) != 1:
+            raise ValueError(f'Unsupported statement: {stmt}')
+        ops.append(('gate', parsed[0], condition))
+    if n is None:
+        raise ValueError('No quantum register')
+    if len(bit_of) > 10:
+        raise ValueError('At most 10 classical bits are supported')
+    # Pack into columns: after the qubits' previous operations and after the measurement a
+    # condition depends on (gates in a column act before that column's measurements).
+    free = [0] * n
+    ready = {}                           # classical bit -> first column where its value is known
+    gates, columns, classical, conditions = [], [], [], []
+    for op in ops:
+        if op[0] == 'fence':
+            top = max(free, default=0)
+            free = [top] * n
+            continue
+        if op[0] == 'gate':
+            g, condition = op[1], op[2]
+            col = max(free[q] for q in g.targets)
+            if condition:
+                col = max(col, ready.get(condition[0], 0))
+            gates.append(g)
+            columns.append(col)
+            if condition:
+                conditions.append(((g.targets[0], col), condition[0], condition[1]))
+            for q in g.targets:
+                free[q] = col + 1
+        else:
+            item = op[1]
+            col = free[item.qubit]
+            classical.append((item, col))
+            free[item.qubit] = col + 1
+            if op[0] == 'measure':
+                ready[item.cbit] = col + 1
+    # The editor stores gates in column order; packing follows program order (e.g. preparation
+    # gates on one qubit, then a gate on another that fits into an earlier column).
+    order = sorted(range(len(gates)), key=lambda i: (columns[i], gates[i].targets[0]))
+    gates, columns = [gates[i] for i in order], [columns[i] for i in order]
+    layout = {'columns': columns, 'measurement_column': None, 'total_columns': None,
+              'initial_states': defaults(n), 'blocks': [], 'classical': classical, 'conditions': conditions}
+    names = ', '.join(f'{reg}[{i}] → c{b}' for (reg, i), b in sorted(bit_of.items(), key=lambda x: x[1]))
+    notes = [f'Mid-circuit operations imported; classical bits: {names}.'] if bit_of else []
+    return n, gates, [], layout, notes

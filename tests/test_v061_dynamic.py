@@ -241,3 +241,95 @@ def test_circuits_without_dynamic_parts_keep_their_schema():
     m = CircuitModel(2)
     m.place('H', 0, 0)
     assert json.loads(saved(m))['schema_version'] == 1
+
+
+# ---- OpenQASM 2 ---------------------------------------------------------------------------------
+
+from quantumscope.physics.circuit_files import (convert, dynamic_sequence, from_qasm_layout,  # noqa: E402
+                                                to_qasm_dynamic)
+
+TELEPORT_QASM = '''OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg a[1];
+creg b[1];
+h q[1];
+cx q[1],q[2];
+cx q[0],q[1];
+h q[0];
+measure q[0] -> a[0];
+measure q[1] -> b[0];
+if(b==1) x q[2];
+if(a==1) z q[2];
+'''
+
+
+def model_from_qasm(text):
+    n, gates, measured, layout, _ = from_qasm_layout(text)
+    m = CircuitModel()
+    m.set_circuit(n, gates, layout['columns'], measured, classical=layout['classical'], conditions=layout['conditions'])
+    return m
+
+
+def teleports(m):
+    from quantumscope.physics.initial_states import InitialState
+    m.set_initial_state(0, InitialState.preset('+i'))
+    target = np.array([1, 1j]) / np.sqrt(2)
+    final = m.simulate_branches()[1][-1]
+    return len(final) == 4 and all(
+        np.real(np.vdot(target, N.partial_trace(b.rho, 3, [2]) @ target)) > 1 - 1e-9 for b in final)
+
+
+def test_qasm_import_of_teleportation_teleports():
+    m = model_from_qasm(TELEPORT_QASM)
+    assert m.dynamic and len(m.conditions) == 2 and teleports(m)
+
+
+def test_imported_conditions_come_after_their_measurement():
+    m = model_from_qasm(TELEPORT_QASM)
+    measured_at = {item.cbit: c for (r, c), item in m.wires.items() if isinstance(item, D.Measure)}
+    for (r, c), (cbit, _) in m.conditions.items():
+        assert c > measured_at[cbit]
+
+
+def test_qasm_export_round_trip_keeps_the_physics():
+    m = teleport_model()
+    gates, columns, _, _ = m.layout()
+    classical, conditions = m.classical_layout()
+    text = to_qasm_dynamic(3, dynamic_sequence(3, gates, columns, (), classical, conditions))
+    assert 'creg m0[1];' in text and 'if(m1==1) x q[2];' in text and 'measure q[0] -> m0[0];' in text
+    assert teleports(model_from_qasm(text))
+
+
+def test_converter_round_trip_between_formats():
+    native = convert(TELEPORT_QASM, 'qasm')
+    assert json.loads(native)['schema_version'] == 5
+    back = convert(native, 'qscope')
+    assert teleports(model_from_qasm(back))
+
+
+def test_reset_and_terminal_measurements_in_qasm():
+    text = TELEPORT_QASM + 'reset q[0];\ncreg c[3];\nmeasure q[2] -> c[2];\n'
+    m = model_from_qasm(text)
+    assert any(isinstance(item, D.Reset) for item in m.wires.values())
+
+
+@pytest.mark.parametrize('bad', ['creg r[2];\nif(r==1) x q[0];', 'if(zz==1) x q[0];', 'creg a1[1];\nif(a1==2) x q[0];'])
+def test_unsupported_conditions_are_rejected(bad):
+    with pytest.raises(ValueError):
+        from_qasm_layout('OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[1];\n' + bad)
+
+
+def test_ordinary_qasm_still_uses_the_original_importer():
+    plain = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[2];\nh q[0];\ncx q[0],q[1];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[1];\n'
+    n, gates, measured, layout, _ = from_qasm_layout(plain)
+    assert measured == [0, 1] and not layout.get('classical')
+
+
+def test_import_sorts_gates_into_column_order():
+    # Preparation gates on q0 come first in the program, then a gate on q1 fits into column 0.
+    text = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg a[1];\nh q[0];\ns q[0];\nh q[1];\nmeasure q[0] -> a[0];\nif(a==1) x q[1];\n'
+    n, gates, measured, layout, _ = from_qasm_layout(text)
+    assert layout['columns'] == sorted(layout['columns'])
+    m = model_from_qasm(text)
+    assert m.dynamic and len(m.conditions) == 1

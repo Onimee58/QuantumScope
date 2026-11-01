@@ -1161,7 +1161,9 @@ class CircuitWorkspace(QWidget):
             from quantumscope.gui.circuit_pdf import write_circuit_pdf
             write_circuit_pdf(path,self.n,self.gates,self.measurements,
                               include_report=report,initial_states=self.model.initial_states,blocks=self.model.blocks.values(),
-                              noise=self.model.noise)
+                              noise=self.model.noise,
+                              classical={k:v for k,v in self.model.wires.items() if not isinstance(v,noisemod.NoiseElement)},
+                              conditions=self.model.conditions)
         except Exception as exc:
             QMessageBox.warning(self,'PDF export failed',str(exc))
 
@@ -1449,16 +1451,25 @@ class CircuitWorkspace(QWidget):
         if not path:return
         try:
             with open(path,encoding='utf-8') as f:n,ops,ms,layout,notes=from_qasm_layout(f.read())
-            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'])
+            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],
+                             classical=layout.get('classical',()),conditions=layout.get('conditions',()))
             self._show_notes('QASM import notes',notes)
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'QASM import rejected',str(exc))
     def export_qasm(self):
         path,_=QFileDialog.getSaveFileName(self,'Export OpenQASM 2',self._suggest('untitled.qasm'),'OpenQASM 2 (*.qasm *.qasm2)')
         if not path:return
         if not path.lower().endswith(('.qasm','.qasm2')):path+='.qasm'
-        gates,comments=self.model.qasm_items()
-        lines=to_qasm_measured(self.n,gates,sorted(self.measurements),self.model.initial_states,comments)
-        if self.model.noisy:   # OpenQASM 2 cannot describe noise: say so in the file and the status line
+        if self.model.dynamic:   # mid-circuit measurement, conditions and reset: one-bit registers m<k>
+            from quantumscope.physics.circuit_files import dynamic_sequence,to_qasm_dynamic
+            gates,columns,_,_=self.model.layout()
+            classical,conditions=self.model.classical_layout()
+            blocks=[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()]
+            lines=to_qasm_dynamic(self.n,dynamic_sequence(self.n,gates,columns,blocks,classical,conditions),
+                                  sorted(self.measurements),self.model.initial_states)
+        else:
+            gates,comments=self.model.qasm_items()
+            lines=to_qasm_measured(self.n,gates,sorted(self.measurements),self.model.initial_states,comments)
+        if self.model.noise_model.active or self.model.noise:   # OpenQASM 2 cannot describe noise: say so
             head,_,rest=lines.partition('\n')
             lines=head+'\n// Note: QuantumScope noise settings are not part of OpenQASM 2 and were not exported.\n'+rest
             self.status.setText('Exported the ideal circuit: noise cannot be written in OpenQASM 2')
