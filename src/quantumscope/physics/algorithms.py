@@ -464,6 +464,73 @@ def spec_superdense(p, view):
                  probability, probability > 1 - 1e-9)], 'The two classical bits c0c1 must equal the message.'
 
 
+# ---- error correction (v0.6.2) ---------------------------------------------------------------
+
+QEC_ERRORS = (('No error', 'none'), ('Error on q0', 'q0'), ('Error on q1', 'q1'), ('Error on q2', 'q2'),
+              ('Two errors (q0 and q1)', 'q0q1'), ('Random errors on every data qubit', 'random'))
+QEC_STRENGTHS = tuple((f'p = {v:g}', v) for v in (0.01, 0.05, 0.1, 0.2, 0.3))
+
+
+def _repetition(code):
+    def build(p):
+        from .qec import build_repetition
+        n, items, states = build_repetition(code, p['logical'], p['error'], p.get('p', 0.1))
+        kind = 'Z (phase-flip)' if code == 'phase_flip' else 'X (bit-flip)'
+        return Built(n, items, states, note=f'Data q0–q2 encode q0\'s starting state; {kind} errors are '
+                                            'detected by q3, q4 (measured into c0, c1) and corrected.')
+    return build
+
+
+def _repetition_spec(code):
+    def spec(p, view):
+        """The data qubits must hold the encoded input after correction (for the six standard inputs)."""
+        from .noise import partial_trace
+        from .qec import logical_state
+        if view.n != 5 or view.simulate is None:
+            return [], 'This check needs the 5-qubit code with mid-circuit syndrome measurement.'
+        rows = []
+        for key in ('0', '1', '+', '-', '+i', '-i'):
+            a = InitialState.preset(key).vector()
+            start = np.kron(a, np.eye(16)[0])
+            rho = partial_trace(sum(b.sigma for b in view.simulate(start)), 5, [0, 1, 2])
+            target = logical_state(code, a)
+            fidelity = float(np.real(np.vdot(target, rho @ target)))
+            rows.append(_row(f'logical {InitialState.preset(key).label}', f'fidelity {fidelity:.6f}',
+                             'encoded state restored', fidelity, fidelity > 1 - 1e-9))
+        limit = (' Two errors are beyond what the code can correct, so some inputs fail: that is its limit.'
+                 if p.get('error') == 'q0q1' else '')
+        noisy = (' With random errors, fidelity below 1 is expected: use Plot logical error rate.'
+                 if p.get('error') == 'random' else '')
+        return rows, 'After correction, q0–q2 must hold the encoded input for every starting state.' + limit + noisy
+    return spec
+
+
+def build_shor_example(p):
+    from .qec import build_shor
+    error = p['error']
+    qubit = None if error == 'none' else int(error[1:])
+    n, items, states = build_shor(p['logical'], qubit, error[0] if error != 'none' else 'X')
+    return Built(n, items, states, note='Shor\'s code spreads q0 over 9 qubits and corrects any single-qubit '
+                                        'error coherently; the logical qubit ends back in q0.')
+
+
+def spec_shor(p, view):
+    from .noise import density, partial_trace
+    from .circuits import evolution
+    rows = []
+    for key in ('0', '1', '+', '-', '+i', '-i'):
+        a = InitialState.preset(key).vector()
+        final = evolution(9, view.gates, np.kron(a, np.eye(256)[0]))[-1]
+        q0 = partial_trace(density(final), 9, [0])
+        fidelity = float(np.real(np.vdot(a, q0 @ a)))
+        rows.append(_row(f'input {InitialState.preset(key).label}', f'q0 fidelity {fidelity:.6f}', 'q0 = input',
+                         fidelity, fidelity > 1 - 1e-9))
+    return rows, 'q0 must end in its starting state whatever single-qubit error was injected.'
+
+
+SHOR_ERRORS = (('No error', 'none'),) + tuple((f'{k} on q{q}', f'{k}{q}') for k in 'XYZ' for q in range(9))
+
+
 def build_full_adder(p):
     gates = [Gate('CCX', (0, 1, 3)), Gate('CX', (0, 1)), Gate('CCX', (1, 2, 3)), Gate('CX', (1, 2)), Gate('CX', (0, 1))]
     return Built(4, gates, _inputs_from(p, ('a', 'b', 'cin')) + [InitialState()], (2, 3),
@@ -575,6 +642,23 @@ LIBRARY = (
           build_teleport, spec_teleport, 'Mid-circuit measurement and classically controlled corrections'),
     Entry('superdense', 'Examples', 'Superdense coding', (_bit('b0', 'first bit'), _bit('b1', 'second bit')),
           build_superdense, spec_superdense, 'Two classical bits sent with one qubit and shared entanglement'),
+    Entry('bit_flip_code', 'Examples', 'Bit-flip code',
+          (Param('logical', 'Logical state (q0)', 'choice', '1',
+                 choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),
+           Param('error', 'Error', 'choice', 'q1', choices=QEC_ERRORS),
+           Param('p', 'Random error strength', 'choice', 0.1, choices=QEC_STRENGTHS)),
+          _repetition('bit_flip'), _repetition_spec('bit_flip'), '3-qubit code with syndrome measurement and correction'),
+    Entry('phase_flip_code', 'Examples', 'Phase-flip code',
+          (Param('logical', 'Logical state (q0)', 'choice', '+',
+                 choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),
+           Param('error', 'Error', 'choice', 'q1', choices=QEC_ERRORS),
+           Param('p', 'Random error strength', 'choice', 0.1, choices=QEC_STRENGTHS)),
+          _repetition('phase_flip'), _repetition_spec('phase_flip'), 'The same code in the |±⟩ basis, for Z errors'),
+    Entry('shor_code', 'Examples', 'Shor code (9 qubits)',
+          (Param('logical', 'Logical state (q0)', 'choice', '+i',
+                 choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),
+           Param('error', 'Error', 'choice', 'Y4', choices=SHOR_ERRORS)),
+          build_shor_example, spec_shor, 'Corrects any single-qubit error, coherently'),
     Entry('full_adder', 'Examples', 'Full adder', (_bit('a', 'a'), _bit('b', 'b'), _bit('cin', 'cin')),
           build_full_adder, spec_full_adder),
     Entry('comparator', 'Examples', '2-bit comparator',

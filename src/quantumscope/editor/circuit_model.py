@@ -249,7 +249,7 @@ class CircuitModel:
         ready = {}                       # classical bit -> first column where its value is known
         ops, cols, placed, classical, conditions = [], [], [], [], []
         for item in built.items:
-            if isinstance(item, (Measure, Reset)):
+            if isinstance(item, (Measure, Reset, NoiseElement)):
                 col = free[item.qubit]
                 free[item.qubit] = col + 1
                 classical.append((item, col))

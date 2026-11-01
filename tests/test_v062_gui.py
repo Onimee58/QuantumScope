@@ -43,3 +43,51 @@ def test_several_bits_condition_from_the_menu(app, monkeypatch):
     monkeypatch.setattr(QtWidgets.QDialog, 'exec', only_one)
     w.gate_context_menu(pos)
     assert w.model.conditions[(2, 1)] == (1, 1)                 # one bit chosen: a single-bit condition
+
+
+def test_error_correction_explorer(app):
+    from quantumscope.gui.qec_chart import ErrorCorrectionExplorer, crossing
+    e = ErrorCorrectionExplorer()
+    assert 'helps' in e.summary.text() and '0.0280' in e.summary.text()
+    e.channel.setCurrentIndex(e.channel.findData('phase_flip'))
+    assert 'HURTS' in e.summary.text()
+    e.code.setCurrentIndex(e.code.findData('none'))
+    assert 'no difference' in e.summary.text()
+    e.slider.setValue(250)
+    assert 'p = 0.250' in e.p_label.text()
+    assert crossing([0, .1, .2], [0, .05, .3], [0, .1, .2]) == 0.2
+
+
+def test_plot_button_appears_for_codes_and_plots_the_current_circuit(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('bit_flip_code', {'logical': '0', 'error': 'random', 'p': 0.1})
+    w.verify_circuit()
+    assert w.qec_button.isVisibleTo(w)
+    from quantumscope.gui.qec_chart import plot_circuit
+    dialog = plot_circuit(w)
+    assert dialog.chart.encoded[4] == pytest.approx(3 * 0.1 ** 2 - 2 * 0.1 ** 3)
+    w.load_library('teleportation', {'input': '+'})
+    w.verify_circuit()
+    assert not w.qec_button.isVisibleTo(w)
+
+
+def test_explorer_opens_its_circuit(app):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    from quantumscope.gui.qec_chart import ErrorCorrectionExplorer
+
+    class Window(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.circuit_widget = CircuitWorkspace()
+            self.explorer = ErrorCorrectionExplorer()
+            QVBoxLayout(self).addWidget(self.explorer)
+            self.launched = False
+
+        def _launch_circuits(self):
+            self.launched = True
+    window = Window()
+    window.explorer.open_button.click()
+    model = window.circuit_widget.model
+    assert window.launched and model.dynamic and len(model.noise) == 3 and model.n == 5

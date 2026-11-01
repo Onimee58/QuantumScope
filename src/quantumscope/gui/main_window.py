@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
             menu.addSection("QUANTUM CIRCUITS")
             menu.addAction("Gate Circuit Simulator", self._launch_circuits)
             menu.addAction("QASM Converter", self._launch_converter)
+            menu.addAction("Error-correction explorer", self._launch_qec_explorer)
         return menu
 
     def _show_settings(self):
@@ -162,7 +163,8 @@ class MainWindow(QMainWindow):
         {"circuits": self._launch_circuits, "converter": self._launch_converter,
          "orbital": self._show_hydrogen, "dynamics2d": self.show_dynamics, "dynamics3d": self.show_dynamics_3d,
          "doubleslit": self._launch_double_slit, "superposition": self._launch_superposition,
-         "entanglement": self._launch_entanglement, "teleportation": self._launch_teleportation}[view]()
+         "entanglement": self._launch_entanglement, "teleportation": self._launch_teleportation,
+         "qec": self._launch_qec_explorer}[view]()
 
     def apply_preferences(self):
         from quantumscope.gui import preferences as prefs
@@ -372,6 +374,10 @@ class MainWindow(QMainWindow):
     def _launch_superposition(self):
         from quantumscope.gui.quantum_principles import SuperpositionDialog
         self._open_experiment("superposition", "Quantum Superposition", SuperpositionDialog)
+
+    def _launch_qec_explorer(self):
+        from quantumscope.gui.qec_chart import ErrorCorrectionExplorer
+        self._open_experiment("qec_explorer", "Error-correction explorer", ErrorCorrectionExplorer)
 
     def _launch_teleportation(self):
         from quantumscope.gui.teleportation_experiment import TeleportationDialog
