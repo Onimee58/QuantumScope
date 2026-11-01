@@ -138,6 +138,9 @@ def to_native_measured(n,gates,measured=(),layout=None):
     example=(layout or {}).get('example')
     if example:
         data['example']=example               # optional: older versions ignore it
+    labels=(layout or {}).get('labels')
+    if labels:
+        data['labels']=list(labels)            # optional qubit labels, also ignored by older versions
     classical=(layout or {}).get('classical') or []
     conditions=(layout or {}).get('conditions') or []
     if classical or conditions:
@@ -273,7 +276,14 @@ def from_native_layout(text):
     return n,gates,measured,{'columns':columns,'measurement_column':mcol if measured else None,'total_columns':total,
                             'initial_states':states,'blocks':blocks,'noise':noise,'noise_model':noise_model,
                             'classical':classical,'conditions':conditions,
-                            'example':data.get('example') if isinstance(data.get('example'),dict) else None}
+                            'example':data.get('example') if isinstance(data.get('example'),dict) else None,
+                            'labels':data.get('labels') if isinstance(data.get('labels'),list) else None}
+
+def label_comments(labels):
+    """'// q3: syndrome' lines for named qubits (OpenQASM 2 has no qubit names)."""
+    return [f'// q{q}: '+''.join(ch if 32 <= ord(ch) < 127 else '?' for ch in name)
+            for q, name in enumerate(labels or []) if name]
+
 
 def to_qasm_measured(n,gates,measured=(),initial_states=None,comments=None):
     """OpenQASM 2 text. Non-|0⟩ initial states become preparation gates at the

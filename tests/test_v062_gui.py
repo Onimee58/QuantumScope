@@ -140,4 +140,29 @@ def test_role_labels_follow_the_example(app):
     w.undo()
     assert 'syndrome' in labels()[3] and w.example_bar.isVisibleTo(w)
     w.qubits.setValue(6)
-    assert w.n == 6 and not any('data' in l or 'syndrome' in l for l in labels()) and not w.example_bar.isVisibleTo(w)
+    assert w.n == 6 and not w.example_bar.isVisibleTo(w)            # no longer the example …
+    assert 'syndrome' in labels()[3] and labels()[5].startswith('q5 |0')   # … but the labels stay
+    w.label_qubit(5, 'extra ancilla')
+    assert labels()[5].startswith('q5 extra ancilla')
+
+
+
+def test_label_from_the_qubit_menu_and_exports(app, tmp_path, monkeypatch):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.set_circuit(2, [])
+    monkeypatch.setattr(QtWidgets.QInputDialog, 'getText', staticmethod(lambda *a, **k: ('control', True)))
+    w.label_qubit(0)
+    assert w.grid.verticalHeaderItem(0).text().startswith('q0 control')
+    w.place('H', 0, 0)
+    for name, action in (('l.qasm', w.export_qasm), ('l.pdf', w.export_pdf), ('l.qscope', w.save_native)):
+        path = str(tmp_path / name)
+        monkeypatch.setattr(QtWidgets.QFileDialog, 'getSaveFileName', staticmethod(lambda *a, p=path, **k: (p, '')))
+        monkeypatch.setattr(QtWidgets.QMessageBox, 'question',
+                            staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.No))
+        action()
+    assert '// q0: control' in (tmp_path / 'l.qasm').read_text()
+    w.clear()
+    monkeypatch.setattr(QtWidgets.QFileDialog, 'getOpenFileName', staticmethod(lambda *a, **k: (str(tmp_path / 'l.qscope'), '')))
+    w.load_native()
+    assert w.grid.verticalHeaderItem(0).text().startswith('q0 control')

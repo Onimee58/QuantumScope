@@ -61,7 +61,7 @@ class CircuitModel:
         self.blocks = {}           # block id -> BlockPlacement (collapsed or expanded)
         self.wires = {}            # (row, col) -> single-wire item: NoiseElement, Measure (M→c) or Reset
         self.conditions = {}       # gate key (row, col) -> (bit, value) or ((bits…), (values…)): 'apply only if …'
-        self.roles = []            # a short role per qubit for examples ('data', 'Bob', …); empty otherwise
+        self.roles = []            # a short label per qubit ('data', 'Bob', …): set by examples or by the user
         self._entry_signature = None   # the circuit as built from the active example, to detect edits
         self.noise_model = NoiseModel()   # global noise (off by default)
         self._next_block = 1
@@ -304,9 +304,13 @@ class CircuitModel:
         self.wires = {(r, c): e for (r, c), e in self.wires.items() if r < n}
         self.n = n
         if n != len(self.initial_states):
-            # A different number of qubits is no longer the example: its title, roles and check
-            # all assume the example's exact qubits. Undo brings them back.
-            self.active_entry, self.roles, self._entry_signature = None, [], None
+            # A different number of qubits is no longer the example (its title and check assume the
+            # example's exact qubits), but qubit labels stay on the qubits that remain. Undo restores all.
+            self.active_entry, self._entry_signature = None, None
+        if self.roles:
+            self.roles = (self.roles + [''] * n)[:n]
+            if not any(self.roles):
+                self.roles = []
         self.initial_states = (self.initial_states + defaults(n))[:n]
         if self.pending and any(q >= n for q in self.pending[2]):
             self.pending = None
@@ -541,12 +545,41 @@ class CircuitModel:
     def entry_edited(self):
         return self.active_entry is not None and self.signature() != self._entry_signature
 
+    MAX_LABEL = 24
+
+    def set_label(self, qubit, text):
+        """Name a qubit ('data', 'ancilla', 'Alice' …); an empty text removes the label. Cosmetic:
+        it never marks an example as edited."""
+        if not 0 <= qubit < self.n:
+            raise EditorError('No such qubit')
+        text = ' '.join(str(text).split())
+        if len(text) > self.MAX_LABEL:
+            raise EditorError(f'Labels can have at most {self.MAX_LABEL} characters')
+        labels = (self.roles + [''] * self.n)[:self.n]
+        if labels[qubit] == text:
+            return False
+        self.snapshot()
+        labels[qubit] = text
+        self.roles = labels if any(labels) else []
+        return True
+
+    def labels_meta(self):
+        """Saved with every circuit that has labels (an optional field older versions ignore)."""
+        return list(self.roles) if any(self.roles) else None
+
+    def restore_labels(self, labels):
+        if isinstance(labels, list) and all(isinstance(t, str) and len(t) <= self.MAX_LABEL for t in labels):
+            padded = (labels + [''] * self.n)[:self.n]
+            self.roles = padded if any(padded) else []
+            return True
+        return False
+
     def example_meta(self):
         """Saved with the circuit (an optional field older versions ignore), or None."""
         if self.active_entry is None:
             return None
         key, params = self.active_entry
-        return {'key': key, 'params': dict(params), 'roles': list(self.roles), 'edited': self.entry_edited}
+        return {'key': key, 'params': dict(params), 'edited': self.entry_edited}
 
     def restore_example(self, meta):
         """After loading a file: restore the example's identity if it is valid; otherwise stay plain."""
@@ -563,7 +596,8 @@ class CircuitModel:
         except (ValueError, TypeError, KeyError):
             return False
         self.active_entry = (meta['key'], tuple(sorted(params.items())))
-        self.roles = (roles + [''] * self.n)[:self.n]
+        if not self.roles and roles:                   # files saved before labels had their own field
+            self.roles = (roles + [''] * self.n)[:self.n]
         self._entry_signature = None if meta.get('edited') else self.signature()
         return True
 

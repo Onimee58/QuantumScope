@@ -5,7 +5,7 @@ from quantumscope.physics.circuits import evolution
 from quantumscope.physics.gate_education import angle_text
 from quantumscope.physics.initial_states import defaults, product_state
 
-def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial_states=None,blocks=(),noise=None,classical=None,conditions=None):
+def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial_states=None,blocks=(),noise=None,classical=None,conditions=None,labels=None):
     """Render the full circuit with scalable Qt vector primitives, not a screenshot.
     Each wire is labeled with its initial state (|0⟩ unless given). blocks are
     BlockPlacement objects: collapsed ones draw as labeled boxes, expanded ones
@@ -45,7 +45,10 @@ def write_circuit_pdf(filename,n,gates,measurements,include_report=False,initial
             y=35+q*lane
             painter.setPen(QPen(QColor('#273c4e'),2))
             state=initial_states[q]
+            name=(list(labels or [])+['']*n)[q]
             painter.drawText(-92,y+5,f'q{q}  {state.label}')
+            if name:                                   # the qubit's label, small, above its name
+                painter.setFont(QFont('Sans',8));painter.drawText(-92,y-10,name);painter.setFont(QFont('Sans',12))
             if state.preset_key is None:
                 painter.setFont(QFont('Sans',8))
                 painter.drawText(-92,y+21,f'θ={angle_text(state.theta)}, φ={angle_text(state.phi)}')

@@ -88,7 +88,8 @@ def saved(m):
     return to_native_measured(m.n, gates, sorted(m.measurements), layout={
         'columns': cols, 'measurement_column': mcol, 'total_columns': total, 'initial_states': m.initial_states,
         'blocks': [(pl.block, pl.col, pl.expanded) for pl in m.blocks.values()], 'noise': m.noise_layout(),
-        'noise_model': m.noise_model, 'classical': classical, 'conditions': conditions, 'example': m.example_meta()})
+        'noise_model': m.noise_model, 'classical': classical, 'conditions': conditions, 'example': m.example_meta(),
+        'labels': m.labels_meta()})
 
 
 def reload(text):
@@ -97,6 +98,7 @@ def reload(text):
     m.set_circuit(n, gates, layout['columns'], measured, layout['measurement_column'], layout['total_columns'],
                   layout['initial_states'], layout['blocks'], layout['noise'], layout['noise_model'],
                   layout['classical'], layout['conditions'])
+    m.restore_labels(layout['labels'])
     m.restore_example(layout['example'])
     return m
 
@@ -128,7 +130,8 @@ def test_invalid_metadata_opens_as_a_plain_circuit(meta):
     data = json.loads(saved(m))
     data['example'] = meta
     copy = reload(json.dumps(data))
-    assert copy.active_entry is None and copy.roles == []
+    # the example identity is dropped, but qubit labels have their own field and are kept
+    assert copy.active_entry is None and copy.roles == ['count'] * 3 + ['eigenstate']
 
 
 def test_metadata_does_not_change_the_schema():
@@ -148,11 +151,14 @@ def test_clear_removes_title_roles_and_check():
     assert m.roles[3] == 'syndrome' and m.active_entry[0] == 'bit_flip_code'
 
 
-def test_changing_the_number_of_qubits_ends_the_example_and_undo_restores_it():
+def test_changing_the_number_of_qubits_ends_the_example_but_keeps_labels():
     m = CircuitModel()
     m.load_library('bit_flip_code', {'logical': '1', 'error': 'q1', 'p': 0.1})
     m.resize(6)
-    assert m.roles == [] and m.active_entry is None
+    assert m.active_entry is None and m.roles == ['data'] * 3 + ['syndrome'] * 2 + ['']
+    m.resize(4)
+    assert m.roles == ['data'] * 3 + ['syndrome']
+    m.undo()
     m.undo()
     assert m.roles == ['data'] * 3 + ['syndrome'] * 2 and not m.entry_edited
     m.resize(5)                                                  # same count: still the example
@@ -164,3 +170,55 @@ def test_ordinary_edits_keep_the_roles():
     m.load_library('teleportation', {'input': '+'})
     m.place('X', 0, 0)
     assert m.roles == ['Alice · input', 'Alice', 'Bob'] and m.entry_edited
+
+
+
+# ---- your own qubit labels ----------------------------------------------------------------------------
+
+def test_set_label_rename_remove_and_undo():
+    m = CircuitModel(3)
+    assert m.set_label(1, '  ancilla  ') and m.roles == ['', 'ancilla', '']
+    assert m.set_label(1, 'ancilla') is False                    # unchanged: no undo step
+    m.set_label(0, 'data')
+    m.set_label(1, '')
+    assert m.roles == ['data', '', '']
+    m.undo()
+    assert m.roles == ['data', 'ancilla', '']
+    from quantumscope.editor.circuit_model import EditorError
+    with pytest.raises(EditorError):
+        m.set_label(0, 'x' * 25)
+    with pytest.raises(EditorError):
+        m.set_label(7, 'nope')
+
+
+def test_labels_are_cosmetic_for_examples_and_clear_removes_them():
+    m = CircuitModel()
+    m.load_library('bit_flip_code', {'logical': '0', 'error': 'none', 'p': 0.1})
+    m.set_label(3, 'parity 01')
+    assert not m.entry_edited and m.roles[3] == 'parity 01'
+    m.clear()
+    assert m.roles == []
+    m.undo()
+    assert m.roles[3] == 'parity 01'
+
+
+def test_labels_are_saved_for_any_circuit():
+    m = CircuitModel(2)
+    m.place('H', 0, 0)
+    m.set_label(0, 'control')
+    text = saved(m)
+    assert json.loads(text)['labels'] == ['control', '']
+    copy = reload(text)
+    copy.restore_labels(json.loads(text)['labels'])
+    assert copy.roles == ['control', ''] and copy.active_entry is None
+
+
+@pytest.mark.parametrize('bad', ['oops', [1, 2], ['x' * 40]])
+def test_invalid_saved_labels_are_ignored(bad):
+    m = CircuitModel(2)
+    assert m.restore_labels(bad) is False and m.roles == []
+
+
+def test_label_comments_for_qasm():
+    from quantumscope.physics.circuit_files import label_comments
+    assert label_comments(['data', '', 'Bob ✓']) == ['// q0: data', '// q2: Bob ?']

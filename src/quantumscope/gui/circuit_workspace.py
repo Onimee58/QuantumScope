@@ -964,9 +964,24 @@ class CircuitWorkspace(QWidget):
             action.setChecked(current.preset_key==key);actions[action]=key
         menu.addSeparator()
         custom=menu.addAction('Custom (θ, φ)…');custom.setCheckable(True);custom.setChecked(current.preset_key is None)
+        menu.addSeparator()
+        rename=menu.addAction('Label this qubit…')
+        rename.setToolTip('Give q'+str(qubit)+' a short name such as data, syndrome, ancilla or Alice')
         chosen=menu.exec(QCursor.pos())
         if chosen in actions:self.set_initial_state(qubit,InitialState.preset(actions[chosen]))
         elif chosen is custom:self._custom_initial_state(qubit)
+        elif chosen is rename:self.label_qubit(qubit)
+    def label_qubit(self,qubit,text=None):
+        """Ask for (or set) a qubit's label; an empty label removes it."""
+        if text is None:
+            current=(self.model.roles+['']*self.n)[qubit]
+            text,ok=QInputDialog.getText(self,f'Label q{qubit}',
+                                         f'Name for q{qubit} (up to {self.model.MAX_LABEL} characters; empty removes it):',
+                                         QLineEdit.EchoMode.Normal,current)
+            if not ok:return
+        try:changed=self.model.set_label(qubit,text)
+        except EditorError as exc:self._rejected(exc);return
+        if changed:self._changed()
     def _custom_initial_state(self,qubit):
         current=self.model.initial_states[qubit]
         dialog=QDialog(self);dialog.setWindowTitle(f'Custom initial state for q{qubit}')
@@ -1260,7 +1275,7 @@ class CircuitWorkspace(QWidget):
                               include_report=report,initial_states=self.model.initial_states,blocks=self.model.blocks.values(),
                               noise=self.model.noise,
                               classical={k:v for k,v in self.model.wires.items() if not isinstance(v,noisemod.NoiseElement)},
-                              conditions=self.model.conditions)
+                              conditions=self.model.conditions,labels=self.model.roles)
         except Exception as exc:
             QMessageBox.warning(self,'PDF export failed',str(exc))
 
@@ -1530,15 +1545,17 @@ class CircuitWorkspace(QWidget):
         n,ops,ms,layout=from_native_layout(text)
         self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks'],
                          layout.get('noise',()),layout.get('noise_model'),layout.get('classical',()),layout.get('conditions',()))
+        self.model.restore_labels(layout.get('labels'))
         if self.model.restore_example(layout.get('example')):   # a saved example keeps its title, roles and check
-            self._sync_view();self.refresh();self.verify_circuit()
+            self.verify_circuit()
+        self._sync_view();self.refresh()
     def serialize(self):
         """The current circuit as a .qscope document."""
         gates,columns,mcol,total=self.model.layout()
         layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states,
                 'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()],
                 'noise':self.model.noise_layout(),'noise_model':self.model.noise_model,
-                'example':self.model.example_meta()}
+                'example':self.model.example_meta(),'labels':self.model.labels_meta()}
         layout['classical'],layout['conditions']=self.model.classical_layout()
         return to_native_measured(self.n,gates,sorted(self.measurements),layout=layout)
     def _suggest(self,name):
@@ -1576,6 +1593,11 @@ class CircuitWorkspace(QWidget):
         else:
             gates,comments=self.model.qasm_items()
             lines=to_qasm_measured(self.n,gates,sorted(self.measurements),self.model.initial_states,comments)
+        if self.model.roles:                     # qubit labels as comments after the register declaration
+            from quantumscope.physics.circuit_files import label_comments
+            head,marker,rest=lines.partition('qreg q[')
+            first,_,tail=rest.partition('\n')
+            lines=head+marker+first+'\n'+'\n'.join(label_comments(self.model.roles))+'\n'+tail
         if self.model.noise_model.active or self.model.noise:   # OpenQASM 2 cannot describe noise: say so
             head,_,rest=lines.partition('\n')
             lines=head+'\n// Note: QuantumScope noise settings are not part of OpenQASM 2 and were not exported.\n'+rest
