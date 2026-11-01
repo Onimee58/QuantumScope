@@ -23,7 +23,8 @@ from quantumscope.physics.circuits import ALL, DUAL, TRIPLE, MAX_QUBITS, Gate
 from quantumscope.physics.expressions import parse_angle
 from quantumscope.physics.initial_states import PRESETS, InitialState
 
-VIEWS = ('circuits', 'converter', 'orbital', 'dynamics2d', 'dynamics3d', 'doubleslit', 'superposition', 'entanglement')
+VIEWS = ('circuits', 'converter', 'orbital', 'dynamics2d', 'dynamics3d', 'doubleslit', 'superposition', 'entanglement',
+         'teleportation')
 
 
 @dataclass(frozen=True)

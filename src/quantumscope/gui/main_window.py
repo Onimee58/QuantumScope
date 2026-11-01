@@ -127,6 +127,7 @@ class MainWindow(QMainWindow):
             menu.addAction("Double-Slit Experiment", self._launch_double_slit)
             menu.addAction("Quantum Superposition (spin-½)", self._launch_superposition)
             menu.addAction("Quantum Entanglement (electron spins)", self._launch_entanglement)
+            menu.addAction("Quantum Teleportation", self._launch_teleportation)
         if category in (None,"circuits"):
             menu.addSection("QUANTUM CIRCUITS")
             menu.addAction("Gate Circuit Simulator", self._launch_circuits)
@@ -161,7 +162,7 @@ class MainWindow(QMainWindow):
         {"circuits": self._launch_circuits, "converter": self._launch_converter,
          "orbital": self._show_hydrogen, "dynamics2d": self.show_dynamics, "dynamics3d": self.show_dynamics_3d,
          "doubleslit": self._launch_double_slit, "superposition": self._launch_superposition,
-         "entanglement": self._launch_entanglement}[view]()
+         "entanglement": self._launch_entanglement, "teleportation": self._launch_teleportation}[view]()
 
     def apply_preferences(self):
         from quantumscope.gui import preferences as prefs
@@ -371,6 +372,10 @@ class MainWindow(QMainWindow):
     def _launch_superposition(self):
         from quantumscope.gui.quantum_principles import SuperpositionDialog
         self._open_experiment("superposition", "Quantum Superposition", SuperpositionDialog)
+
+    def _launch_teleportation(self):
+        from quantumscope.gui.teleportation_experiment import TeleportationDialog
+        self._open_experiment("teleportation", "Quantum Teleportation", TeleportationDialog)
 
     def _launch_entanglement(self):
         from quantumscope.gui.quantum_principles import EntanglementDialog

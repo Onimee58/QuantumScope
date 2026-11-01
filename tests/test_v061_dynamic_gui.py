@@ -144,3 +144,45 @@ def test_examples_menu_and_verification_panel(app):
     w.load_library('superdense', {'b0': 1, 'b1': 1})
     w.verify_circuit()
     assert '1/1 PASS' in w.verify_status.text()
+
+
+def test_teleportation_experiment(app):
+    from quantumscope.gui.teleportation_experiment import TeleportationDialog
+    d = TeleportationDialog()
+    assert d.step_label.text().startswith('Step 1') and not d.back.isEnabled() and not d.result.isEnabled()
+    for _ in range(4):
+        d.next.click()
+    assert d.step_label.text().startswith('Step 5') and not d.next.isEnabled()
+    assert d.scene.view['bob_fidelity'] == pytest.approx(1)
+    d.go(3)
+    d.result.setCurrentIndex(d.result.findData('11'))
+    assert 'X and Z' in d.explain.text() and d.scene.view['record'] == '11'
+    d.run_once.click()
+    assert d.scene.view['record'] in ('00', '01', '10', '11')
+    d.preset.setCurrentIndex(d.preset.findData('custom'))
+    d.theta.setValue(100)
+    d.go(4)
+    assert d.theta.isEnabled() and d.scene.view['bob_fidelity'] == pytest.approx(1)
+
+
+def test_teleportation_experiment_opens_the_matching_circuit(app):
+    from PySide6.QtWidgets import QWidget, QVBoxLayout
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    from quantumscope.gui.teleportation_experiment import TeleportationDialog
+
+    class Window(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.circuit_widget = CircuitWorkspace()
+            self.launched = False
+            self.dialog = TeleportationDialog()
+            QVBoxLayout(self).addWidget(self.dialog)
+
+        def _launch_circuits(self):
+            self.launched = True
+    window = Window()
+    window.dialog.preset.setCurrentIndex(window.dialog.preset.findData('-'))
+    window.dialog.open_circuit.click()
+    model = window.circuit_widget.model
+    assert window.launched and model.dynamic and model.initial_states[0].label == '|−⟩'
+    assert all(r.passed for r in model.verification()[0])
