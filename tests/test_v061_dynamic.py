@@ -333,3 +333,74 @@ def test_import_sorts_gates_into_column_order():
     assert layout['columns'] == sorted(layout['columns'])
     m = model_from_qasm(text)
     assert m.dynamic and len(m.conditions) == 1
+
+
+# ---- examples and their checks ----------------------------------------------------------------------
+
+@pytest.mark.parametrize('state', ['0', '1', '+', '-', '+i', '-i'])
+def test_teleportation_example_passes_for_every_input(state):
+    m = CircuitModel()
+    m.load_library('teleportation', {'input': state})
+    rows, _ = m.verification()
+    assert m.dynamic and len(rows) == 10 and all(r.passed for r in rows)
+
+
+def test_teleportation_check_fails_without_a_correction():
+    m = CircuitModel()
+    m.load_library('teleportation', {'input': '+'})
+    z = next(key for key, (cbit, _) in m.conditions.items() if cbit == 0)
+    m.remove(*z)                                              # drop the Z correction
+    rows, _ = m.verification()
+    assert not all(r.passed for r in rows)
+
+
+def test_teleportation_check_tests_the_current_circuit_not_the_shown_input():
+    m = CircuitModel()
+    m.load_library('teleportation', {'input': '0'})
+    x = next(key for key, (cbit, _) in m.conditions.items() if cbit == 1)
+    m.clear_condition(*x)                                     # an unconditional X: wrong, though |0⟩ alone might hide it
+    assert not all(r.passed for r in m.verification()[0])
+
+
+@pytest.mark.parametrize('b0,b1', [(0, 0), (0, 1), (1, 0), (1, 1)])
+def test_superdense_example_sends_every_message(b0, b1):
+    m = CircuitModel()
+    m.load_library('superdense', {'b0': b0, 'b1': b1})
+    row = m.verification()[0][0]
+    assert row.passed and f'received {b0}{b1}' in row.output_label
+
+
+def test_library_packs_conditions_after_their_measurements():
+    m = CircuitModel()
+    m.load_library('teleportation', {'input': '+i'})
+    measured_at = {item.cbit: c for (r, c), item in m.wires.items() if isinstance(item, D.Measure)}
+    assert all(c > measured_at[cbit] for (r, c), (cbit, _) in m.conditions.items())
+
+
+# ---- lab checks and links ---------------------------------------------------------------------------
+
+def test_dynamic_lab_checks():
+    from quantumscope.learn import labs
+    m = CircuitModel()
+    m.load_library('teleportation', {'input': '+i'})
+    for condition in ('measures >= 2', 'conditions = 2', 'branches = 4', 'teleports 0 2',
+                      'record 00=0.25 01=0.25 10=0.25 11=0.25'):
+        assert labs.check(m, condition)[0], condition
+    assert not labs.check(m, 'teleports 0 1')[0]
+    r = CircuitModel(1)
+    r.place('H', 0, 0)
+    assert not labs.check(r, 'settles 0 0')[0]
+    r.place_measure(0, 1)
+    r.place('X', 0, 2)
+    r.set_condition(0, 2, 0, 1)
+    assert labs.check(r, 'settles 0 0')[0] and labs.check(r, 'branches = 2')[0]
+
+
+def test_dynamic_try_it_links():
+    from quantumscope.learn import actions
+    a = actions.parse('qs:circuit?n=2&gates=H:0;CX:0,1&measures=0:2:0;1:2:1&resets=0:3')
+    kinds = sorted(type(e).__name__ for e, _ in a.params['elements'])
+    assert kinds == ['Measure', 'Measure', 'Reset']
+    with pytest.raises(ValueError):
+        actions.parse('qs:circuit?n=2&measures=5:0:0')
+    assert actions.parse('qs:example/Quantum teleportation').kind == 'example'

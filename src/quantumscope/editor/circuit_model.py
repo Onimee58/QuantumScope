@@ -241,10 +241,23 @@ class CircuitModel:
         from quantumscope.physics.algorithms import build
         params, built = build(key, values)
         free = [0] * built.n
-        ops, cols, placed = [], [], []
+        ready = {}                       # classical bit -> first column where its value is known
+        ops, cols, placed, classical, conditions = [], [], [], [], []
         for item in built.items:
+            if isinstance(item, (Measure, Reset)):
+                col = free[item.qubit]
+                free[item.qubit] = col + 1
+                classical.append((item, col))
+                if isinstance(item, Measure):
+                    ready[item.cbit] = col + 1
+                continue
+            condition = None
+            if isinstance(item, Conditioned):
+                condition, item = (item.cbit, item.value), item.gate
             wires = item.span if isinstance(item, Block) else range(min(item.targets), max(item.targets) + 1)
             col = max(free[q] for q in wires)
+            if condition:
+                col = max(col, ready.get(condition[0], 0))
             for q in wires:
                 free[q] = col + 1
             if isinstance(item, Block):
@@ -252,9 +265,12 @@ class CircuitModel:
             else:
                 ops.append(item)
                 cols.append(col)
+                if condition:
+                    conditions.append(((item.targets[0], col), *condition))
         order = sorted(range(len(ops)), key=lambda i: (cols[i], min(ops[i].targets)))
         self.set_circuit(built.n, [ops[i] for i in order], [cols[i] for i in order], built.measured,
-                         initial_states=built.initial_states, blocks=placed)
+                         initial_states=built.initial_states, blocks=placed, classical=classical,
+                         conditions=conditions)
         self.active_entry = (key, tuple(sorted(params.items())))
         return built.note
 
@@ -612,6 +628,14 @@ class CircuitModel:
         """
         from quantumscope.physics.dynamic import simulate as branch_simulate
         from quantumscope.physics.noise import MAX_STORED_QUBITS
+        occupied, columns = self._branch_columns(with_columns=True)
+        store = (self.n <= MAX_STORED_QUBITS) if store is None else store
+        readout = self.noise_model.readout if self.noise_model.enabled else 0.0
+        history = branch_simulate(self.n, columns, self.initial_vector(), self.noise_model, readout, store)
+        return occupied, history
+
+    def _branch_columns(self, with_columns=False):
+        """Items per occupied column for the branch engine (gates first, then single-wire items)."""
         columns = {}
         for c, r, _, g, pl in placed_items(((r, c, g) for (r, c), g in self.gates.items()), self.blocks.values()):
             condition = self.conditions.get((r, c)) if pl is None else None
@@ -619,11 +643,8 @@ class CircuitModel:
         for (r, c), item in sorted(self.wires.items(), key=lambda x: (x[0][1], x[0][0])):
             columns.setdefault(c, []).append(item)
         occupied = sorted(columns)
-        store = (self.n <= MAX_STORED_QUBITS) if store is None else store
-        readout = self.noise_model.readout if self.noise_model.enabled else 0.0
-        history = branch_simulate(self.n, [columns[c] for c in occupied], self.initial_vector(), self.noise_model,
-                                  readout, store)
-        return occupied, history
+        listed = [columns[c] for c in occupied]
+        return (occupied, listed) if with_columns else listed
 
     def classical_layout(self):
         """[(Measure or Reset, column)] and [((row, col), cbit, value)] for saving."""
@@ -852,8 +873,15 @@ class CircuitModel:
         gates = self.ordered()
         start = self.initial_vector()
         final = evolution(self.n, gates, start)[-1]
-        return CircuitView(self.n, gates, start, [pl.block for pl in self.blocks.values()],
+        view = CircuitView(self.n, gates, start, [pl.block for pl in self.blocks.values()],
                            tuple(sorted(self.measurements)), final)
+        if self.dynamic:
+            from quantumscope.physics.dynamic import simulate as branch_simulate
+            columns = self._branch_columns()
+            ideal = NoiseModel()
+            view.simulate = lambda vector: branch_simulate(self.n, columns, vector, ideal, 0.0, False)[-1]
+            view.branches = view.simulate(start)
+        return view
 
     def noisy_verification(self):
         """Algorithm checks evaluated on the noisy final state (None if not applicable).

@@ -192,6 +192,8 @@ class CircuitView:
     blocks: list                      # Block objects present
     measured: tuple
     final_state: np.ndarray = field(default=None)
+    branches: list = field(default=None)          # final branches (dynamic circuits)
+    simulate: object = field(default=None)        # simulate(initial vector) -> final branches of this circuit
 
 
 def marginal(state, n, qubits):
@@ -402,6 +404,66 @@ def _inputs_from(p, names):
     return [InitialState.preset(str(p.get(k, 0))) for k in names]
 
 
+# ---- dynamic examples (v0.6.1): mid-circuit measurement and feed-forward ---------------------
+
+def build_teleport(p):
+    from .dynamic import Conditioned, Measure
+    items = [Gate('H', (1,)), Gate('CX', (1, 2)),                 # shared Bell pair between q1 and q2
+             Gate('CX', (0, 1)), Gate('H', (0,)),                  # Bell measurement of q0 and q1 …
+             Measure(0, 0), Measure(1, 1),                         # … recorded in c0 and c1
+             Conditioned(Gate('X', (2,)), 1, 1), Conditioned(Gate('Z', (2,)), 0, 1)]   # corrections
+    return Built(3, items, [InitialState.preset(p['input']), InitialState.preset('0'), InitialState.preset('0')],
+                 note='Teleports q0\'s state to q2 using a Bell pair and two classical bits.')
+
+
+TELEPORT_TESTS = ('0', '1', '+', '-', '+i', '-i')
+
+
+def spec_teleport(p, view):
+    """q2 must end in q0's starting state in every branch, for many inputs (not just the one shown)."""
+    from .noise import partial_trace
+    if view.n != 3 or view.simulate is None:
+        return [], 'Teleportation needs 3 qubits.'
+    rows = []
+    inputs = [(InitialState.preset(k).label, InitialState.preset(k).vector()) for k in TELEPORT_TESTS]
+    rng = np.random.default_rng(2026)
+    for i in range(4):
+        a = rng.normal(size=2) + 1j * rng.normal(size=2)
+        inputs.append((f'random input {i + 1}', a / np.linalg.norm(a)))
+    for label, a in inputs:
+        start = np.kron(a, np.array([1, 0, 0, 0], complex))
+        branches = view.simulate(start)
+        fidelities = [float(np.real(np.vdot(a, partial_trace(b.rho, 3, [2]) @ a))) for b in branches]
+        worst = min(fidelities)
+        rows.append(_row(label, f'q2 fidelity {worst:.6f} in {len(branches)} branch(es)', 'q2 = input in every branch',
+                         worst, worst > 1 - 1e-9))
+    return rows, 'Each input is teleported from q0 to q2; every measurement branch must end with q2 equal to the input.'
+
+
+def build_superdense(p):
+    from .dynamic import Measure
+    items = [Gate('H', (0,)), Gate('CX', (0, 1))]                 # shared Bell pair
+    if p['b1']:
+        items.append(Gate('X', (0,)))                              # encode: X for the second bit …
+    if p['b0']:
+        items.append(Gate('Z', (0,)))                              # … Z for the first
+    items += [Gate('CX', (0, 1)), Gate('H', (0,)), Measure(0, 0), Measure(1, 1)]   # decode
+    return Built(2, items, [InitialState.preset('0')] * 2,
+                 note=f'Sends the two bits {p["b0"]}{p["b1"]} by transmitting only q0.')
+
+
+def spec_superdense(p, view):
+    from .dynamic import record_distribution
+    if not view.branches:
+        return [], 'Superdense coding needs mid-circuit measurements into c0 and c1.'
+    expected = f'{p["b0"]}{p["b1"]}'
+    record = record_distribution(view.branches)
+    probability = record.get(expected, 0.0)
+    best = max(record, key=record.get)
+    return [_row(f'message {expected}', f'received {best} (P = {record[best]:.6f})', f'received {expected}',
+                 probability, probability > 1 - 1e-9)], 'The two classical bits c0c1 must equal the message.'
+
+
 def build_full_adder(p):
     gates = [Gate('CCX', (0, 1, 3)), Gate('CX', (0, 1)), Gate('CCX', (1, 2, 3)), Gate('CX', (1, 2)), Gate('CX', (0, 1))]
     return Built(4, gates, _inputs_from(p, ('a', 'b', 'cin')) + [InitialState()], (2, 3),
@@ -507,6 +569,12 @@ LIBRARY = (
           (Param('n', 'Qubits', 'int', 3, 1, 6), Param('x', 'Input value x', 'int', 5, 0, 63),
            Param('inverse', 'Follow with QFT†', 'choice', 'no', choices=(('No', 'no'), ('Yes', 'yes')))),
           build_qft, spec_qft, 'QFT of a basis state; phase patterns are visible in the State Inspector.'),
+    Entry('teleportation', 'Examples', 'Quantum teleportation',
+          (Param('input', 'State of q0 to teleport', 'choice', '+i',
+                 choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),),
+          build_teleport, spec_teleport, 'Mid-circuit measurement and classically controlled corrections'),
+    Entry('superdense', 'Examples', 'Superdense coding', (_bit('b0', 'first bit'), _bit('b1', 'second bit')),
+          build_superdense, spec_superdense, 'Two classical bits sent with one qubit and shared entanglement'),
     Entry('full_adder', 'Examples', 'Full adder', (_bit('a', 'a'), _bit('b', 'b'), _bit('cin', 'cin')),
           build_full_adder, spec_full_adder),
     Entry('comparator', 'Examples', '2-bit comparator',

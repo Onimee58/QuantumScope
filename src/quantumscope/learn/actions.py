@@ -85,6 +85,17 @@ def parse(link):
             if not 0 <= element.qubit < n or int(parts[2]) < 0:
                 raise ValueError(f'Noise element outside the circuit: {token}')
             elements.append((element, int(parts[2])))
+        from quantumscope.physics.dynamic import Measure, Reset
+        for token in filter(None, (t.strip() for t in params.get('measures', '').split(';'))):
+            q, col, cbit = (int(x) for x in token.split(':'))            # qubit:column:classical bit
+            if not 0 <= q < n:
+                raise ValueError(f'Measurement outside the circuit: {token}')
+            elements.append((Measure(q, cbit), col))
+        for token in filter(None, (t.strip() for t in params.get('resets', '').split(';'))):
+            q, col = (int(x) for x in token.split(':'))
+            if not 0 <= q < n:
+                raise ValueError(f'Reset outside the circuit: {token}')
+            elements.append((Reset(q), col))
         return Action('circuit', '', {'n': n, 'gates': gates, 'states': [InitialState.preset(s) for s in states],
                                       'inspector': params.get('inspector') == '1',
                                       'noise_model': NOISE_PRESETS[preset] if preset else None, 'elements': elements})

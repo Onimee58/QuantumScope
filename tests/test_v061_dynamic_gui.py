@@ -131,3 +131,16 @@ def test_qasm_and_pdf_export_of_a_dynamic_circuit(teleport, tmp_path, monkeypatc
     teleport.clear()
     teleport.load_qasm()
     assert teleport.model.dynamic and len(teleport.model.conditions) == 2
+
+
+def test_examples_menu_and_verification_panel(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    items = [w.examples.itemText(i) for i in range(w.examples.count())]
+    assert 'Quantum teleportation' in items and 'Superdense coding' in items
+    w.load_library('teleportation', {'input': '-i'})
+    w.verify_circuit()
+    assert '10/10 PASS' in w.verify_status.text() and w.model.dynamic
+    w.load_library('superdense', {'b0': 1, 'b1': 1})
+    w.verify_circuit()
+    assert '1/1 PASS' in w.verify_status.text()
