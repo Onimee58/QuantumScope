@@ -170,6 +170,7 @@ class CircuitModel:
         self.blocks, self.active_entry = {}, None
         self.wires = {}
         self.conditions = {}
+        self.roles, self._entry_signature = [], None      # no longer an example: its roles go too
 
     def load_bell(self):
         """The quick 'Bell example' button (not a verified example)."""
@@ -183,6 +184,7 @@ class CircuitModel:
         self.blocks, self.active_entry = {}, None
         self.wires = {}
         self.conditions = {}
+        self.roles, self._entry_signature = [], None      # no longer an example: its roles go too
 
     def set_circuit(self, n, ops, columns=None, measured=(), measurement_column=None, total_columns=None,
                     initial_states=None, blocks=(), noise=(), noise_model=None, classical=(), conditions=()):
@@ -301,8 +303,10 @@ class CircuitModel:
         self.blocks = {bid: pl for bid, pl in self.blocks.items() if pl.block.high < n}
         self.wires = {(r, c): e for (r, c), e in self.wires.items() if r < n}
         self.n = n
-        if self.roles:
-            self.roles = (self.roles + [''] * n)[:n]
+        if n != len(self.initial_states):
+            # A different number of qubits is no longer the example: its title, roles and check
+            # all assume the example's exact qubits. Undo brings them back.
+            self.active_entry, self.roles, self._entry_signature = None, [], None
         self.initial_states = (self.initial_states + defaults(n))[:n]
         if self.pending and any(q >= n for q in self.pending[2]):
             self.pending = None

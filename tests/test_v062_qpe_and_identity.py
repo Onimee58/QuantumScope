@@ -135,3 +135,32 @@ def test_metadata_does_not_change_the_schema():
     m = CircuitModel()
     m.load_library('teleportation', {'input': '+'})
     assert json.loads(saved(m))['schema_version'] == 5          # optional field: older versions ignore it
+
+
+# ---- the example identity ends with the example -------------------------------------------------
+
+def test_clear_removes_title_roles_and_check():
+    m = CircuitModel()
+    m.load_library('bit_flip_code', {'logical': '1', 'error': 'q1', 'p': 0.1})
+    m.clear()
+    assert m.roles == [] and m.active_entry is None and not m.entry_edited
+    m.undo()
+    assert m.roles[3] == 'syndrome' and m.active_entry[0] == 'bit_flip_code'
+
+
+def test_changing_the_number_of_qubits_ends_the_example_and_undo_restores_it():
+    m = CircuitModel()
+    m.load_library('bit_flip_code', {'logical': '1', 'error': 'q1', 'p': 0.1})
+    m.resize(6)
+    assert m.roles == [] and m.active_entry is None
+    m.undo()
+    assert m.roles == ['data'] * 3 + ['syndrome'] * 2 and not m.entry_edited
+    m.resize(5)                                                  # same count: still the example
+    assert m.active_entry is not None and m.roles
+
+
+def test_ordinary_edits_keep_the_roles():
+    m = CircuitModel()
+    m.load_library('teleportation', {'input': '+'})
+    m.place('X', 0, 0)
+    assert m.roles == ['Alice · input', 'Alice', 'Bob'] and m.entry_edited

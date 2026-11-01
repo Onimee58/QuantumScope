@@ -127,3 +127,17 @@ def test_saved_example_reopens_labelled(app, tmp_path, monkeypatch):
     w.load_native()
     assert 'Quantum teleportation' in w.example_title.text() and '10/10 PASS' in w.verify_status.text()
     assert w.grid.verticalHeaderItem(2).text().startswith('q2 Bob')
+
+
+def test_role_labels_follow_the_example(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('bit_flip_code', {'logical': '1', 'error': 'q1', 'p': 0.1})
+    labels = lambda: [w.grid.verticalHeaderItem(i).text() for i in range(w.n)]
+    assert 'syndrome' in labels()[3]
+    w.clear()
+    assert not any('data' in l or 'syndrome' in l for l in labels()) and not w.example_bar.isVisibleTo(w)
+    w.undo()
+    assert 'syndrome' in labels()[3] and w.example_bar.isVisibleTo(w)
+    w.qubits.setValue(6)
+    assert w.n == 6 and not any('data' in l or 'syndrome' in l for l in labels()) and not w.example_bar.isVisibleTo(w)

@@ -1294,6 +1294,7 @@ class CircuitWorkspace(QWidget):
         for (r,c),element in self.model.noise.items():
             item=QTableWidgetItem('');item.setToolTip(element.label+' (double-click to edit)');self.grid.setItem(r,c,item)
         self.noise_button.setText(self._noise_summary())
+        self.grid.setVerticalHeaderLabels(self._qubit_labels())   # roles appear and disappear with the example
         self._update_example_bar()
         self.step.setRange(0,last+1)
         self.step.setValue(last+1)
