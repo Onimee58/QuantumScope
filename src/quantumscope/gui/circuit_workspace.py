@@ -545,7 +545,7 @@ class CircuitWorkspace(QWidget):
         split.addWidget(side)
         center=QWidget();v=QVBoxLayout(center);split.addWidget(center)
         self.grid=Grid(self);self.grid.setRowCount(self.n);self.grid.setColumnCount(self.columns)
-        self.grid.setHorizontalHeaderLabels([f'{i+1}' for i in range(self.columns)]);self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(self.n)])
+        self.grid.setHorizontalHeaderLabels([f'{i+1}' for i in range(self.columns)]);self.grid.setVerticalHeaderLabels(self._qubit_labels())
         self.grid.verticalHeader().setDefaultSectionSize(54);self.grid.horizontalHeader().setDefaultSectionSize(82)
         # Reserve room for ten wires at the default scale.  The model still
         # contains only active qubits, leaving the remaining canvas blank.
@@ -557,6 +557,13 @@ class CircuitWorkspace(QWidget):
         self.grid.setShowGrid(False)
         self.grid.setAlternatingRowColors(False)
         self.grid.setToolTip('Drag gates onto empty cells; click to select. Middle-drag to pan, Ctrl+wheel to zoom.')
+        # Example title bar: what this circuit is, its parameters, and where to learn about it.
+        self.example_bar=QWidget();bar=QHBoxLayout(self.example_bar);bar.setContentsMargins(0,0,0,0)
+        self.example_title=QLabel();self.example_title.setObjectName('exampleTitle');bar.addWidget(self.example_title,1)
+        self.example_params=QPushButton('Change parameters…');self.example_params.clicked.connect(self.change_example_parameters)
+        self.example_learn=QPushButton('Learn more');self.example_learn.clicked.connect(self.open_example_lesson)
+        bar.addWidget(self.example_params);bar.addWidget(self.example_learn)
+        self.example_bar.setVisible(False);v.addWidget(self.example_bar)
         nav=QHBoxLayout();v.addLayout(nav)
         for label,callback in [('− Zoom',lambda:self.grid.zoom_by(1/1.15)),('+ Zoom',lambda:self.grid.zoom_by(1.15)),('Fit Circuit',lambda:self.grid.fit_view()),('Reset Zoom',lambda:self.grid.reset_zoom())]:
             b=QPushButton(label);b.clicked.connect(callback);nav.addWidget(b)
@@ -667,7 +674,8 @@ class CircuitWorkspace(QWidget):
             self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
         if self.grid.rowCount()!=n:
             self.grid.setRowCount(n)
-        self.grid.setVerticalHeaderLabels([f'q{i} {s.label} ─' for i,s in enumerate(self.model.initial_states)])
+        self.grid.setVerticalHeaderLabels(self._qubit_labels())
+        self._update_example_bar()
         needed=self.model.columns
         if needed!=self.grid.columnCount():
             offset=self.grid.horizontalScrollBar().value()
@@ -682,6 +690,62 @@ class CircuitWorkspace(QWidget):
         self.status.setText(str(exc))
 
     def snapshot(self):self.model.snapshot()
+
+    # ---- example identity: title bar and qubit roles -----------------------------------------------
+    LESSONS={'teleportation':'circuits/14-teleportation','superdense':'circuits/15-superdense-coding',
+             'grover':'circuits/08-grover-search','qft':'circuits/09-qft','deutsch':'circuits/07-phase-kickback-and-oracles',
+             'deutsch_jozsa':'circuits/07-phase-kickback-and-oracles','bernstein_vazirani':'circuits/07-phase-kickback-and-oracles',
+             'full_adder':'circuits/06-reversible-logic','bit_flip_code':'circuits/17-bit-flip-code',
+             'phase_flip_code':'circuits/18-phase-flip-code','shor_code':'circuits/20-shor-code',
+             'qpe':'circuits/21-phase-estimation'}
+    def _qubit_labels(self):
+        roles=self.model.roles
+        states=self.model.initial_states
+        return [f'q{i}'+(f' {roles[i]}' if i<len(roles) and roles[i] else '')+(f' {states[i].label}' if i<len(states) else '')+' ─'
+                for i in range(self.n)]
+    def _update_example_bar(self):
+        entry=self.model.active_entry
+        if not entry:
+            self.example_bar.setVisible(False);return
+        from quantumscope.physics.algorithms import ENTRIES
+        e=ENTRIES.get(entry[0])
+        if e is None:
+            self.example_bar.setVisible(False);return
+        shown=[]
+        values=dict(entry[1])
+        for param in e.params:
+            if param.key=='p' and values.get('error')!='random':continue   # strength only matters for random errors
+            value=values.get(param.key,param.default)
+            label=next((lab for lab,val in param.choices if val==value),None) if param.choices else None
+            shown.append(f'{param.label}: {label if label is not None else value}')
+        edited='  <i>(edited)</i>' if self.model.entry_edited else ''
+        self.example_title.setText(f'<b>{html.escape(e.title)}</b>  ·  '+html.escape(' · '.join(shown))+edited)
+        self.example_title.setToolTip(e.description)
+        self.example_params.setEnabled(bool(e.params))
+        self.example_learn.setVisible(self._example_lesson() is not None)
+        self.example_bar.setVisible(True)
+    def _example_lesson(self):
+        entry=self.model.active_entry
+        key=self.LESSONS.get(entry[0]) if entry else None
+        if key is None:return None
+        from quantumscope.learn.lessons import builtin_lessons
+        return key if any(l.key==key for l in builtin_lessons()) else None
+    def change_example_parameters(self):
+        entry=self.model.active_entry
+        if not entry:return
+        from quantumscope.physics.algorithms import entry as lookup
+        from quantumscope.gui.parameter_dialog import ParameterDialog
+        e=lookup(entry[0])
+        dialog=ParameterDialog(e.title,e.params,dict(entry[1]),self,description=e.description)
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            self.load_library(e.key,dialog.values())
+    def open_example_lesson(self):
+        key=self._example_lesson()
+        window=self.window()
+        if key and hasattr(window,'open_learn'):
+            window.open_learn('circuits')
+            learn=getattr(window,'_learn',None)
+            if learn is not None:learn.open_lesson(key)
     def _several_bits_dialog(self,bits,current=None):
         """Choose 0, 1 or 'any' for each classical bit; returns ((bits…), (values…)) or None."""
         from quantumscope.physics.dynamic import condition_parts
@@ -1230,6 +1294,7 @@ class CircuitWorkspace(QWidget):
         for (r,c),element in self.model.noise.items():
             item=QTableWidgetItem('');item.setToolTip(element.label+' (double-click to edit)');self.grid.setItem(r,c,item)
         self.noise_button.setText(self._noise_summary())
+        self._update_example_bar()
         self.step.setRange(0,last+1)
         self.step.setValue(last+1)
         self.show_step(self.step.value())
@@ -1464,12 +1529,15 @@ class CircuitWorkspace(QWidget):
         n,ops,ms,layout=from_native_layout(text)
         self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks'],
                          layout.get('noise',()),layout.get('noise_model'),layout.get('classical',()),layout.get('conditions',()))
+        if self.model.restore_example(layout.get('example')):   # a saved example keeps its title, roles and check
+            self._sync_view();self.refresh();self.verify_circuit()
     def serialize(self):
         """The current circuit as a .qscope document."""
         gates,columns,mcol,total=self.model.layout()
         layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states,
                 'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()],
-                'noise':self.model.noise_layout(),'noise_model':self.model.noise_model}
+                'noise':self.model.noise_layout(),'noise_model':self.model.noise_model,
+                'example':self.model.example_meta()}
         layout['classical'],layout['conditions']=self.model.classical_layout()
         return to_native_measured(self.n,gates,sorted(self.measurements),layout=layout)
     def _suggest(self,name):

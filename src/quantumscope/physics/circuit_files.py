@@ -135,6 +135,9 @@ def to_native_measured(n,gates,measured=(),layout=None):
         data['schema_version']=4
         if noise_model is not None:data['noise_model']=noise_model.to_record()
         data['noise']=[{**e.to_record(),'column':c} for e,c in noise]
+    example=(layout or {}).get('example')
+    if example:
+        data['example']=example               # optional: older versions ignore it
     classical=(layout or {}).get('classical') or []
     conditions=(layout or {}).get('conditions') or []
     if classical or conditions:
@@ -269,7 +272,8 @@ def from_native_layout(text):
         raise ValueError('Invalid total column count')
     return n,gates,measured,{'columns':columns,'measurement_column':mcol if measured else None,'total_columns':total,
                             'initial_states':states,'blocks':blocks,'noise':noise,'noise_model':noise_model,
-                            'classical':classical,'conditions':conditions}
+                            'classical':classical,'conditions':conditions,
+                            'example':data.get('example') if isinstance(data.get('example'),dict) else None}
 
 def to_qasm_measured(n,gates,measured=(),initial_states=None,comments=None):
     """OpenQASM 2 text. Non-|0⟩ initial states become preparation gates at the

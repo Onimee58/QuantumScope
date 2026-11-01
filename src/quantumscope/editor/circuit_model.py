@@ -61,6 +61,8 @@ class CircuitModel:
         self.blocks = {}           # block id -> BlockPlacement (collapsed or expanded)
         self.wires = {}            # (row, col) -> single-wire item: NoiseElement, Measure (M→c) or Reset
         self.conditions = {}       # gate key (row, col) -> (bit, value) or ((bits…), (values…)): 'apply only if …'
+        self.roles = []            # a short role per qubit for examples ('data', 'Bob', …); empty otherwise
+        self._entry_signature = None   # the circuit as built from the active example, to detect edits
         self.noise_model = NoiseModel()   # global noise (off by default)
         self._next_block = 1
         self.active_entry = None   # (library key, ((param, value), ...)) for algorithms and new examples
@@ -124,7 +126,8 @@ class CircuitModel:
     def _record(self):
         return (self.n, self.reserved_columns, dict(self.gates), dict(self.measurements),
                 self.active_example, self.example_ops, tuple(self.initial_states),
-                dict(self.blocks), self.active_entry, dict(self.wires), self.noise_model, dict(self.conditions))
+                dict(self.blocks), self.active_entry, dict(self.wires), self.noise_model, dict(self.conditions),
+                list(self.roles), self._entry_signature)
 
     def snapshot(self):
         self.undo_stack.append(self._record())
@@ -134,7 +137,8 @@ class CircuitModel:
     def _restore(self, record):
         (self.n, self.reserved_columns, gates, measurements,
          self.active_example, self.example_ops, states, blocks, self.active_entry, noise, self.noise_model,
-         conditions) = record
+         conditions, roles, self._entry_signature) = record
+        self.roles = list(roles)
         self.wires = dict(noise)
         self.conditions = dict(conditions)
         self.gates, self.measurements = dict(gates), dict(measurements)
@@ -218,6 +222,7 @@ class CircuitModel:
         self.blocks = {}
         self.active_entry = None
         self.wires = {(element.qubit, c): element for element, c in noise}
+        self.roles, self._entry_signature = [], None
         keys = {(g.targets[0], c) for g, c in zip(ops, columns)}
         self.conditions = {}
         for key, cbit, value in conditions:
@@ -277,7 +282,9 @@ class CircuitModel:
         self.set_circuit(built.n, [ops[i] for i in order], [cols[i] for i in order], built.measured,
                          initial_states=built.initial_states, blocks=placed, classical=classical,
                          conditions=conditions)
+        self.roles = list(built.roles) + [''] * (built.n - len(built.roles))
         self.active_entry = (key, tuple(sorted(params.items())))
+        self._entry_signature = self.signature()
         return built.note
 
     def removes_gates(self, n):
@@ -294,6 +301,8 @@ class CircuitModel:
         self.blocks = {bid: pl for bid, pl in self.blocks.items() if pl.block.high < n}
         self.wires = {(r, c): e for (r, c), e in self.wires.items() if r < n}
         self.n = n
+        if self.roles:
+            self.roles = (self.roles + [''] * n)[:n]
         self.initial_states = (self.initial_states + defaults(n))[:n]
         if self.pending and any(q >= n for q in self.pending[2]):
             self.pending = None
@@ -516,6 +525,43 @@ class CircuitModel:
         self.snapshot()
         self.gates[key] = Gate(gate.name, gate.targets, angle,
                                gate.phi if phi is None else phi, gate.lam if lam is None else lam)
+
+    # ---- example identity (title bar, roles, saving) ------------------------------------------
+    def signature(self):
+        """Everything that defines the circuit's behaviour, to tell whether an example was edited."""
+        return (self.n, tuple(sorted(self.gates.items())), tuple(sorted((k, repr(v)) for k, v in self.wires.items())),
+                tuple(sorted(self.conditions.items())), tuple(s.label for s in self.initial_states),
+                tuple(sorted((k, repr(pl)) for k, pl in self.blocks.items())))
+
+    @property
+    def entry_edited(self):
+        return self.active_entry is not None and self.signature() != self._entry_signature
+
+    def example_meta(self):
+        """Saved with the circuit (an optional field older versions ignore), or None."""
+        if self.active_entry is None:
+            return None
+        key, params = self.active_entry
+        return {'key': key, 'params': dict(params), 'roles': list(self.roles), 'edited': self.entry_edited}
+
+    def restore_example(self, meta):
+        """After loading a file: restore the example's identity if it is valid; otherwise stay plain."""
+        from quantumscope.physics.algorithms import ENTRIES
+        if not isinstance(meta, dict) or meta.get('key') not in ENTRIES or not isinstance(meta.get('params'), dict):
+            return False
+        roles = meta.get('roles') or []
+        if not isinstance(roles, list) or not all(isinstance(r, str) and len(r) <= 24 for r in roles):
+            roles = []
+        from quantumscope.physics.algorithms import validate_params
+        try:
+            params = dict(meta['params'])
+            validate_params(ENTRIES[meta['key']].params, params)
+        except (ValueError, TypeError, KeyError):
+            return False
+        self.active_entry = (meta['key'], tuple(sorted(params.items())))
+        self.roles = (roles + [''] * self.n)[:self.n]
+        self._entry_signature = None if meta.get('edited') else self.signature()
+        return True
 
     # ---- noise ----------------------------------------------------------------------
     def _cell_free(self, row, col):

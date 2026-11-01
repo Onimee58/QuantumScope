@@ -181,6 +181,7 @@ class Built:
     initial_states: list
     measured: tuple = ()
     note: str = ''
+    roles: tuple = ()                 # a short role per qubit, shown beside its label ('data', 'Bob', …)
 
 
 @dataclass
@@ -413,7 +414,8 @@ def build_teleport(p):
              Measure(0, 0), Measure(1, 1),                         # … recorded in c0 and c1
              Conditioned(Gate('X', (2,)), 1, 1), Conditioned(Gate('Z', (2,)), 0, 1)]   # corrections
     return Built(3, items, [InitialState.preset(p['input']), InitialState.preset('0'), InitialState.preset('0')],
-                 note='Teleports q0\'s state to q2 using a Bell pair and two classical bits.')
+                 note='Teleports q0\'s state to q2 using a Bell pair and two classical bits.',
+                 roles=('Alice · input', 'Alice', 'Bob'))
 
 
 TELEPORT_TESTS = ('0', '1', '+', '-', '+i', '-i')
@@ -449,7 +451,7 @@ def build_superdense(p):
         items.append(Gate('Z', (0,)))                              # … Z for the first
     items += [Gate('CX', (0, 1)), Gate('H', (0,)), Measure(0, 0), Measure(1, 1)]   # decode
     return Built(2, items, [InitialState.preset('0')] * 2,
-                 note=f'Sends the two bits {p["b0"]}{p["b1"]} by transmitting only q0.')
+                 note=f'Sends the two bits {p["b0"]}{p["b1"]} by transmitting only q0.', roles=('Alice', 'Bob'))
 
 
 def spec_superdense(p, view):
@@ -477,7 +479,8 @@ def _repetition(code):
         n, items, states = build_repetition(code, p['logical'], p['error'], p.get('p', 0.1))
         kind = 'Z (phase-flip)' if code == 'phase_flip' else 'X (bit-flip)'
         return Built(n, items, states, note=f'Data q0–q2 encode q0\'s starting state; {kind} errors are '
-                                            'detected by q3, q4 (measured into c0, c1) and corrected.')
+                                            'detected by q3, q4 (measured into c0, c1) and corrected.',
+                     roles=('data', 'data', 'data', 'syndrome', 'syndrome'))
     return build
 
 
@@ -511,7 +514,8 @@ def build_shor_example(p):
     qubit = None if error == 'none' else int(error[1:])
     n, items, states = build_shor(p['logical'], qubit, error[0] if error != 'none' else 'X')
     return Built(n, items, states, note='Shor\'s code spreads q0 over 9 qubits and corrects any single-qubit '
-                                        'error coherently; the logical qubit ends back in q0.')
+                                        'error coherently; the logical qubit ends back in q0.',
+                 roles=('logical',) + ('code',) * 8)
 
 
 def spec_shor(p, view):
@@ -529,6 +533,52 @@ def spec_shor(p, view):
 
 
 SHOR_ERRORS = (('No error', 'none'),) + tuple((f'{k} on q{q}', f'{k}{q}') for k in 'XYZ' for q in range(9))
+
+
+# ---- quantum phase estimation (v0.6.2) ------------------------------------------------------
+
+QPE_PHASES = (('3/8 (exact with 3 or more counting qubits)', '3/8'), ('1/4 (exact)', '1/4'),
+              ('5/16 (exact with 4 or more)', '5/16'), ('1/3 (not exact)', '1/3'), ('0.3 (not exact)', '0.3'),
+              ('0.1 (not exact)', '0.1'))
+
+
+def _phase_value(text):
+    if '/' in text:
+        a, b = text.split('/')
+        return int(a) / int(b)
+    return float(text)
+
+
+def build_qpe(p):
+    """Estimate φ in U = P(2πφ), whose eigenstate |1⟩ sits in the last qubit."""
+    t, phi = p['t'], _phase_value(p['phase'])
+    target = t
+    items = [Gate('H', (j,)) for j in range(t)]
+    # counting qubit j controls U^(2^(t−1−j)): q0 holds the most significant bit of the estimate
+    items += [Gate('CP', (j, target), 2 * math.pi * phi * 2 ** (t - 1 - j)) for j in range(t)]
+    items.append(iqft_block(range(t)))
+    states = [InitialState.preset('0')] * t + [InitialState.preset('1')]
+    return Built(t + 1, items, states, measured=tuple(range(t)), roles=('count',) * t + ('eigenstate',),
+                 note=f'q0–q{t - 1} read out the best {t}-bit estimate of φ = {p["phase"]}; the last qubit holds U\'s eigenstate |1⟩.')
+
+
+def spec_qpe(p, view):
+    t, phi = p['t'], _phase_value(p['phase'])
+    if view.n != t + 1:
+        return [], f'Phase estimation with {t} counting qubits needs {t + 1} qubits.'
+    probs = marginal(view.final_state, view.n, list(range(t)))
+    best = max(probs, key=probs.get)
+    closest = round(phi * 2 ** t) % 2 ** t
+    exact = abs(phi * 2 ** t - round(phi * 2 ** t)) < 1e-9
+    target_bits = format(closest, f'0{t}b')
+    p_best = probs.get(target_bits, 0.0)
+    bound = 1.0 if exact else 4 / math.pi ** 2
+    rows = [_row(f'φ = {p["phase"]}', f'most likely {best} → {int(best, 2) / 2 ** t:.4f}',
+                 f'{target_bits} → {closest / 2 ** t:.4f}', p_best, best == target_bits and p_best >= bound - 1e-9)]
+    note = ('φ has an exact t-bit expansion, so the estimate is certain.' if exact else
+            f'φ is not a multiple of 1/{2 ** t}: the closest estimate wins with probability {p_best:.3f} '
+            f'(at least 4/π² ≈ 0.405 in theory); more counting qubits sharpen it.')
+    return rows, note
 
 
 def build_full_adder(p):
@@ -642,6 +692,10 @@ LIBRARY = (
           build_teleport, spec_teleport, 'Mid-circuit measurement and classically controlled corrections'),
     Entry('superdense', 'Examples', 'Superdense coding', (_bit('b0', 'first bit'), _bit('b1', 'second bit')),
           build_superdense, spec_superdense, 'Two classical bits sent with one qubit and shared entanglement'),
+    Entry('qpe', 'Algorithms', 'Quantum phase estimation',
+          (Param('t', 'Counting qubits', 'int', 4, 1, 6), Param('phase', 'Phase φ of U = P(2πφ)', 'choice', '5/16',
+                                                                choices=QPE_PHASES)),
+          build_qpe, spec_qpe, 'Estimates an eigenphase with controlled powers of U and the inverse QFT'),
     Entry('bit_flip_code', 'Examples', 'Bit-flip code',
           (Param('logical', 'Logical state (q0)', 'choice', '1',
                  choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),

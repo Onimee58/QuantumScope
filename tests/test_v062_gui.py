@@ -91,3 +91,39 @@ def test_explorer_opens_its_circuit(app):
     window.explorer.open_button.click()
     model = window.circuit_widget.model
     assert window.launched and model.dynamic and len(model.noise) == 3 and model.n == 5
+
+
+def test_example_title_bar_and_role_labels(app, monkeypatch):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    assert not w.example_bar.isVisibleTo(w)
+    w.load_library('bit_flip_code', {'logical': '1', 'error': 'q1', 'p': 0.1})
+    assert w.example_bar.isVisibleTo(w) and 'Bit-flip code' in w.example_title.text()
+    assert 'strength' not in w.example_title.text()              # only shown for random errors
+    assert w.grid.verticalHeaderItem(3).text().startswith('q3 syndrome')
+    w.place('Z', 2, 0)
+    assert '(edited)' in w.example_title.text()
+    w.undo()
+    assert '(edited)' not in w.example_title.text()
+
+    def accept(dialog):
+        return QtWidgets.QDialog.DialogCode.Accepted
+    monkeypatch.setattr(QtWidgets.QDialog, 'exec', accept)
+    w.change_example_parameters()                                # same values: rebuilt, still the example
+    assert w.model.active_entry[0] == 'bit_flip_code'
+    w.clear()
+    assert not w.example_bar.isVisibleTo(w)
+
+
+def test_saved_example_reopens_labelled(app, tmp_path, monkeypatch):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('teleportation', {'input': '+i'})
+    path = str(tmp_path / 't.qscope')
+    monkeypatch.setattr(QtWidgets.QFileDialog, 'getSaveFileName', staticmethod(lambda *a, **k: (path, '')))
+    w.save_native()
+    w.clear()
+    monkeypatch.setattr(QtWidgets.QFileDialog, 'getOpenFileName', staticmethod(lambda *a, **k: (path, '')))
+    w.load_native()
+    assert 'Quantum teleportation' in w.example_title.text() and '10/10 PASS' in w.verify_status.text()
+    assert w.grid.verticalHeaderItem(2).text().startswith('q2 Bob')
