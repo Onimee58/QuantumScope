@@ -120,8 +120,13 @@ def parse(link):
         values = {}
         for p in ENTRIES[target].params:
             if p.key in params:
-                values[p.key] = int(params[p.key]) if p.kind == 'int' or (
-                    p.kind == 'choice' and isinstance(p.default, int)) else params[p.key]
+                raw = params[p.key]
+                if p.kind == 'int' or (p.kind == 'choice' and isinstance(p.default, int)):
+                    values[p.key] = int(raw)
+                elif p.kind == 'choice' and isinstance(p.default, float):
+                    values[p.key] = float(raw)                 # e.g. an error strength p = 0.1
+                else:
+                    values[p.key] = raw
         validate_params(ENTRIES[target].params, values)
         from quantumscope.physics.noise import PRESETS as NOISE_PRESETS
         preset = params.get('noise')

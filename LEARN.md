@@ -48,12 +48,13 @@ Without a header, the first `# Heading` becomes the title.
 |---|---|
 | `qs:circuit?n=2&gates=H:0;CX:0,1&noise=Moderate&elements=depolarizing:1:2:0.4` | Adds noise. `noise` takes a preset (Ideal, Gentle, Moderate or Very noisy); `elements` takes channels as `channel:qubit:column:strength`, separated by `;`. A link without `noise=` starts with noise off. The same `noise=` works on algorithm links. |
 | `qs:circuit?n=2&gates=H:0;CX:0,1&states=0,0&inspector=1` | Builds a circuit. Gates are `NAME:qubits[:angle]`, separated by `;`, with angles like `pi/2`. `states` gives each qubit's start: `0`, `1`, `+`, `-`, `+i` or `-i`. `inspector=1` also opens the State Inspector. |
-| `qs:algorithm/grover?n=3&marked=101` | Builds an algorithm. The keys are `deutsch`, `deutsch_jozsa`, `bernstein_vazirani`, `grover` and `qft`. |
+| `qs:algorithm/bit_flip_code?logical=1&error=q1&p=0.1` | Builds an example from the Examples menu with its parameters (here the bit-flip code; also `phase_flip_code`, `shor_code`, `teleportation` and `superdense`) |
+| `qs:algorithm/grover?n=3&marked=101` | Builds an algorithm. The keys are `deutsch`, `deutsch_jozsa`, `bernstein_vazirani`, `grover`, `qft` and `qpe`. |
 | `qs:circuit?n=1&gates=X:0&cols=1&measures=0:0:0&conditions=0:1:0:1` | Builds a dynamic circuit. `cols` gives each gate's column, in order (otherwise gates fill columns 0, 1, 2, …); `measures` places M→c as `qubit:column:bit`; `resets` as `qubit:column`; `conditions` as `gate-row:column:bit:value`. Entries are separated by `;`. |
 | `qs:example/Full adder` | Loads an example from the Examples menu. |
 | `qs:gate/H`, `qs:try/CX` | Opens the Gate Explorer, or its Try it circuit. |
 | `qs:inspector` | Opens the State Inspector. |
-| `qs:open/dynamics3d` | Opens a view: `circuits`, `converter`, `orbital`, `dynamics2d`, `dynamics3d`, `doubleslit`, `superposition`, `entanglement` or `teleportation`. |
+| `qs:open/dynamics3d` | Opens a view: `circuits`, `converter`, `orbital`, `dynamics2d`, `dynamics3d`, `doubleslit`, `superposition`, `entanglement`, `teleportation` or `qec` (the Error-correction explorer). |
 | `qs:lesson/circuits/01-qubits` | Opens another lesson. |
 
 ### Questions
@@ -101,6 +102,7 @@ A step is done when all of its `check:` lines pass. Once a later step passes, th
 | `record 00=0.5 11=0.5` | the classical records have these probabilities (c0 first) |
 | `teleports 0 2` | in every branch, q2 ends in q0's starting state |
 | `settles 0 0` | in every branch, q0 ends in \|0⟩ (`settles 0 1`: in \|1⟩) |
+| `labeled 3 syndrome` | q3 is labeled "syndrome" (case does not matter) |
 
 ## Editing the built-in lessons (contributors)
 

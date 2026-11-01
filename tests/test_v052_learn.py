@@ -192,6 +192,15 @@ LAB_SOLUTIONS = {
     'circuits/101-lab-defer-the-measurement': (3, [Gate('H', (1,)), Gate('CX', (1, 2)), Gate('CX', (0, 1)),
                                                    Gate('H', (0,)), Gate('CX', (1, 2)), Gate('CZ', (0, 2))],
                                                ('+i', '0', '0'), [], {}),
+    # v0.6.2
+    'circuits/102-lab-bit-flip-code': (5, [Gate('CX', (0, 1)), Gate('CX', (0, 2)), Gate('X', (1,)), Gate('CX', (0, 3)),
+                                           Gate('CX', (1, 3)), Gate('CX', (1, 4)), Gate('CX', (2, 4)), Gate('X', (1,))],
+                                       ('1', '0', '0', '0', '0'), [],
+                                       {'columns': [0, 1, 2, 3, 4, 5, 6, 8], 'measures': [(3, 7, 0), (4, 7, 1)],
+                                        'conditions': [((1, 8), (0, 1), (1, 1))],
+                                        'labels': ['', '', '', 'syndrome', 'syndrome']}),
+    'circuits/103-lab-beat-the-noise': ('library', 'bit_flip_code', {'logical': '0', 'error': 'random', 'p': 0.1}),
+    'circuits/104-lab-phase-estimation': ('library', 'qpe', {'t': 6, 'phase': '1/3'}),
 }
 
 
@@ -203,6 +212,13 @@ def test_every_lab_has_a_tested_solution():
 @pytest.mark.parametrize('key', sorted(LAB_SOLUTIONS))
 def test_lab_solution_completes_every_step(key):
     lesson = next(l for l in LESSONS if l.key == key)
+    if LAB_SOLUTIONS[key][0] == 'library':                     # labs that start from an example
+        _, entry, params = LAB_SOLUTIONS[key]
+        m = CircuitModel()
+        m.load_library(entry, params)
+        lesson = next(l for l in LESSONS if l.key == key)
+        assert all(labs.progress(m, steps_of(lesson.body)).values())
+        return
     n, gates, starts, *rest = LAB_SOLUTIONS[key]
     from quantumscope.physics.dynamic import Measure, Reset
     from quantumscope.physics.noise import NoiseElement
@@ -214,6 +230,9 @@ def test_lab_solution_completes_every_step(key):
     m = CircuitModel(n)
     m.set_circuit(n, gates, extra.get('columns'), initial_states=states, noise=noise, classical=classical,
                   conditions=extra.get('conditions', ()))
+    for q, name in enumerate(extra.get('labels', [])):
+        if name:
+            m.set_label(q, name)
     assert all(labs.progress(m, steps_of(lesson.body)).values())
 
 
@@ -269,7 +288,7 @@ def test_grover_table_matches_the_formula():
 def test_every_area_has_lessons():
     areas = {l.area for l in LESSONS}
     assert areas == {'circuits', 'principles', 'hydrogen'}
-    assert sum(l.kind == 'lab' for l in LESSONS) == 12 and len(LESSONS) == 41
+    assert sum(l.kind == 'lab' for l in LESSONS) == 15 and len(LESSONS) == 49
 
 
 def test_png_size_matches_the_image_and_needs_no_qt():
@@ -349,3 +368,33 @@ def test_quiz_feedback_colors_are_readable():
     for name in ('dark', 'light'):
         p = PALETTES[name]
         assert contrast_ratio(p['wrong'], p['note_bg']) >= 4.5 and contrast_ratio(p['answer'], p['note_bg']) >= 4.5
+
+
+
+def test_error_correction_lecture_numbers_match_the_sweep():
+    from quantumscope.editor import qec_analysis as qa
+    model, data = qa.example_model('bit_flip', 'bit_flip')
+    at = lambda p: qa.logical_failure(model, p, data)
+    text = lesson_text('circuits/19-logical-error-rates')
+    assert f'{at(0.1):.3f}' == '0.028' and '0.028' in text and '3.6 times' in text
+    assert round(0.1 / at(0.1), 1) == 3.6
+    assert f'{at(0.2):.3f}' == '0.104' and '0.104' in lesson_text('circuits/19-logical-error-rates')
+    lab = lesson_text('circuits/103-lab-beat-the-noise')
+    assert '2.8%' in lab and '3.6 times' in lab
+
+
+def test_phase_estimation_lab_peaks_match_the_simulator():
+    from quantumscope.physics.algorithms import marginal
+    text = lesson_text('circuits/104-lab-phase-estimation')
+    for t, bits, shown in ((3, '011', '3/8 = 0.375'), (6, '010101', '21/64 ≈ 0.328')):
+        m = CircuitModel()
+        m.load_library('qpe', {'t': t, 'phase': '1/3'})
+        probs = marginal(m.circuit_view().final_state, m.n, list(range(t)))
+        assert max(probs, key=probs.get) == bits and bits in text and shown in text
+
+
+def test_learn_more_targets_exist():
+    from quantumscope.learn.lessons import EXAMPLE_LESSONS
+    from quantumscope.physics.algorithms import ENTRIES
+    keys = {l.key for l in LESSONS}
+    assert set(EXAMPLE_LESSONS.values()) <= keys and set(EXAMPLE_LESSONS) <= set(ENTRIES)

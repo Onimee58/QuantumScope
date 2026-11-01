@@ -132,3 +132,14 @@ def reference_pages():
 
 def reference_page(name):
     return next((p for p in reference_pages() if p.key == f'{REFERENCE}/{name}'), None)
+
+
+# The lecture behind each example or algorithm (its "Learn more" link in the circuit tab).
+EXAMPLE_LESSONS = {
+    'teleportation': 'circuits/14-teleportation', 'superdense': 'circuits/15-superdense-coding',
+    'grover': 'circuits/08-grover-search', 'qft': 'circuits/09-qft',
+    'deutsch': 'circuits/07-phase-kickback-and-oracles', 'deutsch_jozsa': 'circuits/07-phase-kickback-and-oracles',
+    'bernstein_vazirani': 'circuits/07-phase-kickback-and-oracles', 'full_adder': 'circuits/06-reversible-logic',
+    'bit_flip_code': 'circuits/17-bit-flip-code', 'phase_flip_code': 'circuits/18-phase-flip-code',
+    'shor_code': 'circuits/20-shor-code', 'qpe': 'circuits/21-phase-estimation',
+}

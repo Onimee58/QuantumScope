@@ -19,6 +19,7 @@ current circuit; a step is done when all of its checks pass:
     record 00=0.25 11=0.75           probabilities of classical records (c0 first)
     teleports 0 2                    in every branch, qubit 2 ends in qubit 0's starting state
     settles 0 0                      in every branch, qubit 0 ends in |0⟩ (or |1⟩ with "settles 0 1")
+    labeled 3 syndrome               qubit 3 is labeled (named) "syndrome" (case does not matter)
 """
 import numpy as np
 
@@ -121,6 +122,11 @@ def check(model, condition):
         worst = min(float(np.real(np.vdot(target, N.partial_trace(br.rho, model.n, [target_q]) @ target)))
                     for br in branches)
         return worst > 1 - 1e-6, f'q{target_q} does not match in every branch yet (worst fidelity {worst:.3f})'
+    if kind == 'labeled':
+        qubit, _, text = rest.partition(' ')
+        q = int(qubit)
+        name = (model.roles + [''] * model.n)[q] if q < model.n else ''
+        return name.strip().lower() == text.strip().lower(), f'label q{q} "{text.strip()}"'
     raise ValueError(f'Unknown check: {kind}')
 
 

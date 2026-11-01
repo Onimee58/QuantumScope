@@ -1,3 +1,48 @@
+## v0.6.2 — Error correction and phase estimation
+
+### Error correction
+- **Bit-flip code** and **phase-flip code** examples (5 qubits).
+  - **How they work:** data q0–q2 encode q0's state, and ancillas q3 and q4 measure the parities mid-circuit into c0 and c1. Corrections are conditioned on both bits.
+  - **Errors to inject:** none, one error on a chosen qubit, two errors (beyond the code), or random errors (noise boxes of strength p).
+- **Shor code (9 qubits):** corrects any single-qubit X, Y or Z error, coherently with Toffoli majority votes.
+- **Checks** test all six logical inputs on the current circuit.
+  - **Two errors fail**, as they should: that's the code's limit.
+  - **Removing the Shor code's final majority vote** fails the check.
+- **Logical error rate:** one exact sweep with two entry points.
+  - **Plot logical error rate** in the verification panel sweeps the noise boxes of the *current* circuit.
+  - **Quantum Circuits → + → Error-correction explorer** lets you choose the code and the noise type and drag p.
+  - **Exact agreement:** both reproduce 3p² − 2p³ for matched codes and (1 − (1 − 2p)³)/2 for mismatched ones.
+
+### Conditions on several classical bits
+- **In the editor:** **Run only if… → Several bits…** (e.g. c0c1 = 10), shown as a badge.
+- **Engine and files:** the branch engine, undo and **`.qscope` schema 6** all support them. Single-bit conditions stay schema 5.
+- **OpenQASM 2:** bits tested together share one register (`creg r0[2]`) and conditions become `if(r0==value)`. A condition on part of a register expands into one `if` per matching value. Multi-bit `if` is now imported too.
+
+### Quantum phase estimation
+- An Algorithms entry with 1–6 counting qubits and exact or inexact phases.
+- **The check:** the closest t-bit estimate must win, with probability 1 when φ is exact and at least 4/π² ≈ 0.405 otherwise.
+
+### Example titles and qubit labels
+- **A title bar** for circuits built from Examples or Algorithms: the title, its parameters, **Change parameters…**, and **Learn more**, which opens the matching lecture. It shows *(edited)* after changes and clears it when Undo restores the example.
+- **Qubit labels for any circuit:**
+  - examples fill them in;
+  - **click a qubit's label → Label this qubit…** to name your own;
+  - they're kept when the number of qubits changes, and cleared by Clear (Undo restores them);
+  - they're shown in PDF exports and as QASM comments.
+- **Saved with every circuit** as optional fields that older versions ignore, so the format is unchanged.
+
+### Learn
+- **Lectures:** *The bit-flip code*, *The phase-flip code*, *Logical error rates and thresholds*, *The Shor code and stabilizers*, *Quantum phase estimation*.
+- **Labs:** *Build the bit-flip code*, which includes labeling your own qubits; *Beat the noise*; *Phase estimation precision*.
+- **For course authors:** a new lab check `labeled`, links to the Examples (`qs:algorithm/bit_flip_code?…`), and the `qec` view.
+
+### Fixes
+- **Qubit roles** stayed after Clear, and a newly added qubit was left unlabeled.
+- **A test crash:** an intermittent crash at the end of GUI test runs, after all tests had passed. It was present in v0.6.1's tests too; Qt is now torn down in order.
+
+### Quality
+- Automated tests: 1182 passing (1051 in v0.6.1 + 131 new), plus 83 opt-in GUI tests. The 44-step editing replay is unchanged.
+
 ## v0.6.1 — Measurement and feed-forward
 
 ### Dynamic circuits

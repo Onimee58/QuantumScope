@@ -13,7 +13,7 @@ QuantumScope can measure qubits **during** a circuit, store the results in class
 
 ## Classically controlled gates
 
-Right-click a gate and choose **Run only if… → c1 = 1** (or = 0). The gate then shows a **c1=1** badge and runs only in runs where that bit has that value. Within one column, gates act before measurements, so a condition always uses results from earlier columns. Conditions apply to single bits; conditions on whole registers (such as `c = 3`) are planned for a later version.
+Right-click a gate and choose **Run only if… → c1 = 1** (or = 0). The gate then shows a **c1=1** badge and runs only in runs where that bit has that value. Within one column, gates act before measurements, so a condition always uses results from earlier columns. Since v0.6.2, a gate can also depend on several bits at once: **Run only if… → Several bits…** (for example c0c1 = 10), as error-correction codes need.
 
 ## Branches
 

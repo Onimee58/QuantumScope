@@ -692,12 +692,7 @@ class CircuitWorkspace(QWidget):
     def snapshot(self):self.model.snapshot()
 
     # ---- example identity: title bar and qubit roles -----------------------------------------------
-    LESSONS={'teleportation':'circuits/14-teleportation','superdense':'circuits/15-superdense-coding',
-             'grover':'circuits/08-grover-search','qft':'circuits/09-qft','deutsch':'circuits/07-phase-kickback-and-oracles',
-             'deutsch_jozsa':'circuits/07-phase-kickback-and-oracles','bernstein_vazirani':'circuits/07-phase-kickback-and-oracles',
-             'full_adder':'circuits/06-reversible-logic','bit_flip_code':'circuits/17-bit-flip-code',
-             'phase_flip_code':'circuits/18-phase-flip-code','shor_code':'circuits/20-shor-code',
-             'qpe':'circuits/21-phase-estimation'}
+    from quantumscope.learn.lessons import EXAMPLE_LESSONS as LESSONS   # the lecture behind each example
     def _qubit_labels(self):
         roles=self.model.roles
         states=self.model.initial_states

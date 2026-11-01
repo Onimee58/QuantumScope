@@ -7,7 +7,7 @@
 
   An open-source, cross-platform quantum visualization and circuit simulation studio built with Python and PySide6.
 
-  [![Version](https://img.shields.io/badge/version-v0.6.1-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
+  [![Version](https://img.shields.io/badge/version-v0.6.2-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
   [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
   [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-555)](https://github.com/Onimee58/QuantumScope/releases)
@@ -44,6 +44,23 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 - **Quantum Gate Explorer**: double-click a gate in the *left palette* for its definition, circuit symbol, matrix/operation and basic state transformations. Double-clicking a placed parameterized gate opens its parameter editor instead.
 
 **Supported operations:** `H`, `X`, `Y`, `Z`, `S`, `T`, `Sdg`, `Tdg`, `SX`, `RX`, `RY`, `RZ`, `U`/`U3`, `P`, `CX`, `CZ`, `SWAP`, `CCX`, `CSWAP`, and terminal `M`.
+
+## What's new in v0.6.2?
+
+- **Quantum error correction:**
+  - the **bit-flip** and **phase-flip codes** (syndromes measured mid-circuit and corrected with two-bit conditions), and the **9-qubit Shor code**;
+  - each with checks for every single error.
+- **Logical error rates:**
+  - **Plot logical error rate** sweeps your circuit's noise and compares it with an unprotected qubit;
+  - the new **Error-correction explorer** shows which code helps against which noise.
+- **Quantum phase estimation** in the Algorithms menu, with exact and inexact phases.
+- **Conditions on several classical bits:** "Run only if c0c1 = 10".
+- **Example titles and qubit labels:**
+  - examples show a title bar with **Change parameters…** and **Learn more**;
+  - you can label the qubits of any circuit (data, syndrome, Alice…).
+- **Learn:** 5 new lectures and 3 labs on error correction and phase estimation.
+
+See [ERROR_CORRECTION.md](ERROR_CORRECTION.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## What's new in v0.6.1?
 
@@ -236,7 +253,7 @@ QuantumScope aims for scientifically meaningful *models*, but visual demonstrati
 - **Double slit:** idealized far-field/Fraunhofer interference and diffraction model. The apparatus drawing and animated wavefronts are illustrative, not particle paths or a complete propagation simulation.
 - **Graphics:** screen representations (cloud brightness, phase coloring and rendered meshes) are visualization choices and should not be mistaken for additional physical observables.
 
-Explore the accompanying documentation: [Dynamics](DYNAMICS.md) · [Circuit simulator](CIRCUIT_SIMULATOR.md) · [Circuit verification](CIRCUIT_VERIFICATION_GUIDE.md) · [Entanglement demo](ENTANGLEMENT_DEMO.md) · [State Inspector & initial states](STATE_INSPECTOR.md) · [Algorithms & blocks](ALGORITHMS.md) · [Learn & your own lessons](LEARN.md) · [Noise & mixed states](NOISE.md) · [Mid-circuit measurement](MEASUREMENT.md).
+Explore the accompanying documentation: [Dynamics](DYNAMICS.md) · [Circuit simulator](CIRCUIT_SIMULATOR.md) · [Circuit verification](CIRCUIT_VERIFICATION_GUIDE.md) · [Entanglement demo](ENTANGLEMENT_DEMO.md) · [State Inspector & initial states](STATE_INSPECTOR.md) · [Algorithms & blocks](ALGORITHMS.md) · [Learn & your own lessons](LEARN.md) · [Noise & mixed states](NOISE.md) · [Mid-circuit measurement](MEASUREMENT.md) · [Error correction](ERROR_CORRECTION.md).
 
 ## For educators and students
 
@@ -253,7 +270,7 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-The v0.6.1 source passes **1051 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
+The v0.6.2 source passes **1182 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
 
 Build configuration and workflows live in `.github/workflows/`, and desktop packaging scripts live in `packaging/`. Please report reproducible errors with your OS version, installation method, screenshots or logs, and a short reproduction sequence.
 
