@@ -1,3 +1,48 @@
+## v0.6.1 — Measurement and feed-forward
+
+### Dynamic circuits
+- **Mid-circuit measurement (M→c, Classical palette):** measures a qubit at any point and stores the result in a classical bit c0–c9. The terminal **M** gates are unchanged.
+- **Classically controlled gates:** right-click → **Run only if… → cₖ = 0 or 1**, shown as a badge. Conditions on whole registers are planned for later.
+- **Reset** returns a qubit to |0⟩ mid-circuit.
+- **An exact branch engine** follows every measurement outcome. Branches with the same classical record are merged, noise works inside branches, and mid-circuit readout error flips the recorded bit while the qubit collapses to the true outcome.
+- **Results:**
+  - the status and result line describe the branches;
+  - a new **Branches** tab in the State Inspector shows each record's probability, purity and per-qubit Bloch vectors;
+  - shots record the classical bits.
+- **Tools that need a fixed unitary** (Simplify, Check equivalence and the noisy-success notes) explain why they don't apply to dynamic circuits.
+
+### Examples and experiments
+- **Quantum teleportation** (choose the state to send) and **Superdense coding** (choose two bits) examples.
+  - **The teleportation check** runs your *current* circuit on ten inputs and requires q2 to equal the input in every branch. Removing a correction, or making one unconditional, fails it.
+- **The Quantum Teleportation experiment** in Quantum Principles:
+  - **the story:** Alice, Bob and a classical channel, in five steps;
+  - **measurement results:** "unknown to Bob" (the average over all four) or a chosen or random result;
+  - **the payoff:** it shows that Bob's qubit is random until the two bits arrive and that Alice's original is destroyed;
+  - **Open in the circuit simulator** loads the matching circuit. It uses the same engine as the circuit.
+
+### Files and OpenQASM
+- **`.qscope` schema version 5** stores mid-circuit measurements, resets and conditions.
+- **OpenQASM 2 export** gives each classical bit a one-bit register (`creg m0[1]`), so `if(m1==1) …` expresses single-bit conditions exactly.
+- **OpenQASM 2 import** accepts measurements anywhere, `if` on one-bit registers and `reset`, packing every condition after its measurement. Ordinary programs still use the original importer.
+- **PDF export** draws M→c boxes, resets and condition badges.
+
+### Learn
+- **Lectures:** *Mid-circuit measurement and classical bits*, *Classical control, feed-forward and reset*, *Quantum teleportation*, *Superdense coding*, *The deferred-measurement principle*, and *Measurement, information and no-cloning* (Quantum Principles).
+- **Labs:** *Measure in the middle*, *Reset by feed-forward*, *Teleport a qubit*, *Send two bits with one qubit*, *Defer the measurement*.
+- **Interactive quizzes:** click an option to get ✓ Correct with the explanation, or ✗ Not quite and try again. Show answer is still available.
+- **Lab steps now tick off live in the app.** Previously they only updated after another click.
+- **For course authors:**
+  - new lab checks `measures`, `conditions`, `branches`, `record`, `teleports` and `settles`;
+  - Try it links accept `cols`, `measures`, `resets` and `conditions`, and can open the `teleportation` view.
+
+### Fixes
+- **Windows dark mode:** the category tabs and drop-down lists were drawn in the system's light colors. QuantumScope now sets a complete theme palette, and "&" in group titles is shown correctly.
+- **Math in table cells:** inline math using a bar inside a table cell fell back to plain text.
+- **Ubuntu CI:** a theme test skips cleanly on machines without graphics libraries.
+
+### Quality
+- Automated tests: 1051 passing (912 in v0.6.0 + 139 new), plus 75 opt-in GUI tests. The 44-step editing replay is unchanged.
+
 ## v0.6.0 — Noise and mixed states
 
 ### Noise

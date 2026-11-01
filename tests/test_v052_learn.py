@@ -179,6 +179,19 @@ LAB_SOLUTIONS = {
                                 Gate('SWAP', (0, 1))], '01'),
     'circuits/96-lab-bell-decoherence': (2, [Gate('H', (0,)), Gate('CX', (0, 1))], '00',
                                          [('depolarizing', 1, 2, 1.0)]),
+    # v0.6.1 labs: (n, gates, starts, noise, extra) with extra = columns, measures, resets, conditions
+    'circuits/97-lab-measure-in-the-middle': (2, [Gate('H', (0,)), Gate('CX', (0, 1))], '00', [],
+                                              {'measures': [(0, 2, 0), (1, 2, 1)]}),
+    'circuits/98-lab-reset-by-feed-forward': (1, [], '+', [], {'resets': [(0, 0)]}),
+    'circuits/99-lab-teleport-a-qubit': (3, [Gate('H', (1,)), Gate('CX', (1, 2)), Gate('CX', (0, 1)), Gate('H', (0,)),
+                                             Gate('X', (2,)), Gate('Z', (2,))], ('+i', '0', '0'), [],
+                                         {'columns': [0, 1, 2, 3, 5, 6], 'measures': [(0, 4, 0), (1, 4, 1)],
+                                          'conditions': [((2, 5), 1, 1), ((2, 6), 0, 1)]}),
+    'circuits/100-lab-superdense-coding': (2, [Gate('H', (0,)), Gate('CX', (0, 1)), Gate('Z', (0,)), Gate('CX', (0, 1)),
+                                               Gate('H', (0,))], '00', [], {'measures': [(0, 5, 0), (1, 5, 1)]}),
+    'circuits/101-lab-defer-the-measurement': (3, [Gate('H', (1,)), Gate('CX', (1, 2)), Gate('CX', (0, 1)),
+                                                   Gate('H', (0,)), Gate('CX', (1, 2)), Gate('CZ', (0, 2))],
+                                               ('+i', '0', '0'), [], {}),
 }
 
 
@@ -190,14 +203,17 @@ def test_every_lab_has_a_tested_solution():
 @pytest.mark.parametrize('key', sorted(LAB_SOLUTIONS))
 def test_lab_solution_completes_every_step(key):
     lesson = next(l for l in LESSONS if l.key == key)
-    n, gates, starts, *extra = LAB_SOLUTIONS[key]
+    n, gates, starts, *rest = LAB_SOLUTIONS[key]
+    from quantumscope.physics.dynamic import Measure, Reset
     from quantumscope.physics.noise import NoiseElement
-    noise = [(NoiseElement(kind, q, p), c) for kind, q, c, p in (extra[0] if extra else [])]
-    states = []
-    for ch in starts:
-        states.append(InitialState.preset({'0': '0', '1': '1', '+': '+', '-': '-'}[ch]))
+    noise = [(NoiseElement(kind, q, p), c) for kind, q, c, p in (rest[0] if rest else [])]
+    extra = rest[1] if len(rest) > 1 else {}
+    classical = [(Measure(q, b), c) for q, c, b in extra.get('measures', [])] + \
+                [(Reset(q), c) for q, c in extra.get('resets', [])]
+    states = [InitialState.preset(k) for k in (starts if isinstance(starts, tuple) else tuple(starts))]
     m = CircuitModel(n)
-    m.set_circuit(n, gates, initial_states=states, noise=noise)
+    m.set_circuit(n, gates, extra.get('columns'), initial_states=states, noise=noise, classical=classical,
+                  conditions=extra.get('conditions', ()))
     assert all(labs.progress(m, steps_of(lesson.body)).values())
 
 
@@ -253,7 +269,7 @@ def test_grover_table_matches_the_formula():
 def test_every_area_has_lessons():
     areas = {l.area for l in LESSONS}
     assert areas == {'circuits', 'principles', 'hydrogen'}
-    assert sum(l.kind == 'lab' for l in LESSONS) == 7 and len(LESSONS) == 30
+    assert sum(l.kind == 'lab' for l in LESSONS) == 12 and len(LESSONS) == 41
 
 
 def test_png_size_matches_the_image_and_needs_no_qt():

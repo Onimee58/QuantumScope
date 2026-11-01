@@ -2,6 +2,9 @@
 
     qs:circuit?n=2&gates=H:0;CX:0,1&states=0,0&inspector=1
     qs:circuit?n=2&gates=H:0;CX:0,1&noise=Moderate&elements=depolarizing:1:2:0.4
+    qs:circuit?n=1&gates=X:0&cols=1&measures=0:0:0&conditions=0:1:0:1
+                                     (cols: each gate's column; measures qubit:column:bit; resets qubit:column;
+                                      conditions gate-row:column:bit:value)
                                      (noise: a preset; elements: channel:qubit:column:strength)
     qs:algorithm/grover?n=3&marked=101&iterations=-1
     qs:example/Full adder            (any title from the Examples menu)
@@ -97,7 +100,17 @@ def parse(link):
             if not 0 <= q < n:
                 raise ValueError(f'Reset outside the circuit: {token}')
             elements.append((Reset(q), col))
+        conditions = []
+        for token in filter(None, (t.strip() for t in params.get('conditions', '').split(';'))):
+            row, col, cbit, value = (int(x) for x in token.split(':'))    # gate row:column:bit:value
+            conditions.append(((row, col), cbit, value))
+        columns = None
+        if params.get('cols'):
+            columns = [int(c) for c in params['cols'].split(',')]          # one column per gate, in order
+            if len(columns) != len(gates) or columns != sorted(columns) or min(columns) < 0:
+                raise ValueError('cols needs one non-decreasing column per gate')
         return Action('circuit', '', {'n': n, 'gates': gates, 'states': [InitialState.preset(s) for s in states],
+                                      'conditions': conditions, 'columns': columns,
                                       'inspector': params.get('inspector') == '1',
                                       'noise_model': NOISE_PRESETS[preset] if preset else None, 'elements': elements})
     if kind == 'algorithm':

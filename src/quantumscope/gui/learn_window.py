@@ -21,7 +21,8 @@ def run_action(action, workspace, launch=None):
         launch('circuits')
     if action.kind == 'circuit':
         p = action.params
-        workspace.set_circuit(p['n'], p['gates'], initial_states=p['states'], noise=p.get('elements', ()))
+        workspace.set_circuit(p['n'], p['gates'], p.get('columns'), initial_states=p['states'],
+                              noise=p.get('elements', ()), conditions=p.get('conditions', ()))
     elif action.kind == 'algorithm':
         workspace.load_library(action.target, action.params['values'])
     if action.kind in ('circuit', 'algorithm'):
