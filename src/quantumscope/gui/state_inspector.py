@@ -205,6 +205,9 @@ class StateInspector(QWidget):
         note.setWordWrap(True)
         grid.addWidget(note, 1, 0, 1, 2)
         self.tabs.addTab(tab, 'Circuit')
+        # Branches (last, so existing tab positions stay put): one row per mid-circuit measurement record.
+        self.branch_view = QTextBrowser()
+        self.tabs.addTab(self.branch_view, 'Branches')
 
     # ---- updates ---------------------------------------------------------------------
     def _on_state_changed(self):
@@ -219,7 +222,8 @@ class StateInspector(QWidget):
                      'analysis': model.analysis(), 'measured': sorted(model.measurements),
                      'initial': [s.label for s in model.initial_states],
                      'rho': None if view.get('rho') is None else np.array(view['rho'], complex),
-                     'noisy': view.get('noisy', False), 'noise': model.noise_model, 'elements': len(model.noise)}
+                     'noisy': view.get('noisy', False), 'noise': model.noise_model, 'elements': len(model.noise),
+                     'branches': view.get('branches'), 'dynamic': view.get('dynamic', False)}
         self._sync_keep_boxes()
         self._render()
 
@@ -258,7 +262,11 @@ class StateInspector(QWidget):
                     + ' are not applied: this is the state before measurement.') if v['measured'] else ''
         starts = ', '.join(f'q{q} {label}' for q, label in enumerate(v['initial']) if label != '|0⟩')
         noisy = ''
-        if v['rho'] is not None:
+        if v['branches'] is not None:
+            from quantumscope.physics import noise as N
+            noisy = (f'<br><b>Dynamic circuit:</b> {len(v["branches"])} branch(es), one per classical record. '
+                     f'The state shown is their average (purity {N.purity(v["rho"]):.4f}); see the Branches tab.')
+        elif v['rho'] is not None:
             from quantumscope.physics import noise as N
             noisy = (f'<br><b>Noisy simulation (mixed state):</b> purity {N.purity(v["rho"]):.4f}, '
                      f'fidelity with the ideal state {N.fidelity_with_pure(v["rho"], v["state"]):.4f}.')
@@ -271,6 +279,7 @@ class StateInspector(QWidget):
         self.tabs.setTabText(0, 'Probabilities' if mixed else 'Amplitudes')
         self.tabs.setTabText(1, 'Density matrix' if mixed else 'Statevector')
         self._render_amplitudes()
+        self._render_branches()
         self._render_statevector()
         self._render_reduced()
         self._render_circuit()
@@ -298,6 +307,37 @@ class StateInspector(QWidget):
             self.amp_table.setCellWidget(r, 5, swatch)
         nonzero = int(np.sum(np.abs(v['state']) > 1e-10))
         self.amp_summary.setText(f'{nonzero} of {1 << v["n"]} amplitudes nonzero')
+
+    def _render_branches(self):
+        """One row per classical record: its probability and every qubit's Bloch vector in that branch."""
+        from quantumscope.physics import noise as N
+        v = self.view
+        branches = v.get('branches')
+        if not branches:
+            self.branch_view.setHtml('<p>No mid-circuit measurements at this step.</p><p>Add <b>M→c</b> from the '
+                                     'Classical palette to measure a qubit mid-circuit; each possible result then '
+                                     'becomes a branch, listed here with its probability and state.</p>')
+            return
+        n = v['n']
+        nbits = len(branches[0].bits)
+        head = ''.join(f'<th>q{q} Bloch (x, y, z)</th>' for q in range(n))
+        rows = []
+        for b in sorted(branches, key=lambda b: b.bits):
+            rho = b.rho
+            blochs = ''.join('<td>({:.2f}, {:.2f}, {:.2f})</td>'.format(
+                *(round(c, 2) + 0.0 for c in N.bloch(N.partial_trace(rho, n, [q]))))      # + 0.0: no "-0.00"
+                for q in range(n))
+            record = ''.join(map(str, b.bits))
+            rows.append(f'<tr><td><b>{record}</b></td><td>{b.probability * 100:.2f}%</td>'
+                        f'<td>{N.purity(rho):.3f}</td>{blochs}</tr>')
+        bits = ''.join(f'c{k}' for k in range(nbits))
+        self.branch_view.setHtml(
+            f'<p><b>{len(branches)} branch(es)</b> — each is one possible record of the classical bits ({bits}, c0 first) '
+            'and the state of the qubits given that record.</p>'
+            f'<table border="1" cellpadding="4" cellspacing="0"><tr><th>Record {bits}</th><th>Probability</th>'
+            f'<th>Purity</th>{head}</tr>' + ''.join(rows) + '</table>'
+            '<p style="color:gray">Compare a qubit\'s Bloch vector across branches: a classically controlled '
+            'correction makes them agree.</p>')
 
     def _render_populations(self):
         """Mixed state: amplitudes are undefined; show noisy probabilities beside the ideal ones."""

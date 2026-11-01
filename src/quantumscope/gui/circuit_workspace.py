@@ -17,6 +17,7 @@ from quantumscope.physics import noise as noisemod
 # Palette names for placeable noise channels -> channel kind (drawn as dashed boxes).
 NOISE_PALETTE = {'Bit flip': 'bit_flip', 'Phase flip': 'phase_flip', 'Depolarize': 'depolarizing',
                  'Amp. damp': 'amplitude_damping', 'Dephase': 'phase_damping'}
+CLASSICAL_PALETTE = ('M→c', 'Reset')     # mid-circuit measurement into a classical bit; reset to |0⟩
 NOISE_SHORT = {'bit_flip': 'BF', 'phase_flip': 'PF', 'depolarizing': 'DEP', 'amplitude_damping': 'AD',
                'phase_damping': 'PD'}
 from quantumscope.gui import preferences as prefs
@@ -121,6 +122,7 @@ class Grid(QTableWidget):
                 p.drawText(box,Qt.AlignmentFlag.AlignCenter,g.name)
         self._draw_blocks(p,blocks,rect)
         self._draw_noise(p,rows)
+        self._draw_classical(p,rows)
         # Draw incomplete multi-qubit placement as a preview, not a committed gate.
         pending = getattr(self.owner, '_pending_gate', None)
         if pending:
@@ -161,6 +163,41 @@ class Grid(QTableWidget):
         top=self.visualRect(self.model().index(pl.block.low,pl.col))
         bottom=self.visualRect(self.model().index(pl.block.high,min(pl.end,self.columnCount()-1)))
         return QRectF(top.left(),top.top(),bottom.right()-top.left(),bottom.bottom()-top.top())
+
+    def _draw_classical(self,p,rows):
+        """Mid-circuit measurements (M→c), resets, and 'if c = v' badges on conditioned gates."""
+        from quantumscope.physics.dynamic import Measure, Reset
+        model=self.owner.model
+        for (row,col),item in model.wires.items():
+            if row>=rows or col>=self.columnCount() or not isinstance(item,(Measure,Reset)):continue
+            box=QRectF(self.visualRect(self.model().index(row,col))).adjusted(9,6,-9,-6)
+            if isinstance(item,Measure):
+                p.setPen(QPen(canvas_color('measure_border'),2));p.setBrush(canvas_color('measure_fill'))
+                p.drawRoundedRect(box,5,5)
+                p.setPen(canvas_color('measure_text'))
+                p.setFont(QFont('Sans',10,QFont.Weight.Bold))
+                p.drawText(box.adjusted(0,1,0,-box.height()/2+2),Qt.AlignmentFlag.AlignCenter,'M')
+                p.setFont(QFont('Sans',8,QFont.Weight.DemiBold))
+                p.drawText(box.adjusted(0,box.height()/2-2,0,-1),Qt.AlignmentFlag.AlignCenter,f'→c{item.cbit}')
+            else:
+                p.setPen(QPen(canvas_color('gate_border'),1.7));p.setBrush(canvas_color('gate_fill'))
+                p.drawRoundedRect(box,5,5)
+                p.setPen(canvas_color('gate_text'))
+                p.setFont(QFont('Sans',10,QFont.Weight.DemiBold))
+                p.drawText(box.adjusted(0,1,0,-box.height()/2+2),Qt.AlignmentFlag.AlignCenter,'|0⟩')
+                p.setFont(QFont('Sans',7))
+                p.drawText(box.adjusted(0,box.height()/2-2,0,-1),Qt.AlignmentFlag.AlignCenter,'reset')
+        for (row,col),(cbit,value) in model.conditions.items():
+            gate=model.gates.get((row,col))
+            if gate is None or col>=self.columnCount():continue
+            target=gate.targets[-1]
+            if target>=rows:continue
+            cell=QRectF(self.visualRect(self.model().index(target,col)))
+            badge=QRectF(cell.center().x()-22,cell.top()-1,44,13)
+            p.setPen(QPen(canvas_color('measure_border'),1.2));p.setBrush(canvas_color('measure_fill'))
+            p.drawRoundedRect(badge,4,4)
+            p.setPen(canvas_color('measure_text'));p.setFont(QFont('Sans',7,QFont.Weight.Bold))
+            p.drawText(badge,Qt.AlignmentFlag.AlignCenter,f'c{cbit}={value}')
 
     def _draw_noise(self,p,rows):
         """Noise channels: a dashed orange box, never mistaken for a gate."""
@@ -489,6 +526,12 @@ class CircuitWorkspace(QWidget):
         self.palette.setToolTip('Drag to place a gate; double-click for the Gate Explorer')
         self.palette.itemDoubleClicked.connect(lambda item:self.show_gate_explorer(item.text()))
         sv.addWidget(self.palette)
+        sv.addWidget(QLabel('Classical'))
+        self.classical_palette=Palette();self.classical_palette.addItems(list(CLASSICAL_PALETTE));self._grid_palette(self.classical_palette,2,92)
+        self.classical_palette.item(0).setToolTip('Mid-circuit measurement: measures the qubit here and stores the result '
+                                                   'in a classical bit (c0 by default for q0, c1 for q1 …); later gates can be conditioned on it')
+        self.classical_palette.item(1).setToolTip('Reset: returns the qubit to |0⟩ at this point')
+        sv.addWidget(self.classical_palette)
         sv.addWidget(QLabel('Noise'))
         self.noise_palette=Palette();self.noise_palette.addItems(list(NOISE_PALETTE));self._grid_palette(self.noise_palette,2,92)
         self.noise_palette.setToolTip('Drag a noise channel onto a wire; double-click here to learn what it does')
@@ -633,6 +676,9 @@ class CircuitWorkspace(QWidget):
         self.status.setText(str(exc))
 
     def snapshot(self):self.model.snapshot()
+    def _exec_menu(self,menu,pos):
+        """Show a right-click menu at a canvas position (one place, so tests can choose an entry)."""
+        return menu.exec(self.grid.viewport().mapToGlobal(pos))
 
     # ---- noise ------------------------------------------------------------------------------
     @staticmethod
@@ -704,6 +750,13 @@ class CircuitWorkspace(QWidget):
         chosen=noisemod.NoiseModel(enabled.isChecked(),idle=idle.isChecked(),**{k:b.value() for k,b in fields.items()})
         if self.model.set_noise_model(chosen):self._changed()
         else:self.noise_button.setText(self._noise_summary())
+    def _branches_at(self,k):
+        """The branches (classical record + state) after column k, or None."""
+        if not self.branch_view:return None
+        occupied,history=self.branch_view
+        if self.model.n<=noisemod.MAX_STORED_QUBITS:
+            return history[sum(1 for c in occupied if c<k)]
+        return history[-1] if k>=self.step.maximum() else None
     def _noisy_state_at(self,k):
         """Density matrix after column k when noise is simulated (None if not available for this step)."""
         view=self.noisy_view
@@ -871,7 +924,8 @@ class CircuitWorkspace(QWidget):
         states=getattr(self,'column_states',None) or [self.model.initial_vector()]
         return {'state':states[min(completed,len(states)-1)],'n':self.model.n,'step':k,
                 'steps':self.step.maximum(),'layers_done':completed,'model':self.model,
-                'rho':self._noisy_state_at(k) if self.noisy_view else None,'noisy':bool(self.noisy_view)}
+                'rho':self._noisy_state_at(k) if self.noisy_view else None,'noisy':bool(self.noisy_view),
+                'branches':self._branches_at(k),'dynamic':bool(self.branch_view)}
     def undo(self):
         if self.model.undo():self._changed()
     def redo(self):
@@ -924,6 +978,11 @@ class CircuitWorkspace(QWidget):
         super().keyPressEvent(event)
 
     def place(self,name,row,col,operands=None):
+        if name in CLASSICAL_PALETTE:
+            try:placed=self.model.place_measure(row,col) if name=='M→c' else self.model.place_reset(row,col)
+            except EditorError as exc:self._rejected(exc);return
+            if placed:self._changed()
+            return
         if name in NOISE_PALETTE:
             try:placed=self.model.place_noise(NOISE_PALETTE[name],row,col,self.new_noise_p)
             except EditorError as exc:self._rejected(exc);return
@@ -1024,11 +1083,25 @@ class CircuitWorkspace(QWidget):
         if found is None:return
         if found[0]=='block' and not self.model.pending:
             self._block_menu(found[1],found[2],pos);return
+        if found[0] in ('measure','reset') and not self.model.pending:
+            menu=QMenu(self)
+            title=menu.addAction(found[2].label);title.setEnabled(False)
+            bits={}
+            if found[0]=='measure':
+                store=menu.addMenu('Store result in')
+                for k in range(10):
+                    action=store.addAction(f'c{k}');action.setCheckable(True);action.setChecked(k==found[2].cbit);bits[action]=k
+            remove=menu.addAction('Remove')
+            chosen=self._exec_menu(menu,pos)
+            if chosen in bits:
+                if self.model.set_measure_bit(row,col,bits[chosen]):self._changed()
+            elif chosen is remove:self.remove_at(pos)
+            return
         if found[0]=='noise' and not self.model.pending:
             menu=QMenu(self)
             title=menu.addAction(found[2].label);title.setEnabled(False)
             edit=menu.addAction('Edit noise…');about=menu.addAction('About this channel…');remove=menu.addAction('Remove noise')
-            chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
+            chosen=self._exec_menu(menu,pos)
             if chosen is edit:self.edit_noise_dialog(row,col)
             elif chosen is about:self.show_noise_explorer(found[2].kind,found[2].p)
             elif chosen is remove:self.remove_at(pos)
@@ -1036,13 +1109,35 @@ class CircuitWorkspace(QWidget):
         menu=QMenu(self)
         if self.model.pending:
             cancel=menu.addAction('Cancel multi-qubit placement')
-            if menu.exec(self.grid.viewport().mapToGlobal(pos)) is cancel:self.cancel_pending()
+            if self._exec_menu(menu,pos) is cancel:self.cancel_pending()
             return
         edit=menu.addAction('Edit parameters…') if self.model.editable_gate(row,col) else None
+        conditions={}
+        if found[0]=='gate':
+            from quantumscope.physics.dynamic import Measure
+            # "Run only if": classical conditions on bits written by mid-circuit measurements
+            current=self.model.conditions.get(found[1])
+            when=menu.addMenu('Run only if…')
+            always=when.addAction('Always (no condition)');always.setCheckable(True);always.setChecked(current is None)
+            conditions[always]=None
+            bits=sorted({item.cbit for item in self.model.wires.values() if isinstance(item,Measure)}
+                        |({current[0]} if current else set()))
+            if not bits:
+                hint=when.addAction('Add an M→c measurement first');hint.setEnabled(False)
+            for k in bits:
+                for value in (1,0):
+                    action=when.addAction(f'c{k} = {value}');action.setCheckable(True)
+                    action.setChecked(current==(k,value));conditions[action]=(k,value)
         delete=menu.addAction('Remove measurement' if found[0]=='measurement' else 'Remove gate')
-        chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
+        chosen=self._exec_menu(menu,pos)
         if chosen is edit and edit is not None:self.edit_gate_at(row,col)
         elif chosen is delete:self.remove_at(pos)
+        elif chosen in conditions:
+            try:
+                changed=(self.model.clear_condition(row,col) if conditions[chosen] is None
+                         else self.model.set_condition(row,col,*conditions[chosen]))
+            except EditorError as exc:self._rejected(exc);return
+            if changed:self._changed()
 
     def try_gate(self,name,angle=math.pi/2,phi=0.0,lam=0.0):
         """Load one gate into a small circuit with starting states that make its effect visible."""
@@ -1087,7 +1182,14 @@ class CircuitWorkspace(QWidget):
             # One state per occupied *column*, including simultaneous disjoint gates.
             sim=self.model.simulate()
             self.occupied_columns,self.column_states,self.states=sim.occupied_columns,sim.column_states,sim.states
-            self.noisy_view=self.model.simulate_noisy() if self.model.noisy else None
+            self.branch_view=None
+            if self.model.dynamic:                   # one branch simulation feeds both views
+                from quantumscope.physics.dynamic import averaged
+                occupied,history=self.model.simulate_branches()
+                self.branch_view=(occupied,history)
+                self.noisy_view=(occupied,[averaged(b) for b in history])
+            else:
+                self.noisy_view=self.model.simulate_noisy() if self.model.noisy else None
         except Exception as exc:self.status.setText(str(exc));return
         last=max(self.occupied_columns+(self.noisy_view[0] if self.noisy_view else []),default=-1)
         for (r,c),element in self.model.noise.items():
@@ -1102,7 +1204,8 @@ class CircuitWorkspace(QWidget):
         self.status.setText(f'{self.n} qubits • {len(self.model.ordered())} gates'
                             +(f' ({blocks} block{"s" if blocks!=1 else ""}: double-click to expand, right-click for options)' if blocks else '')
                             +f' • {len(self.noisy_view[0]) if self.noisy_view else len(self.occupied_columns)} occupied columns • '
-                            +('noisy density-matrix simulation' if self.noisy_view else 'exact ideal simulation'))
+                            +('dynamic circuit: exact branches for every measurement outcome' if self.branch_view else
+                              'noisy density-matrix simulation' if self.noisy_view else 'exact ideal simulation'))
         if has_specification(self.active_example) and hasattr(self,'verify_table'):self.verify_circuit()
     def _sync_timeline(self):
         self.inline_blochs.update()
@@ -1134,8 +1237,15 @@ class CircuitWorkspace(QWidget):
             self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
             self.bars.set_probabilities(probs,self.n)
             self.bars.title='Noisy probabilities (density matrix, before measurement) · cyan: theory'
-            ideal=self.column_states[completed]
-            extra=f'   •   purity {noisemod.purity(rho):.4f}, fidelity with ideal {noisemod.fidelity_with_pure(rho,ideal):.4f}'
+            branches=self._branches_at(k)
+            if branches is not None:
+                # Dynamic circuit: the ideal statevector ignores measurements, so report branches instead.
+                records=sorted(branches,key=lambda b:-b.probability)
+                shown='  '.join(f'c={"".join(map(str,b.bits)) or "–"} {b.probability*100:.1f}%' for b in records[:4])
+                extra=f'   •   {len(branches)} branch{"es" if len(branches)!=1 else ""}: {shown}'+(' …' if len(records)>4 else '')
+            else:
+                ideal=self.column_states[completed]
+                extra=f'   •   purity {noisemod.purity(rho):.4f}, fidelity with ideal {noisemod.fidelity_with_pure(rho,ideal):.4f}'
         else:
             vectors=[bloch(state,self.n,q) for q in range(self.n)]
             self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
@@ -1159,6 +1269,18 @@ class CircuitWorkspace(QWidget):
         probs=noisemod.apply_readout(probs,self.n,measured,self.model.noise_model.readout if self.model.noise_model.enabled else 0.0)
         return probs/probs.sum()
     def measure(self):
+        if self.branch_view and not self.measurements:
+            from quantumscope.physics.dynamic import record_distribution
+            record=record_distribution(self.branch_view[1][-1])
+            nbits=len(next(iter(record)))
+            probs=np.zeros(2**nbits)
+            for record_bits,p in record.items():probs[int(record_bits,2)]=p
+            counts=np.random.default_rng().multinomial(self.shots.value(),probs/probs.sum())
+            self.bars.set_probabilities(probs,nbits,counts)
+            self.bars.title='Classical bits '+''.join(f'c{k}' for k in range(nbits))+' (mid-circuit results) · cyan: theory · orange: shots'
+            self.result.setPlainText('Classical record (c0 first):  '+'   '.join(
+                f'{format(i,f"0{nbits}b")} {int(counts[i])}' for i in range(2**nbits) if counts[i]))
+            return
         probs=self._final_distribution()
         counts=np.random.default_rng().multinomial(self.shots.value(),probs)
         measured=sorted(self.measurements)
@@ -1198,7 +1320,7 @@ class CircuitWorkspace(QWidget):
         menu.addSeparator()
         ungroup=menu.addAction('Ungroup (make gates editable)')
         remove=menu.addAction('Remove block')
-        chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
+        chosen=self._exec_menu(menu,pos)
         if chosen is toggle:(self.collapse_block if pl.expanded else self.expand_block)(bid)
         elif edit is not None and chosen is edit:self.edit_block_dialog(bid)
         elif chosen is contents:self.show_block_contents(bid)
