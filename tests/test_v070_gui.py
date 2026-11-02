@@ -320,3 +320,25 @@ def test_gate_editor_and_panel_accept_latex_greek_names(app, monkeypatch):
     w.param_name.setText('theta')                                 # without the backslash: the plain name
     w._add_parameter_clicked()
     assert 'theta' in w.model.parameters
+
+
+def test_optimize_and_landscape_windows_are_reused_and_follow_the_path(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.show()
+    w.load_library('qaoa', {'graph': 'ring4', 'layers': 1})
+    w.model.set_parameter('γ0', 0.15)
+    w.model.set_parameter('β0', 1.0)
+    w._changed()
+    landscape = w.show_landscape()
+    assert landscape.view.path is None                            # nothing optimized yet
+    first = w.optimize_parameters()
+    assert landscape.view.path is not None and len(landscape.view.path) > 2     # redrawn with the new path
+    assert landscape.view.path[0] == pytest.approx((0.15, 1.0))
+    landscape.draw()
+    assert landscape.view.path is not None                        # Draw keeps the latest path
+    assert w.optimize_parameters() is first and w.show_landscape() is landscape   # no new windows
+    w.load_library('vqe', {'problem': 'h2', 'layers': 1})
+    again = w.show_landscape()
+    assert again is landscape and again.view.path is None          # a stale path is never drawn
+    assert [again.first.itemText(i) for i in range(again.first.count())] == ['θ0', 'θ1', 'θ2', 'θ3']

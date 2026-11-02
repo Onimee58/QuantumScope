@@ -110,6 +110,14 @@ class OptimizeDialog(QDialog):
     def _stop(self):
         self.stopped = True
 
+    def configure(self, method, steps):
+        """Reuse this window for a new run (the panel's current method and step limit)."""
+        self.method, self.steps = method, steps
+        self.history, self.stopped = [], False
+        self.stop_button.setEnabled(True)
+        self.chart.set_data([], None)
+        self.summary.setText('Optimizing…')
+
     def run(self):
         model = self.workspace.model
         exact = V.Evaluator(model).exact_minimum()
@@ -229,6 +237,9 @@ class LandscapeView(QWidget):
                 pts = [QPointF(sx(a), sy(b)) for a, b in self.path]
                 for a, b in zip(pts, pts[1:]):
                     p.drawLine(a, b)
+                p.setBrush(Qt.BrushStyle.NoBrush)                     # where the path started
+                p.setPen(QPen(QColor('white'), 2))
+                p.drawEllipse(pts[0], 6, 6)
             if self.current is not None:
                 p.setPen(QPen(QColor('white'), 2))
                 p.setBrush(QColor('#ff5a5a'))
@@ -262,17 +273,11 @@ class LandscapeDialog(QDialog):
     def __init__(self, workspace, path=None):
         super().__init__(workspace)
         self.setWindowTitle('Energy landscape')
-        self.workspace, self.path_history = workspace, path
+        self.workspace = workspace
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
-        names = list(workspace.model.parameters)
         self.first, self.second = QComboBox(), QComboBox()
-        self.first.addItems(names)
-        self.second.addItem('— (one parameter: a curve)', None)
-        for n in names:
-            self.second.addItem(n, n)
-        if len(names) > 1:
-            self.second.setCurrentIndex(2)
+        self.refresh_names()
         row.addWidget(QLabel('Horizontal'))
         row.addWidget(self.first)
         row.addWidget(QLabel('Vertical'))
@@ -285,14 +290,44 @@ class LandscapeDialog(QDialog):
         self.view = LandscapeView()
         layout.addWidget(self.view, 1)
         self.note = QLabel('Blue is low ⟨H⟩, yellow is high. The red dot is the current parameters; the white '
-                           'line is the last optimization path. Other parameters are held at their current values, '
-                           'so with more than two parameters the path is a projection.')
+                           'line is the last optimization path, starting at the white ring. Other parameters are '
+                           'held at their current values, so with more than two parameters the path is a projection.')
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
         self.resize(720, 600)
 
+    @property
+    def path_history(self):
+        """Always the workspace's latest optimization path, so Draw shows the current white line."""
+        current = getattr(self.workspace, 'optimization_path', None)
+        return current() if callable(current) else None
+
+    def refresh_names(self):
+        """Follow the circuit's parameters, keeping the chosen ones when they still exist."""
+        names = list(self.workspace.model.parameters)
+        first, second = self.first.currentText(), self.second.currentData()
+        for box in (self.first, self.second):
+            box.blockSignals(True)
+            box.clear()
+        self.first.addItems(names)
+        self.second.addItem('— (one parameter: a curve)', None)
+        for n in names:
+            self.second.addItem(n, n)
+        if first in names:
+            self.first.setCurrentText(first)
+        if second in names:
+            self.second.setCurrentIndex(self.second.findData(second))
+        elif len(names) > 1:
+            self.second.setCurrentIndex(self.second.findData(names[1] if names[1] != self.first.currentText() else names[0]))
+        for box in (self.first, self.second):
+            box.blockSignals(False)
+
     def draw(self):
         model = self.workspace.model
+        if not model.parameters or not model.observable:
+            return None
+        if self.first.currentText() not in model.parameters:
+            self.refresh_names()
         a, b = self.first.currentText(), self.second.currentData()
         if b == a:
             b = None

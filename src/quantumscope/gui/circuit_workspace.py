@@ -780,18 +780,41 @@ class CircuitWorkspace(QWidget):
         v.addWidget(self.param_panel)
         self._refresh_parameter_panel()
     def optimize_parameters(self):
+        """Runs in the existing Optimize window when there is one (no new window each time)."""
         from quantumscope.gui.variational_views import OptimizeDialog
         if not self.model.parameters or not self.model.observable:
             self.status.setText('Optimize needs at least one parameter and an observable.');return None
-        dialog=OptimizeDialog(self,self.opt_method.currentData(),self.opt_steps.value())
-        dialog.show();self._last_path=dialog.run()
+        dialog=getattr(self,'_optimize_dialog',None)
+        if dialog is None:
+            dialog=self._optimize_dialog=OptimizeDialog(self,self.opt_method.currentData(),self.opt_steps.value())
+        dialog.configure(self.opt_method.currentData(),self.opt_steps.value())
+        dialog.show();dialog.raise_();dialog.activateWindow()
+        self._last_path=dialog.run()
+        self._last_path_for=self._path_key()
         self._refresh_parameter_panel()
+        landscape=getattr(self,'_landscape_dialog',None)
+        if landscape is not None and landscape.isVisible():     # the open landscape shows the new path
+            landscape.refresh_names();landscape.draw()
         return dialog
+    def _path_key(self):
+        """What an optimization path belongs to: drawn only while the circuit still matches."""
+        m=self.model
+        return (m.n,tuple(m.parameters),m.observable,tuple(sorted(m.bindings.items())),
+                tuple(sorted((k,g.name,g.targets) for k,g in m.gates.items())))
+    def optimization_path(self):
+        if getattr(self,'_last_path_for',None)!=self._path_key():return None
+        return getattr(self,'_last_path',None)
     def show_landscape(self):
+        """Shows (and redraws) the existing Landscape window when there is one."""
         from quantumscope.gui.variational_views import LandscapeDialog
         if not self.model.parameters or not self.model.observable:
             self.status.setText('The landscape needs at least one parameter and an observable.');return None
-        dialog=LandscapeDialog(self,getattr(self,'_last_path',None));dialog.draw();dialog.show()
+        dialog=getattr(self,'_landscape_dialog',None)
+        if dialog is None:
+            dialog=self._landscape_dialog=LandscapeDialog(self)
+        else:
+            dialog.refresh_names()
+        dialog.draw();dialog.show();dialog.raise_();dialog.activateWindow()
         return dialog
     def _observable_choices(self):
         """Example observables for this many qubits: (text, plain-words description)."""
