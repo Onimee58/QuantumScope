@@ -197,3 +197,54 @@ def test_optimize_and_landscape_from_the_panel(app):
     w.observable_edit.setText('')
     w._observable_edited()
     assert not w.opt_button.isEnabled()
+
+
+def test_parameter_rows_are_never_squashed_and_the_page_grows(app):
+    from PySide6.QtWidgets import QLabel
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.resize(1400, 950)
+    w.show()
+    w.set_circuit(2, [])
+    app.processEvents()
+    empty_page = w._center.minimumHeight()
+    for name in ('a', 'b', 'c', 'd', 'e', 'f'):
+        w.model.add_parameter(name)
+    w.observable_edit.setText('Z0')
+    w._observable_edited()
+    app.processEvents()
+    rows = [w.param_rows.itemAt(i).widget() for i in range(w.param_rows.count())]
+    assert all(r.height() == w.PARAM_ROW for r in rows)
+    assert [b.y() - a.y() for a, b in zip(rows, rows[1:])] == [w.PARAM_ROW + 4] * 5   # spaced, not overlapping
+    assert w.param_scroll.height() < w.param_list.height()                            # extra rows scroll
+    assert w._center.minimumHeight() > empty_page
+    help_label = next(l for l in w.findChildren(QLabel) if l.text().startswith('Drag a multi-qubit'))
+    bottom = w.param_panel.mapTo(w._center, w.param_panel.rect().bottomLeft()).y()
+    assert bottom < help_label.mapTo(w._center, help_label.rect().topLeft()).y()     # nothing drawn over it
+    w.clear()
+    app.processEvents()
+    assert not w.param_panel.isVisible() and w._center.minimumHeight() <= empty_page   # shrinks back
+
+
+def test_convergence_summary_and_chart_range(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    from quantumscope.gui.variational_views import ConvergenceChart
+    w = CircuitWorkspace()
+    w.set_circuit(1, [])
+    w.place('RY', 0, 0)
+    w.model.bind(0, 0, 'angle', 'θ')
+    w.model.set_parameter('θ', 3.141592653589793)
+    w.observable_edit.setText('Z0')
+    w._observable_edited()
+    dialog = w.optimize_parameters()
+    assert 'already at the exact minimum' in dialog.summary.text()
+    w.model.set_parameter('θ', 0.3)
+    dialog = w.optimize_parameters()
+    import re
+    text = dialog.summary.text()
+    steps = int(re.search(r'after (\d+) iteration', text).group(1))
+    assert 'went from' in text and (f'{steps} iteration:' if steps == 1 else f'{steps} iterations:') in text
+    chart = ConvergenceChart()
+    chart.resize(600, 320)
+    chart.set_data([-1.0000000001, -1.0], -1.0)
+    chart.grab()                                                  # paints without collapsing to a zero range

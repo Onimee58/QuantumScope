@@ -5,7 +5,7 @@ import html
 import numpy as np
 from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QDrag, QFont, QBrush, QWheelEvent, QPdfWriter, QPageSize
-from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
+from PySide6.QtWidgets import (QFrame, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
     QLabel, QPushButton, QListWidget, QTableWidget, QTableWidgetItem, QSpinBox,
     QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton, QSizePolicy, QDialog, QDialogButtonBox, QLineEdit, QTabWidget, QApplication, QDoubleSpinBox)
 from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured, from_native_layout, from_qasm_layout
@@ -632,8 +632,8 @@ class CircuitWorkspace(QWidget):
         run=QPushButton('Run measurement shots');run.clicked.connect(self.measure);shots.addWidget(run)
         # Maintain the complete ten-wire canvas even when the host tab is short.
         # The page scrolls instead of allowing the splitter to compress it.
-        center.setMinimumHeight(center.sizeHint().height())
-        split.setMinimumHeight(center.minimumHeight() + 8)
+        self._center,self._split=center,split
+        self._refit_page()
         split.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         split.setStretchFactor(1,1)
         self.qubits.valueChanged.connect(self.resize_qubits);self.step.valueChanged.connect(self.show_step)
@@ -710,10 +710,37 @@ class CircuitWorkspace(QWidget):
         if not m or m.group(3).lower()=='pi':return None
         factor=parse_angle(m.group(1)) if m.group(1) else 1.0
         return m.group(3),(-factor if m.group(2) else factor)
+    PARAM_ROW=34
+    def _fit_parameter_panel(self):
+        """Reserve the height the panel's contents need, so the layout cannot squeeze its rows."""
+        count=len(self.model.parameters)
+        self.param_list.setMinimumHeight(count*self.PARAM_ROW+max(0,count-1)*4)   # rows scroll, never squash
+        self.param_panel.layout().activate()
+        self.param_panel.setMinimumHeight(self.param_panel.layout().sizeHint().height()
+                                          if self.param_panel.isVisibleTo(self) else 0)
+        self.param_panel.updateGeometry()
+        self._refit_page()
+    def _refit_page(self):
+        """The page grows with its contents (it was measured only once before, so a growing panel
+        was squeezed into the old height and widgets overlapped)."""
+        if not hasattr(self,'_center'):return
+        self._center.setMinimumHeight(0)
+        self._center.layout().activate()
+        need=self._center.sizeHint().height()
+        self._center.setMinimumHeight(need)
+        self._split.setMinimumHeight(need+8)
     def _build_parameter_panel(self,v):
         self.param_panel=QGroupBox('Parameters && observable')
+        # Keep the height the contents need: the canvas above must never squeeze these rows.
+        self.param_panel.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)
         layout=QVBoxLayout(self.param_panel)
-        self.param_rows=QVBoxLayout();layout.addLayout(self.param_rows)
+        # Parameter rows keep a fixed height; more than four scroll instead of being squashed.
+        self.param_list=QWidget();self.param_rows=QVBoxLayout(self.param_list)
+        self.param_rows.setContentsMargins(0,0,0,0);self.param_rows.setSpacing(4)
+        self.param_scroll=QScrollArea();self.param_scroll.setWidgetResizable(True);self.param_scroll.setWidget(self.param_list)
+        self.param_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.param_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        layout.addWidget(self.param_scroll)
         add=QHBoxLayout()
         self.param_name=QLineEdit();self.param_name.setPlaceholderText('new parameter, e.g. θ or gamma');add.addWidget(self.param_name,1)
         add_button=QPushButton('Add parameter');add_button.clicked.connect(self._add_parameter_clicked);add.addWidget(add_button)
@@ -780,10 +807,15 @@ class CircuitWorkspace(QWidget):
         self.observable_examples.setCurrentIndex(0)
         if text:
             self.observable_edit.setText(text);self._observable_edited()
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if hasattr(self,'param_panel') and self.param_panel.isVisible():self._fit_parameter_panel()
     def _update_parameter_visibility(self):
         if hasattr(self,'param_panel'):
             in_use=bool(self.model.parameters or self.model.observable)
-            self.param_panel.setVisible(in_use or self.param_toggle.isChecked())
+            visible=in_use or self.param_toggle.isChecked()
+            if visible!=self.param_panel.isVisibleTo(self):
+                self.param_panel.setVisible(visible);self._fit_parameter_panel()
             ready=bool(self.model.parameters and self.model.observable)
             self.opt_button.setEnabled(ready);self.landscape_button.setEnabled(ready)
     def _add_parameter_clicked(self):
@@ -799,8 +831,8 @@ class CircuitWorkspace(QWidget):
                 widget.hide();widget.setParent(None);widget.deleteLater()
         self._param_widgets={}
         for name,value in self.model.parameters.items():
-            row=QWidget();h=QHBoxLayout(row);h.setContentsMargins(0,0,0,0)
-            h.addWidget(QLabel(name))
+            row=QWidget();row.setFixedHeight(self.PARAM_ROW);h=QHBoxLayout(row);h.setContentsMargins(0,0,0,0)
+            label=QLabel(name);label.setMinimumWidth(56);h.addWidget(label)
             slider=QSlider(Qt.Orientation.Horizontal);slider.setRange(-3600,3600)      # −2π … 2π in 1/1800 π steps
             slider.setValue(round(value/math.pi*1800));h.addWidget(slider,1)
             box=QDoubleSpinBox();box.setDecimals(6);box.setRange(-4*math.pi,4*math.pi);box.setSingleStep(0.05)
@@ -813,6 +845,10 @@ class CircuitWorkspace(QWidget):
             slider.valueChanged.connect(lambda v,n=name,b=box:self._parameter_moved(n,v*math.pi/1800,b))
             box.editingFinished.connect(lambda n=name,b=box:self._parameter_typed(n,b.value()))
             self.param_rows.addWidget(row);self._param_widgets[name]=(slider,box)
+        shown=min(len(self.model.parameters),4)
+        self.param_scroll.setVisible(shown>0)
+        self.param_scroll.setFixedHeight(shown*(self.PARAM_ROW+4)+2 if shown else 0)
+        self._fit_parameter_panel()
         self.observable_edit.setText(self.model.observable)
         self._fill_observable_examples()
         self._update_parameter_visibility()

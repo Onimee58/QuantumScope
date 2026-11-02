@@ -34,10 +34,14 @@ class ConvergenceChart(QWidget):
         left, top, right, bottom = 70, 16, self.width() - 16, self.height() - 40
         values = self.energies + ([self.exact] if self.exact is not None else [])
         lo, hi = min(values), max(values)
-        if hi - lo < 1e-9:
-            lo, hi = lo - 0.5, hi + 0.5
+        # Never zoom into rounding noise: show at least 1% of the energy scale (or 0.01).
+        least = max(0.01, 0.01 * max(abs(lo), abs(hi)))
+        if hi - lo < least:
+            middle = (hi + lo) / 2
+            lo, hi = middle - least / 2, middle + least / 2
         pad = 0.06 * (hi - lo)
         lo, hi = lo - pad, hi + pad
+        digits = min(8, max(3, 2 - int(math.floor(math.log10(hi - lo)))))   # enough decimals to tell ticks apart
         count = max(1, len(self.energies) - 1)
         x = lambda i: left + (right - left) * i / count
         y = lambda e: bottom - (bottom - top) * (e - lo) / (hi - lo)
@@ -49,7 +53,7 @@ class ConvergenceChart(QWidget):
         p.setFont(QFont('Sans', 8))
         for k in range(5):
             e = lo + (hi - lo) * k / 4
-            p.drawText(QRectF(2, y(e) - 7, left - 8, 14), Qt.AlignmentFlag.AlignRight, f'{e:.4f}')
+            p.drawText(QRectF(2, y(e) - 7, left - 8, 14), Qt.AlignmentFlag.AlignRight, f'{e:.{digits}f}')
         p.drawText(QRectF(left, bottom + 6, right - left, 14), Qt.AlignmentFlag.AlignCenter,
                    f'iteration (0 … {len(self.energies) - 1})')
         if self.exact is not None:
@@ -117,12 +121,17 @@ class OptimizeDialog(QDialog):
         self.workspace._sync_parameter_values()
         self.chart.set_data([e for _, e in self.history], exact)
         gap = energy - exact if exact is not None else None
-        verdict = ('' if gap is None else
-                   ' — the ground state is reached.' if gap < 1e-6 else
-                   f' — {gap:.4g} above the exact minimum. More layers (or another method) may help.')
-        self.summary.setText(f'{"Stopped" if self.stopped else "Finished"} after {len(self.history) - 1} '
-                             f'iterations: ⟨H⟩ = {energy:.6f}' + (f', exact {exact:.6f}' if exact is not None else '')
-                             + verdict)
+        start = self.history[0][1]
+        steps = len(self.history) - 1
+        if exact is not None and start - exact < 1e-6:
+            self.summary.setText(f'⟨H⟩ = {start:.6f} was already at the exact minimum: nothing to improve.')
+        else:
+            verdict = ('' if gap is None else
+                       ' — the ground state is reached.' if gap < 1e-6 else
+                       f' — {gap:.4g} above the exact minimum. More layers (or another method) may help.')
+            self.summary.setText(f'{"Stopped" if self.stopped else "Finished"} after {steps} '
+                                 f'iteration{"" if steps == 1 else "s"}: ⟨H⟩ went from {start:.6f} to {energy:.6f}'
+                                 + (f' (exact minimum {exact:.6f})' if exact is not None else '') + verdict)
         self.stop_button.setEnabled(False)
         return self.history
 
