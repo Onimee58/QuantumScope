@@ -54,7 +54,7 @@ def text(terms):
         number = '' if abs(magnitude - 1) < 1e-12 and ops else f'{magnitude:g} '
         parts.append(('- ' if coefficient < 0 else '+ ') + number + body)
     joined = ' '.join(parts)
-    return joined[2:] if joined.startswith('+ ') else '-' + joined[1:]
+    return joined[2:] if joined.startswith('+ ') else '-' + joined[2:]
 
 
 def _apply_term(state, n, ops):

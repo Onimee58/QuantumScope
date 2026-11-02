@@ -731,8 +731,34 @@ class CircuitWorkspace(QWidget):
                        '⟨O⟩ is its average over many measurements of the current state.')
         explain.setWordWrap(True);explain.setObjectName('muted');layout.addWidget(explain)
         self.expectation_label=QLabel('');self.expectation_label.setWordWrap(True);layout.addWidget(self.expectation_label)
+        opt=QHBoxLayout();opt.addWidget(QLabel('Optimize'))
+        from quantumscope.gui.variational_views import METHODS
+        self.opt_method=QComboBox()
+        for label,key in METHODS:self.opt_method.addItem(label,key)
+        self.opt_method.setToolTip('BFGS uses exact parameter-shift gradients; gradient descent shows the plain method '
+                                   '(it can crawl across flat regions); COBYLA and Nelder–Mead need no gradients')
+        opt.addWidget(self.opt_method,1)
+        opt.addWidget(QLabel('max steps'));self.opt_steps=QSpinBox();self.opt_steps.setRange(5,2000);self.opt_steps.setValue(200);opt.addWidget(self.opt_steps)
+        self.opt_button=QPushButton('Optimize');self.opt_button.setToolTip('Lower ⟨O⟩ by changing every parameter')
+        self.opt_button.clicked.connect(self.optimize_parameters);opt.addWidget(self.opt_button)
+        self.landscape_button=QPushButton('Landscape…');self.landscape_button.clicked.connect(self.show_landscape);opt.addWidget(self.landscape_button)
+        layout.addLayout(opt)
         v.addWidget(self.param_panel)
         self._refresh_parameter_panel()
+    def optimize_parameters(self):
+        from quantumscope.gui.variational_views import OptimizeDialog
+        if not self.model.parameters or not self.model.observable:
+            self.status.setText('Optimize needs at least one parameter and an observable.');return None
+        dialog=OptimizeDialog(self,self.opt_method.currentData(),self.opt_steps.value())
+        dialog.show();self._last_path=dialog.run()
+        self._refresh_parameter_panel()
+        return dialog
+    def show_landscape(self):
+        from quantumscope.gui.variational_views import LandscapeDialog
+        if not self.model.parameters or not self.model.observable:
+            self.status.setText('The landscape needs at least one parameter and an observable.');return None
+        dialog=LandscapeDialog(self,getattr(self,'_last_path',None));dialog.draw();dialog.show()
+        return dialog
     def _observable_choices(self):
         """Example observables for this many qubits: (text, plain-words description)."""
         n=self.n
@@ -758,6 +784,8 @@ class CircuitWorkspace(QWidget):
         if hasattr(self,'param_panel'):
             in_use=bool(self.model.parameters or self.model.observable)
             self.param_panel.setVisible(in_use or self.param_toggle.isChecked())
+            ready=bool(self.model.parameters and self.model.observable)
+            self.opt_button.setEnabled(ready);self.landscape_button.setEnabled(ready)
     def _add_parameter_clicked(self):
         try:self.model.add_parameter(self.param_name.text())
         except EditorError as exc:self._rejected(exc);return

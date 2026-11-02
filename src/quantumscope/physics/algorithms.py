@@ -182,6 +182,9 @@ class Built:
     measured: tuple = ()
     note: str = ''
     roles: tuple = ()                 # a short role per qubit, shown beside its label ('data', 'Bob', …)
+    parameters: tuple = ()            # ((name, value), …) for variational circuits
+    bindings: tuple = ()              # ((item index, field, parameter name, factor), …)
+    observable: str = ''              # e.g. a Hamiltonian as a Pauli sum
 
 
 @dataclass
@@ -581,6 +584,71 @@ def spec_qpe(p, view):
     return rows, note
 
 
+# ---- variational quantum eigensolver (v0.7.0) -------------------------------------------------
+
+# Two-qubit H2 Hamiltonian (STO-3G, bond length 0.735 Å) in Hartree, including the nuclear
+# repulsion 0.7199689944 Ha. Its exact ground energy, −1.137306 Ha, matches the known value.
+H2_HAMILTONIAN = ('-0.332404256824 - 0.397937424843 Z0 + 0.397937424843 Z1 - 0.011280104256 Z0 Z1 '
+                  '+ 0.180931199784 X0 X1')
+
+
+def vqe_problem(key):
+    """(qubits, Hamiltonian as a Pauli sum, description) for the VQE examples."""
+    if key == 'h2':
+        return 2, H2_HAMILTONIAN, 'the H₂ molecule at 0.735 Å (energy in Hartree)'
+    kind, n = key.split('-')
+    n = int(n)
+    if kind == 'ising':
+        terms = [f'Z{q} Z{q + 1}' for q in range(n - 1)] + [f'0.5 X{q}' for q in range(n)]
+        return n, ' + '.join(terms), f'a {n}-spin transverse-field Ising chain (field 0.5)'
+    terms = [f'{p}{q} {p}{q + 1}' for q in range(n - 1) for p in 'XYZ']
+    return n, ' + '.join(terms), f'a {n}-spin Heisenberg chain'
+
+
+VQE_PROBLEMS = (('H₂ molecule (2 qubits)', 'h2'), ('Ising chain, 2 spins', 'ising-2'), ('Ising chain, 3 spins', 'ising-3'),
+                ('Ising chain, 4 spins', 'ising-4'), ('Heisenberg chain, 2 spins', 'heisenberg-2'),
+                ('Heisenberg chain, 3 spins', 'heisenberg-3'))
+
+
+def build_vqe(p):
+    """A hardware-efficient ansatz: layers of RY on every qubit with a CX chain between them.
+    Every RY has its own parameter θk; the observable is the problem's Hamiltonian."""
+    n, hamiltonian, about = vqe_problem(p['problem'])
+    items, bindings, parameters = [], [], []
+    k = 0
+    for layer in range(p['layers'] + 1):
+        for q in range(n):
+            items.append(Gate('RY', (q,), 0.0))
+            name = f'θ{k}'
+            start = 0.1 * (k + 1)                                     # a fixed, reproducible starting point
+            parameters.append((name, start))
+            bindings.append((len(items) - 1, 'angle', name, 1.0))
+            k += 1
+        if layer < p['layers']:
+            items += [Gate('CX', (q, q + 1)) for q in range(n - 1)]
+    return Built(n, items, defaults(n), roles=(), parameters=tuple(parameters), bindings=tuple(bindings),
+                 observable=hamiltonian,
+                 note=f'VQE for {about}: press Optimize in the Parameters panel to lower ⟨H⟩ toward the exact ground energy.')
+
+
+def spec_vqe(p, view):
+    """Passes when the circuit's ⟨H⟩ is within 1e-3 of the exact ground energy."""
+    from .observables import expectation, ground_energy, parse
+    n, hamiltonian, about = vqe_problem(p['problem'])
+    if view.n != n:
+        return [], f'This problem needs {n} qubits.'
+    terms = parse(hamiltonian, n)
+    energy = expectation(view.final_state, n, terms)
+    exact = ground_energy(n, terms)
+    gap = energy - exact
+    rows = [_row('⟨H⟩', f'{energy:.6f}', f'exact ground energy {exact:.6f}', max(0.0, 1 - gap), gap < 1e-3)]
+    return rows, ('Within 0.001 of the exact ground energy: the variational state has found the ground state.'
+                  if gap < 1e-3 else f'⟨H⟩ is {gap:.4f} above the exact ground energy. Press Optimize in the '
+                                     'Parameters panel (or move the sliders) to lower it. If it stops above the '
+                                     'exact value, the circuit cannot represent the ground state: try more '
+                                     'entangling layers (Change parameters…).')
+
+
 def build_full_adder(p):
     gates = [Gate('CCX', (0, 1, 3)), Gate('CX', (0, 1)), Gate('CCX', (1, 2, 3)), Gate('CX', (1, 2)), Gate('CX', (0, 1))]
     return Built(4, gates, _inputs_from(p, ('a', 'b', 'cin')) + [InitialState()], (2, 3),
@@ -696,6 +764,10 @@ LIBRARY = (
           (Param('t', 'Counting qubits', 'int', 4, 1, 6), Param('phase', 'Phase φ of U = P(2πφ)', 'choice', '5/16',
                                                                 choices=QPE_PHASES)),
           build_qpe, spec_qpe, 'Estimates an eigenphase with controlled powers of U and the inverse QFT'),
+    Entry('vqe', 'Algorithms', 'Variational quantum eigensolver (VQE)',
+          (Param('problem', 'Problem', 'choice', 'h2', choices=VQE_PROBLEMS),
+           Param('layers', 'Entangling layers', 'int', 1, 1, 3)),
+          build_vqe, spec_vqe, 'Finds a ground-state energy by minimising ⟨H⟩ over circuit parameters'),
     Entry('bit_flip_code', 'Examples', 'Bit-flip code',
           (Param('logical', 'Logical state (q0)', 'choice', '1',
                  choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),

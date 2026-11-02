@@ -262,7 +262,8 @@ class CircuitModel:
         free = [0] * built.n
         ready = {}                       # classical bit -> first column where its value is known
         ops, cols, placed, classical, conditions = [], [], [], [], []
-        for item in built.items:
+        where = {}                                   # item index -> (row, col) of a gate, for bindings
+        for index, item in enumerate(built.items):
             if isinstance(item, (Measure, Reset, NoiseElement)):
                 col = free[item.qubit]
                 free[item.qubit] = col + 1
@@ -285,6 +286,7 @@ class CircuitModel:
             else:
                 ops.append(item)
                 cols.append(col)
+                where[index] = (item.targets[0], col)
                 if condition:
                     conditions.append(((item.targets[0], col), *condition))
         order = sorted(range(len(ops)), key=lambda i: (cols[i], min(ops[i].targets)))
@@ -292,6 +294,10 @@ class CircuitModel:
                          initial_states=built.initial_states, blocks=placed, classical=classical,
                          conditions=conditions)
         self.roles = list(built.roles) + [''] * (built.n - len(built.roles))
+        self.parameters = dict(built.parameters)
+        self.bindings = {(*where[i], field): (name, float(factor)) for i, field, name, factor in built.bindings}
+        self.observable = built.observable
+        self._apply_bindings()
         self.active_entry = (key, tuple(sorted(params.items())))
         self._entry_signature = self.signature()
         return built.note

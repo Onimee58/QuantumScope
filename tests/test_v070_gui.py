@@ -177,3 +177,23 @@ def test_parameter_panel_shows_when_in_use_and_explains_observables(app):
         QtWidgets.QLabel)[-2].text() + ''.join(l.text() for l in w.param_panel.findChildren(QtWidgets.QLabel))
     w.clear()
     assert not w.param_panel.isVisible()
+
+
+def test_optimize_and_landscape_from_the_panel(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('vqe', {'problem': 'h2', 'layers': 1})
+    assert w.opt_button.isEnabled() and w.param_panel.isVisibleTo(w)
+    before = dict(w.model.parameters)
+    dialog = w.optimize_parameters()
+    assert 'ground state is reached' in dialog.summary.text()
+    assert w.model.expectation() == pytest.approx(-1.137306, abs=1e-6)
+    w.undo()                                                     # the whole optimization is one undo step
+    assert w.model.parameters == pytest.approx(before)
+    landscape = w.show_landscape()
+    assert landscape.view.data is not None and len(landscape.view.data) == 3
+    landscape.second.setCurrentIndex(0)
+    assert len(landscape.draw()) == 2                            # one parameter: a curve
+    w.observable_edit.setText('')
+    w._observable_edited()
+    assert not w.opt_button.isEnabled()
