@@ -40,6 +40,12 @@ class AboutDialog(QDialog):
         title.setStyleSheet('font-size:25px;font-weight:800;');layout.addWidget(title)
         subtitle=QLabel(f'Quantum Visualization Studio  •  v{__version__}')
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter);subtitle.setObjectName('muted');layout.addWidget(subtitle)
+        # Check for updates, beside the version (asks permission before any connection).
+        self.update_button=QPushButton('Check for updates…')
+        self.update_button.setToolTip('Asks first, then looks on github.com for a newer full release')
+        self.update_button.clicked.connect(self._check_for_updates)
+        update_row=QHBoxLayout();update_row.addStretch();update_row.addWidget(self.update_button);update_row.addStretch()
+        layout.addLayout(update_row)
         tagline=QLabel('Explore  •  Visualize  •  Simulate');tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline.setStyleSheet('color:#5ad1e9;font-size:12px;');layout.addWidget(tagline)
         divider=QFrame();divider.setObjectName('divider');layout.addWidget(divider)
@@ -93,6 +99,10 @@ class AboutDialog(QDialog):
                 try:self._avatar_path.write_bytes(data)
                 except OSError:pass
         self._reply.deleteLater()
+
+    def _check_for_updates(self):
+        from quantumscope.gui.update_dialog import check_for_updates
+        check_for_updates(self)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -196,12 +206,6 @@ class MainWindow(QMainWindow):
             return
         self.close()
 
-    def _info_menu(self):
-        menu = QMenu(self)
-        menu.addAction("About QuantumScope", self.show_about)
-        menu.addAction("Check for updates…", self.check_for_updates)
-        menu.exec(self._info_button.mapToGlobal(self._info_button.rect().bottomLeft()))
-
     def check_for_updates(self):
         """Only on request: asks permission, then one request to GitHub (see gui/update_dialog.py)."""
         from quantumscope.gui.update_dialog import check_for_updates
@@ -258,9 +262,7 @@ class MainWindow(QMainWindow):
         new_button.setMenu(self._experiment_menu(new_button))
         row.addWidget(new_button)
         row.addWidget(self._header_button("⚙", "Settings", self._show_settings))
-        info = self._header_button("ⓘ", "About QuantumScope and updates", self._info_menu)
-        row.addWidget(info)
-        self._info_button = info
+        row.addWidget(self._header_button("ⓘ", "About QuantumScope (and check for updates)", self.show_about))
         outer.addWidget(header)
         self.categories = QTabWidget()
         self.categories.setObjectName("categoryWorkspace")

@@ -75,3 +75,14 @@ def test_settings_has_an_updates_section(app):
     button = next(b for b in d.findChildren(QtWidgets.QPushButton) if b.text() == 'Check for updates…')
     button.click()
     assert calls == [True]
+
+
+def test_about_page_has_check_for_updates(app, monkeypatch):
+    from quantumscope.gui import update_dialog
+    from quantumscope.gui.main_window import AboutDialog
+    calls = []
+    monkeypatch.setattr(update_dialog, 'check_for_updates', lambda parent: calls.append(parent))
+    about = AboutDialog()
+    assert about.update_button.text() == 'Check for updates…'
+    about.update_button.click()
+    assert calls == [about]
