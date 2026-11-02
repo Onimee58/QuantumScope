@@ -248,3 +248,21 @@ def test_convergence_summary_and_chart_range(app):
     chart.resize(600, 320)
     chart.set_data([-1.0000000001, -1.0], -1.0)
     chart.grab()                                                  # paints without collapsing to a zero range
+
+
+def test_maxcut_graph_window_follows_the_circuit(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('qaoa', {'graph': 'ring4', 'layers': 1})
+    w.verify_circuit()
+    assert w.graph_button.isVisibleTo(w)
+    graph = w.show_maxcut_graph()
+    before = graph.summary.text()
+    w.optimize_parameters().close()
+    assert graph.summary.text() != before and 'ratio 0.750' in graph.summary.text()   # updated live
+    graph.view.grab()
+    w.clear()
+    assert 'no longer a QAOA example' in graph.summary.text()
+    w.load_library('teleportation', {'input': '+'})
+    w.verify_circuit()
+    assert not w.graph_button.isVisibleTo(w)

@@ -619,6 +619,8 @@ class CircuitWorkspace(QWidget):
         self.qec_button=QPushButton('Plot logical error rate')
         self.qec_button.setToolTip('Sweep the strength of this circuit\'s noise boxes and compare with an unprotected qubit')
         self.qec_button.clicked.connect(self.plot_logical_error_rate);self.qec_button.setVisible(False);controls.addWidget(self.qec_button)
+        self.graph_button=QPushButton('Show the graph');self.graph_button.setToolTip('The MaxCut graph with the likeliest cut, updated live')
+        self.graph_button.clicked.connect(self.show_maxcut_graph);self.graph_button.setVisible(False);controls.addWidget(self.graph_button)
         self.verify_status=QLabel('Select an example to verify arithmetic, or inspect basis-state inputs.');self.verify_status.setWordWrap(True);controls.addWidget(self.verify_status,1)
         verify_layout.addLayout(controls)
         self.verify_table=QTableWidget(0,4);self.verify_table.setHorizontalHeaderLabels(['Input','Simulated output','Expected','Probability / Result'])
@@ -1721,12 +1723,17 @@ class CircuitWorkspace(QWidget):
         if self._inspector is not None:self._inspector.apply_theme()
     def _show_notes(self,title,notes):
         if notes:QMessageBox.information(self,title,'\n\n'.join(notes))
+    def show_maxcut_graph(self):
+        from quantumscope.gui.maxcut_view import MaxCutDialog
+        dialog=MaxCutDialog(self);dialog.show()
+        return dialog
     def plot_logical_error_rate(self):
         from quantumscope.gui.qec_chart import plot_circuit
         plot_circuit(self).exec()
     def verify_circuit(self):
         entry=self.model.active_entry
         self.qec_button.setVisible(bool(entry) and entry[0] in ('bit_flip_code','phase_flip_code'))
+        self.graph_button.setVisible(bool(entry) and entry[0]=='qaoa')
         rows,note=self.model.verification()
         noisy=self.model.noisy_verification()
         if noisy:   # the PASS/FAIL judges the ideal circuit; report what noise does to it

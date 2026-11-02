@@ -649,6 +649,64 @@ def spec_vqe(p, view):
                                      'entangling layers (Change parameters…).')
 
 
+# ---- QAOA for MaxCut (v0.7.0) --------------------------------------------------------------
+
+def build_qaoa(p):
+    """QAOA: H on every node, then per layer k the cost step exp(iγk·ZZ/2) on every edge
+    (CX, RZ(−γk), CX) and the mixer RX(2βk) on every node. The observable is −(cut size)."""
+    from .maxcut import GRAPHS, hamiltonian
+    label, n, edges, _ = GRAPHS[p['graph']]
+    items = [Gate('H', (q,)) for q in range(n)]
+    bindings, parameters = [], []
+    for k in range(p['layers']):
+        gamma, beta = f'γ{k}', f'β{k}'
+        parameters += [(gamma, 0.4 * (k + 1) / p['layers']), (beta, 0.3 * (p['layers'] - k) / p['layers'])]
+        for i, j in edges:
+            items.append(Gate('CX', (i, j)))
+            items.append(Gate('RZ', (j,), 0.0))
+            bindings.append((len(items) - 1, 'angle', gamma, -1.0))
+            items.append(Gate('CX', (i, j)))
+        for q in range(n):
+            items.append(Gate('RX', (q,), 0.0))
+            bindings.append((len(items) - 1, 'angle', beta, 2.0))
+    return Built(n, items, defaults(n), measured=tuple(range(n)), roles=tuple(f'node {q}' for q in range(n)),
+                 parameters=tuple(parameters), bindings=tuple(bindings), observable=hamiltonian(edges),
+                 note=f'QAOA for MaxCut on the {label.lower()}: ⟨H⟩ is minus the expected number of cut edges. '
+                      'Press Optimize, then measure: the likeliest results should be the best cuts.')
+
+
+def qaoa_report(p, final_state):
+    """(expected cut, maximum cut, probability of a best cut, most likely bitstring and its cut)."""
+    from .maxcut import GRAPHS, best_cuts, cut_value, expected_cut
+    label, n, edges, _ = GRAPHS[p['graph']]
+    probs = marginal(final_state, n, list(range(n)))
+    best, cuts = best_cuts(n, edges)
+    likeliest = max(probs, key=probs.get)
+    return expected_cut(probs, edges), best, sum(probs.get(c, 0.0) for c in cuts), likeliest, cut_value(likeliest, edges)
+
+
+def spec_qaoa(p, view):
+    """Passes when the most likely measurement result is a maximum cut."""
+    from .maxcut import GRAPHS
+    n = GRAPHS[p['graph']][1]
+    if view.n != n:
+        return [], f'This graph needs {n} qubits.'
+    average, best, p_best, likeliest, value = qaoa_report(p, view.final_state)
+    rows = [_row('expected cut', f'{average:.3f} of {best} (ratio {average / best:.3f})', f'maximum cut {best}',
+                 average / best, average / best > 0.5),
+            _row('most likely result', f'{likeliest} cuts {value}', f'a cut of {best}', p_best, value == best)]
+    note = (f'A best cut is measured with probability {p_best:.3f}. ' +
+            ('The likeliest result is a maximum cut.' if value == best else
+             'Press Optimize (in the Parameters panel) so that the likeliest result becomes a maximum cut; '
+             'more layers raise the chance further.'))
+    return rows, note
+
+
+QAOA_GRAPHS = (('Square (4 nodes)', 'ring4'), ('Square with a diagonal (4 nodes)', 'diamond'),
+               ('Pentagon (5 nodes, odd)', 'ring5'), ('Hexagon (6 nodes)', 'ring6'),
+               ('Triangular prism (6 nodes)', 'prism'))
+
+
 def build_full_adder(p):
     gates = [Gate('CCX', (0, 1, 3)), Gate('CX', (0, 1)), Gate('CCX', (1, 2, 3)), Gate('CX', (1, 2)), Gate('CX', (0, 1))]
     return Built(4, gates, _inputs_from(p, ('a', 'b', 'cin')) + [InitialState()], (2, 3),
@@ -768,6 +826,10 @@ LIBRARY = (
           (Param('problem', 'Problem', 'choice', 'h2', choices=VQE_PROBLEMS),
            Param('layers', 'Entangling layers', 'int', 1, 1, 3)),
           build_vqe, spec_vqe, 'Finds a ground-state energy by minimising ⟨H⟩ over circuit parameters'),
+    Entry('qaoa', 'Algorithms', 'QAOA for MaxCut',
+          (Param('graph', 'Graph', 'choice', 'ring4', choices=QAOA_GRAPHS),
+           Param('layers', 'Layers (p)', 'int', 1, 1, 3)),
+          build_qaoa, spec_qaoa, 'Approximates the best cut of a graph with alternating cost and mixer layers'),
     Entry('bit_flip_code', 'Examples', 'Bit-flip code',
           (Param('logical', 'Logical state (q0)', 'choice', '1',
                  choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),
