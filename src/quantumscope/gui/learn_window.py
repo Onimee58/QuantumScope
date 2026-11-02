@@ -23,6 +23,13 @@ def run_action(action, workspace, launch=None):
         p = action.params
         workspace.set_circuit(p['n'], p['gates'], p.get('columns'), initial_states=p['states'],
                               noise=p.get('elements', ()), conditions=p.get('conditions', ()))
+        for spec in p.get('bindings', ()):                   # bind=row:col:name[:factor]
+            row, col, name, *factor = spec
+            workspace.model.bind(int(row), int(col), 'angle', name, float(factor[0]) if factor else 1.0)
+        if p.get('observable'):
+            workspace.model.set_observable(p['observable'])
+        if p.get('bindings') or p.get('observable'):
+            workspace._changed();workspace._refresh_parameter_panel()
     elif action.kind == 'algorithm':
         workspace.load_library(action.target, action.params['values'])
     if action.kind in ('circuit', 'algorithm'):

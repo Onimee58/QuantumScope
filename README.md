@@ -7,7 +7,7 @@
 
   An open-source, cross-platform quantum visualization and circuit simulation studio built with Python and PySide6.
 
-  [![Version](https://img.shields.io/badge/version-v0.6.2-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
+  [![Version](https://img.shields.io/badge/version-v0.7.0-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
   [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
   [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-555)](https://github.com/Onimee58/QuantumScope/releases)
@@ -44,6 +44,19 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 - **Quantum Gate Explorer**: double-click a gate in the *left palette* for its definition, circuit symbol, matrix/operation and basic state transformations. Double-clicking a placed parameterized gate opens its parameter editor instead.
 
 **Supported operations:** `H`, `X`, `Y`, `Z`, `S`, `T`, `Sdg`, `Tdg`, `SX`, `RX`, `RY`, `RZ`, `U`/`U3`, `P`, `CX`, `CZ`, `SWAP`, `CCX`, `CSWAP`, and terminal `M`.
+
+## What's new in v0.7.0?
+
+- **Parameterized circuits:**
+  - type a parameter name as a gate angle (Greek letters as in LaTeX: `\theta` → θ), and share it among gates with factors such as `2*\gamma`;
+  - move the sliders and watch an **observable**'s expectation value ⟨O⟩, next to its exact minimum.
+- **Optimize:** BFGS and gradient descent with exact **parameter-shift** gradients, plus COBYLA and Nelder–Mead, with a live convergence plot and **energy landscapes**.
+- **VQE:** the ground-state energy of the **H₂ molecule** and of Ising and Heisenberg spin chains, checked against exact diagonalization.
+- **QAOA for MaxCut:** five graphs, with a live graph view of the likeliest cut and the probability of each cut size.
+- **Updates:** **ⓘ About → Check for updates…**. It asks first, makes one request to GitHub, verifies a checksum, and installs after you confirm. From this version on, QuantumScope can update itself.
+- **Learn:** 6 new lectures and 4 labs on observables, parameters, the parameter-shift rule, VQE, optimizers and QAOA.
+
+See [VARIATIONAL.md](VARIATIONAL.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## What's new in v0.6.2?
 
@@ -253,7 +266,7 @@ QuantumScope aims for scientifically meaningful *models*, but visual demonstrati
 - **Double slit:** idealized far-field/Fraunhofer interference and diffraction model. The apparatus drawing and animated wavefronts are illustrative, not particle paths or a complete propagation simulation.
 - **Graphics:** screen representations (cloud brightness, phase coloring and rendered meshes) are visualization choices and should not be mistaken for additional physical observables.
 
-Explore the accompanying documentation: [Dynamics](DYNAMICS.md) · [Circuit simulator](CIRCUIT_SIMULATOR.md) · [Circuit verification](CIRCUIT_VERIFICATION_GUIDE.md) · [Entanglement demo](ENTANGLEMENT_DEMO.md) · [State Inspector & initial states](STATE_INSPECTOR.md) · [Algorithms & blocks](ALGORITHMS.md) · [Learn & your own lessons](LEARN.md) · [Noise & mixed states](NOISE.md) · [Mid-circuit measurement](MEASUREMENT.md) · [Error correction](ERROR_CORRECTION.md).
+Explore the accompanying documentation: [Dynamics](DYNAMICS.md) · [Circuit simulator](CIRCUIT_SIMULATOR.md) · [Circuit verification](CIRCUIT_VERIFICATION_GUIDE.md) · [Entanglement demo](ENTANGLEMENT_DEMO.md) · [State Inspector & initial states](STATE_INSPECTOR.md) · [Algorithms & blocks](ALGORITHMS.md) · [Learn & your own lessons](LEARN.md) · [Noise & mixed states](NOISE.md) · [Mid-circuit measurement](MEASUREMENT.md) · [Error correction](ERROR_CORRECTION.md) · [Variational algorithms](VARIATIONAL.md).
 
 ## For educators and students
 
@@ -270,7 +283,7 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-The v0.6.2 source passes **1182 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
+The v0.7.0 source passes **1336 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
 
 Build configuration and workflows live in `.github/workflows/`, and desktop packaging scripts live in `packaging/`. Please report reproducible errors with your OS version, installation method, screenshots or logs, and a short reproduction sequence.
 

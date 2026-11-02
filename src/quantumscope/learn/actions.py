@@ -111,6 +111,8 @@ def parse(link):
                 raise ValueError('cols needs one non-decreasing column per gate')
         return Action('circuit', '', {'n': n, 'gates': gates, 'states': [InitialState.preset(s) for s in states],
                                       'conditions': conditions, 'columns': columns,
+                                      'bindings': [tuple(t.split(':')) for t in params.get('bind', '').split(';') if t.strip()],
+                                      'observable': params.get('observable', ''),
                                       'inspector': params.get('inspector') == '1',
                                       'noise_model': NOISE_PRESETS[preset] if preset else None, 'elements': elements})
     if kind == 'algorithm':

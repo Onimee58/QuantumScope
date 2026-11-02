@@ -20,6 +20,12 @@ current circuit; a step is done when all of its checks pass:
     teleports 0 2                    in every branch, qubit 2 ends in qubit 0's starting state
     settles 0 0                      in every branch, qubit 0 ends in |0⟩ (or |1⟩ with "settles 0 1")
     labeled 3 syndrome               qubit 3 is labeled (named) "syndrome" (case does not matter)
+    parameters >= 1                  the circuit has at least 1 parameter (also <=, =)
+    bound >= 2                       at least 2 gate angles follow a parameter (also <=, =)
+    observable Z0                    the observable is Z0 (any observable: "observable" alone)
+    expectation <= -0.99             ⟨observable⟩ for the final state compared with a value (also >=)
+    reaches 0.001                    ⟨observable⟩ is within 0.001 of its exact minimum
+    verified                         the example's own check passes
 """
 import numpy as np
 
@@ -122,6 +128,37 @@ def check(model, condition):
         worst = min(float(np.real(np.vdot(target, N.partial_trace(br.rho, model.n, [target_q]) @ target)))
                     for br in branches)
         return worst > 1 - 1e-6, f'q{target_q} does not match in every branch yet (worst fidelity {worst:.3f})'
+    if kind in ('parameters', 'bound'):
+        count = len(model.parameters) if kind == 'parameters' else len(model.bindings)
+        op, value = rest.split()
+        ok = {'>=': count >= int(value), '<=': count <= int(value), '=': count == int(value)}[op]
+        return ok, f'{kind} {count}'
+    if kind == 'observable':
+        if not rest.strip():
+            return bool(model.observable), 'an observable'
+        from quantumscope.physics.observables import parse
+        try:
+            same = model.observable and sorted(parse(model.observable, model.n)) == sorted(parse(rest, model.n))
+        except ValueError:
+            same = False
+        return bool(same), f'observable {rest.strip()}'
+    if kind == 'expectation':
+        op, value = rest.split()
+        current = model.expectation()
+        if current is None:
+            return False, 'no observable yet'
+        ok = current <= float(value) + 1e-9 if op == '<=' else current >= float(value) - 1e-9
+        return ok, f'⟨O⟩ = {current:.4f}'
+    if kind == 'reaches':
+        current = model.expectation()
+        if current is None:
+            return False, 'no observable yet'
+        from quantumscope.physics.observables import ground_energy, parse
+        gap = current - ground_energy(model.n, parse(model.observable, model.n))
+        return gap <= float(rest) + 1e-12, f'{gap:.4f} above the exact minimum'
+    if kind == 'verified':
+        rows, _ = model.verification()
+        return bool(rows) and all(r.passed for r in rows), 'the example check'
     if kind == 'labeled':
         qubit, _, text = rest.partition(' ')
         q = int(qubit)

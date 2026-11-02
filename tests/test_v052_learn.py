@@ -201,6 +201,11 @@ LAB_SOLUTIONS = {
                                         'labels': ['', '', '', 'syndrome', 'syndrome']}),
     'circuits/103-lab-beat-the-noise': ('library', 'bit_flip_code', {'logical': '0', 'error': 'random', 'p': 0.1}),
     'circuits/104-lab-phase-estimation': ('library', 'qpe', {'t': 6, 'phase': '1/3'}),
+    # v0.7.0: variational labs (examples optimized like a student would, or built by hand)
+    'circuits/105-lab-tune-by-hand': ('build', 'tune'),
+    'circuits/106-lab-h2-ground-energy': ('library', 'vqe', {'problem': 'h2', 'layers': 1}, True),
+    'circuits/107-lab-not-enough-layers': ('library', 'vqe', {'problem': 'heisenberg-3', 'layers': 2}, True),
+    'circuits/108-lab-qaoa-maxcut': ('library', 'qaoa', {'graph': 'ring4', 'layers': 2}, True),
 }
 
 
@@ -212,10 +217,24 @@ def test_every_lab_has_a_tested_solution():
 @pytest.mark.parametrize('key', sorted(LAB_SOLUTIONS))
 def test_lab_solution_completes_every_step(key):
     lesson = next(l for l in LESSONS if l.key == key)
+    if LAB_SOLUTIONS[key][0] == 'build':                       # built by hand, as the lab describes
+        import math
+        m = CircuitModel(1)
+        m.place('RY', 0, 0, angle=0.4)
+        m.bind(0, 0, 'angle', '\\theta')
+        m.set_observable('Z0')
+        m.set_parameter('θ', math.pi)
+        lesson = next(l for l in LESSONS if l.key == key)
+        assert all(labs.progress(m, steps_of(lesson.body)).values())
+        return
     if LAB_SOLUTIONS[key][0] == 'library':                     # labs that start from an example
-        _, entry, params = LAB_SOLUTIONS[key]
+        _, entry, params, *optimize_it = LAB_SOLUTIONS[key]
         m = CircuitModel()
         m.load_library(entry, params)
+        if optimize_it:
+            from quantumscope.editor.variational import optimize
+            for name, value in zip(list(m.parameters), optimize(m, 'BFGS', steps=300)[-1][0]):
+                m.set_parameter(name, value)
         lesson = next(l for l in LESSONS if l.key == key)
         assert all(labs.progress(m, steps_of(lesson.body)).values())
         return
@@ -288,7 +307,7 @@ def test_grover_table_matches_the_formula():
 def test_every_area_has_lessons():
     areas = {l.area for l in LESSONS}
     assert areas == {'circuits', 'principles', 'hydrogen'}
-    assert sum(l.kind == 'lab' for l in LESSONS) == 15 and len(LESSONS) == 49
+    assert sum(l.kind == 'lab' for l in LESSONS) == 19 and len(LESSONS) == 59
 
 
 def test_png_size_matches_the_image_and_needs_no_qt():
@@ -398,3 +417,25 @@ def test_learn_more_targets_exist():
     from quantumscope.physics.algorithms import ENTRIES
     keys = {l.key for l in LESSONS}
     assert set(EXAMPLE_LESSONS.values()) <= keys and set(EXAMPLE_LESSONS) <= set(ENTRIES)
+
+
+
+def test_variational_lecture_numbers_match_the_simulator():
+    import math
+    from quantumscope.editor.variational import Evaluator, optimize
+    from quantumscope.physics.algorithms import H2_HAMILTONIAN
+    from quantumscope.physics.observables import ground_energy, parse
+    assert f'{ground_energy(2, parse(H2_HAMILTONIAN)):.6f}' == '-1.137306' and '-1.137306' in lesson_text('circuits/24-vqe')
+    m = CircuitModel()
+    m.load_library('vqe', {'problem': 'heisenberg-3', 'layers': 1})
+    assert optimize(m, 'BFGS')[-1][1] == pytest.approx(-(1 + 2 * math.sqrt(2)), abs=1e-6)
+    assert '1 + 2\\sqrt{2}' in lesson_text('circuits/24-vqe')
+    ratios = {}
+    for graph, layers, edges in (('ring6', 1, 6), ('ring6', 2, 6), ('ring4', 2, 4)):
+        q = CircuitModel()
+        q.load_library('qaoa', {'graph': graph, 'layers': layers})
+        ratios[(graph, layers)] = -optimize(q, 'BFGS')[-1][1] / edges
+    assert ratios[('ring6', 1)] == pytest.approx(0.75, abs=1e-6) and ratios[('ring6', 2)] == pytest.approx(5 / 6, abs=1e-6)
+    assert ratios[('ring4', 2)] == pytest.approx(1, abs=1e-6)
+    text = lesson_text('circuits/26-qaoa-maxcut')
+    assert '3/4' in text and '5/6' in text and '-0.6' in text

@@ -17,6 +17,10 @@ def app():
 
 @pytest.fixture
 def answers(monkeypatch):
+    # The simulated GitHub offers v0.7.0: pretend to run an older version so an update is on offer,
+    # whatever version this source tree is (test_up_to_date sets its own).
+    from quantumscope.gui import update_dialog
+    monkeypatch.setattr(update_dialog, '__version__', '0.6.2')
     seen = {'info': [], 'warn': []}
     monkeypatch.setattr(QtWidgets.QMessageBox, 'question',
                         staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes))

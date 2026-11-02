@@ -1,3 +1,51 @@
+## v0.7.0 — Variational algorithms
+
+### Updates
+- **ⓘ About → Check for updates…** (also in **Settings → Updates**):
+  - **with permission:** it asks first, makes one request to GitHub's release list, and only ever offers full releases (never pre-releases);
+  - **verified:** downloads are checked against the release's SHA-256 checksum, and a mismatched file is deleted;
+  - **installing:** happens after confirmation (the Windows installer, the macOS DMG, or the Ubuntu package with a password prompt). Source checkouts are shown the `git pull` instructions instead;
+  - **errors** have clear messages, including GitHub's rate limit.
+- **The release workflow** publishes a `.sha256` file next to each installer.
+
+### Parameterized circuits
+- **Parameters:** type a parameter name as a gate angle (RX, RY, RZ, P, CP, U).
+  - **Greek letters** are written as in LaTeX (`\theta` → θ); plain names stay as typed.
+  - **Factors** share a parameter among gates (`2*\gamma`, `-\beta`). Binding never changes the circuit, and bound gates show their parameter.
+- **The Parameters panel** (under the circuit, shown when in use) has sliders, exact values, usage counts and Delete. One drag is one undo step, and the panel keeps its rows readable and scrolls past four.
+- **Observables** are Pauli sums (`Z0 Z1 + 0.5 X0`). The panel shows ⟨O⟩, exactly, including under noise and mid-circuit measurement, next to the exact lowest possible value. It explains observables in words, with an Examples menu.
+- **Files and QASM:** saved with the circuit as an optional field (older versions open the circuit at its current angles), and written as QASM comments.
+
+### Optimization
+- **Methods:**
+  - **BFGS** (the default) and **gradient descent**, both with exact **parameter-shift** gradients. Gradient descent uses a backtracking line search, so it never goes uphill;
+  - **COBYLA** and **Nelder–Mead**, which need no gradients; only their improving steps are recorded.
+- **The live convergence window** shows the exact minimum, the steps and circuit evaluations used, and a Stop button. It gives a clear explanation when the circuit can't reach the exact minimum or no step helps.
+- **Parameters are wrapped** back into −π…π where that provably changes nothing.
+- **Energy landscapes** show one parameter as a curve or two as a color map, with the optimization path.
+
+### Algorithms
+- **VQE:**
+  - **problems:** H₂ (two qubits, 0.735 Å; −1.137306 Hartree, checked against the known value) and Ising and Heisenberg chains;
+  - **ansatz:** 1–3 entangling layers;
+  - **check:** ⟨H⟩ within 0.001 of the exact ground energy.
+- **QAOA for MaxCut:**
+  - **graphs:** five, from a square to a triangular prism, with 1–3 layers of γ and β;
+  - **graph view:** live, with the likeliest cut and the cut-size distribution;
+  - **check:** against the brute-force maximum cut. Even rings reach the known ratio 3/4 at one layer.
+
+### Learn
+- **Lectures:** *Observables and expectation values* (Quantum Principles); *Parameterized circuits*; *The parameter-shift rule*; *The variational quantum eigensolver*; *Optimizers, landscapes and plateaus*; *QAOA and MaxCut*.
+- **Labs:** *Tune a circuit by hand*; *Find H₂'s ground energy*; *Not enough layers*; *Cut a graph with QAOA*.
+- **For course authors:** new lab checks `parameters`, `bound`, `observable`, `expectation`, `reaches` and `verified`; Try it links accept `bind=` and `observable=`; **Learn more** now links VQE and QAOA to their lectures.
+
+### Fixes
+- **The circuit page** was measured once when built, so a growing panel was squeezed and controls overlapped; it now re-measures itself.
+- **The convergence chart** no longer zooms into rounding noise.
+
+### Quality
+- Automated tests: 1336 passing (1182 in v0.6.2 + 154 new), plus 101 opt-in GUI tests (run them with `tools/run_gui_tests.sh`, which keeps the 3-D Hydrogen tests in their own process). The 44-step editing replay is unchanged.
+
 ## v0.6.2 — Error correction and phase estimation
 
 ### Error correction

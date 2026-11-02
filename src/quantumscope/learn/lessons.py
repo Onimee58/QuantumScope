@@ -142,4 +142,5 @@ EXAMPLE_LESSONS = {
     'bernstein_vazirani': 'circuits/07-phase-kickback-and-oracles', 'full_adder': 'circuits/06-reversible-logic',
     'bit_flip_code': 'circuits/17-bit-flip-code', 'phase_flip_code': 'circuits/18-phase-flip-code',
     'shor_code': 'circuits/20-shor-code', 'qpe': 'circuits/21-phase-estimation',
+    'vqe': 'circuits/24-vqe', 'qaoa': 'circuits/26-qaoa-maxcut',
 }
