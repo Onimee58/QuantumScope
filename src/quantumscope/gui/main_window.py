@@ -196,6 +196,17 @@ class MainWindow(QMainWindow):
             return
         self.close()
 
+    def _info_menu(self):
+        menu = QMenu(self)
+        menu.addAction("About QuantumScope", self.show_about)
+        menu.addAction("Check for updates…", self.check_for_updates)
+        menu.exec(self._info_button.mapToGlobal(self._info_button.rect().bottomLeft()))
+
+    def check_for_updates(self):
+        """Only on request: asks permission, then one request to GitHub (see gui/update_dialog.py)."""
+        from quantumscope.gui.update_dialog import check_for_updates
+        check_for_updates(self)
+
     def _follow_system_theme(self, *_):
         from quantumscope.gui import preferences as prefs
         if prefs.get("appearance/theme") == "system":
@@ -247,7 +258,9 @@ class MainWindow(QMainWindow):
         new_button.setMenu(self._experiment_menu(new_button))
         row.addWidget(new_button)
         row.addWidget(self._header_button("⚙", "Settings", self._show_settings))
-        row.addWidget(self._header_button("ⓘ", "About QuantumScope", self.show_about))
+        info = self._header_button("ⓘ", "About QuantumScope and updates", self._info_menu)
+        row.addWidget(info)
+        self._info_button = info
         outer.addWidget(header)
         self.categories = QTabWidget()
         self.categories.setObjectName("categoryWorkspace")

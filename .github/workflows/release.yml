@@ -102,6 +102,18 @@ jobs:
           cp -R dist/QuantumScope.app dist/dmg-root/
           ln -s /Applications dist/dmg-root/Applications
           hdiutil create -volname 'QuantumScope 0.6.2' -srcfolder dist/dmg-root -ov -format UDZO dist/installers/QuantumScope-0.6.2-macOS.dmg
+      - name: Write SHA-256 checksums next to the installers
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, pathlib
+          for path in sorted(pathlib.Path('dist/installers').iterdir()):
+              if path.suffix == '.sha256' or not path.is_file():
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              pathlib.Path(f'{path}.sha256').write_text(f'{digest}  {path.name}\n')
+              print(path.name, digest)
+          PY
       - name: Upload installers as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
