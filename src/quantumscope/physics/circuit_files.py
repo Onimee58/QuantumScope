@@ -141,6 +141,9 @@ def to_native_measured(n,gates,measured=(),layout=None):
     labels=(layout or {}).get('labels')
     if labels:
         data['labels']=list(labels)            # optional qubit labels, also ignored by older versions
+    variational=(layout or {}).get('variational')
+    if variational:
+        data['variational']=variational        # parameters/observable; gates keep their current angles
     classical=(layout or {}).get('classical') or []
     conditions=(layout or {}).get('conditions') or []
     if classical or conditions:
@@ -277,7 +280,8 @@ def from_native_layout(text):
                             'initial_states':states,'blocks':blocks,'noise':noise,'noise_model':noise_model,
                             'classical':classical,'conditions':conditions,
                             'example':data.get('example') if isinstance(data.get('example'),dict) else None,
-                            'labels':data.get('labels') if isinstance(data.get('labels'),list) else None}
+                            'labels':data.get('labels') if isinstance(data.get('labels'),list) else None,
+                            'variational':data.get('variational') if isinstance(data.get('variational'),dict) else None}
 
 def label_comments(labels):
     """'// q3: syndrome' lines for named qubits (OpenQASM 2 has no qubit names)."""

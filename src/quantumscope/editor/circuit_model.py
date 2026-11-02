@@ -62,6 +62,9 @@ class CircuitModel:
         self.wires = {}            # (row, col) -> single-wire item: NoiseElement, Measure (M→c) or Reset
         self.conditions = {}       # gate key (row, col) -> (bit, value) or ((bits…), (values…)): 'apply only if …'
         self.roles = []            # a short label per qubit ('data', 'Bob', …): set by examples or by the user
+        self.parameters = {}       # name -> value in radians (ordered as created)
+        self.bindings = {}         # (row, col, field) -> (parameter name, factor): angle = factor × value
+        self.observable = ''       # a Pauli sum such as "Z0 Z1 + 0.5 X0" ('' for none)
         self._entry_signature = None   # the circuit as built from the active example, to detect edits
         self.noise_model = NoiseModel()   # global noise (off by default)
         self._next_block = 1
@@ -127,7 +130,7 @@ class CircuitModel:
         return (self.n, self.reserved_columns, dict(self.gates), dict(self.measurements),
                 self.active_example, self.example_ops, tuple(self.initial_states),
                 dict(self.blocks), self.active_entry, dict(self.wires), self.noise_model, dict(self.conditions),
-                list(self.roles), self._entry_signature)
+                list(self.roles), self._entry_signature, dict(self.parameters), dict(self.bindings), self.observable)
 
     def snapshot(self):
         self.undo_stack.append(self._record())
@@ -137,8 +140,9 @@ class CircuitModel:
     def _restore(self, record):
         (self.n, self.reserved_columns, gates, measurements,
          self.active_example, self.example_ops, states, blocks, self.active_entry, noise, self.noise_model,
-         conditions, roles, self._entry_signature) = record
+         conditions, roles, self._entry_signature, parameters, bindings, self.observable) = record
         self.roles = list(roles)
+        self.parameters, self.bindings = dict(parameters), dict(bindings)
         self.wires = dict(noise)
         self.conditions = dict(conditions)
         self.gates, self.measurements = dict(gates), dict(measurements)
@@ -171,6 +175,7 @@ class CircuitModel:
         self.wires = {}
         self.conditions = {}
         self.roles, self._entry_signature = [], None      # no longer an example: its roles go too
+        self.parameters, self.bindings, self.observable = {}, {}, ''
 
     def load_bell(self):
         """The quick 'Bell example' button (not a verified example)."""
@@ -185,6 +190,7 @@ class CircuitModel:
         self.wires = {}
         self.conditions = {}
         self.roles, self._entry_signature = [], None      # no longer an example: its roles go too
+        self.parameters, self.bindings, self.observable = {}, {}, ''
 
     def set_circuit(self, n, ops, columns=None, measured=(), measurement_column=None, total_columns=None,
                     initial_states=None, blocks=(), noise=(), noise_model=None, classical=(), conditions=()):
@@ -225,6 +231,7 @@ class CircuitModel:
         self.active_entry = None
         self.wires = {(element.qubit, c): element for element, c in noise}
         self.roles, self._entry_signature = [], None
+        self.parameters, self.bindings, self.observable = {}, {}, ''
         keys = {(g.targets[0], c) for g, c in zip(ops, columns)}
         self.conditions = {}
         for key, cbit, value in conditions:
@@ -302,6 +309,7 @@ class CircuitModel:
         self.measurements = {q: c for q, c in self.measurements.items() if q < n}
         self.blocks = {bid: pl for bid, pl in self.blocks.items() if pl.block.high < n}
         self.wires = {(r, c): e for (r, c), e in self.wires.items() if r < n}
+        self.bindings = {k: v for k, v in self.bindings.items() if (k[0], k[1]) in self.gates}
         self.n = n
         if n != len(self.initial_states):
             # A different number of qubits is no longer the example (its title and check assume the
@@ -452,6 +460,9 @@ class CircuitModel:
             self.gates[(targets[0], dst_col)] = Gate(gate.name, targets, gate.angle, gate.phi, gate.lam)
             if key in self.conditions:                       # a condition travels with its gate
                 self.conditions[(targets[0], dst_col)] = self.conditions.pop(key)
+            for field in ('angle', 'phi', 'lam'):            # so do its parameter bindings
+                if (*key, field) in self.bindings:
+                    self.bindings[(targets[0], dst_col, field)] = self.bindings.pop((*key, field))
         else:
             if dst_row in self.measurements and dst_row != src_row:
                 raise EditorError('Target qubit already measured')
@@ -484,6 +495,7 @@ class CircuitModel:
                        for bid, pl in self.blocks.items()}
         self.wires = {(r, c + delta if c >= start else c): e for (r, c), e in self.wires.items()}
         self.conditions = {(r, c + delta if c >= start else c): v for (r, c), v in self.conditions.items()}
+        self.bindings = {(r, c + delta if c >= start else c, f): v for (r, c, f), v in self.bindings.items()}
 
     def _column_empty(self, index):
         return (not any(c == index for _, c in self.gates) and index not in self.measurements.values()
@@ -510,6 +522,8 @@ class CircuitModel:
         if kind == 'gate':
             self.gates.pop(key)
             self.conditions.pop(key, None)
+            for field in ('angle', 'phi', 'lam'):
+                self.bindings.pop((*key, field), None)
         elif kind == 'block':
             self.blocks.pop(key)
         elif kind in ('noise', 'measure', 'reset'):
@@ -544,6 +558,147 @@ class CircuitModel:
     @property
     def entry_edited(self):
         return self.active_entry is not None and self.signature() != self._entry_signature
+
+    # ---- parameters, bindings and the observable (variational circuits) -------------------------
+    NAME = __import__('re').compile(r'^[A-Za-z_\u03b1-\u03c9\u0391-\u03a9][A-Za-z0-9_\u03b1-\u03c9\u0391-\u03a9]{0,11}$')
+    BINDABLE = {'RX': ('angle',), 'RY': ('angle',), 'RZ': ('angle',), 'P': ('angle',), 'CP': ('angle',),
+                'U': ('angle', 'phi', 'lam')}
+
+    def add_parameter(self, name, value=0.0):
+        name = str(name).strip()
+        if not self.NAME.match(name) or name.lower() == 'pi':
+            raise EditorError('A parameter name starts with a letter and has at most 12 letters, digits or _')
+        if name in self.parameters:
+            raise EditorError(f'There is already a parameter {name}')
+        self.snapshot()
+        self.parameters[name] = float(value)
+        return True
+
+    def remove_parameter(self, name):
+        """Delete a parameter; the gates bound to it keep their current angles."""
+        if name not in self.parameters:
+            return False
+        self.snapshot()
+        del self.parameters[name]
+        self.bindings = {k: v for k, v in self.bindings.items() if v[0] != name}
+        return True
+
+    def set_parameter(self, name, value, record=True):
+        """Change a parameter and every gate angle bound to it (record=False while a slider moves)."""
+        if name not in self.parameters:
+            raise EditorError(f'No parameter {name}')
+        value = float(value)
+        if self.parameters[name] == value:
+            return False
+        if record:
+            self.snapshot()
+        self.parameters[name] = value
+        self._apply_bindings()
+        return True
+
+    def bind(self, row, col, field, name, factor=1.0):
+        """Tie a gate angle to a parameter: angle = factor × parameter. A new parameter starts at the
+        gate's current angle (divided by the factor), so binding never changes the circuit."""
+        found = self.operation_at(row, col)
+        if found is None or found[0] != 'gate' or field not in self.BINDABLE.get(found[2].name, ()):
+            raise EditorError('Only the angles of RX, RY, RZ, P, CP and U gates outside blocks can use a parameter')
+        if factor == 0:
+            raise EditorError('The factor cannot be 0')
+        key, gate = found[1], found[2]
+        self.snapshot()
+        if name not in self.parameters:
+            if not self.NAME.match(str(name)) or str(name).lower() == 'pi':
+                self.undo_stack.pop()
+                raise EditorError('A parameter name starts with a letter and has at most 12 letters, digits or _')
+            self.parameters[name] = getattr(gate, field) / factor
+        self.bindings[(*key, field)] = (name, float(factor))
+        self._apply_bindings()
+        return True
+
+    def unbind(self, row, col, field):
+        found = self.operation_at(row, col)
+        if found is None or (*found[1], field) not in self.bindings:
+            return False
+        self.snapshot()
+        del self.bindings[(*found[1], field)]
+        return True
+
+    def binding_text(self, key, field='angle'):
+        """'θ0', '2·γ', '−β' for a bound angle, or None."""
+        bound = self.bindings.get((*key, field))
+        if bound is None:
+            return None
+        name, factor = bound
+        if factor == 1:
+            return name
+        if factor == -1:
+            return '−' + name
+        return f'{factor:g}·{name}'
+
+    def _apply_bindings(self):
+        for (r, c, field), (name, factor) in self.bindings.items():
+            gate = self.gates.get((r, c))
+            if gate is None or name not in self.parameters:
+                continue
+            values = {'angle': gate.angle, 'phi': gate.phi, 'lam': gate.lam}
+            values[field] = factor * self.parameters[name]
+            self.gates[(r, c)] = Gate(gate.name, gate.targets, values['angle'], values['phi'], values['lam'])
+
+    def set_observable(self, text):
+        """A Pauli sum such as "Z0 Z1 + 0.5 X0" ('' removes it); raises EditorError if unreadable."""
+        text = str(text).strip()
+        if text:
+            from quantumscope.physics.observables import parse
+            try:
+                parse(text, self.n)
+            except ValueError as exc:
+                raise EditorError(str(exc)) from exc
+        if text == self.observable:
+            return False
+        self.snapshot()
+        self.observable = text
+        return True
+
+    def expectation(self):
+        """⟨observable⟩ for the final state (noisy or averaged over branches when relevant), or None."""
+        if not self.observable:
+            return None
+        from quantumscope.physics.observables import expectation, parse
+        terms = parse(self.observable, self.n)
+        state = self.simulate_noisy(store=False)[1][-1] if self.noisy else self.simulate().column_states[-1]
+        return expectation(state, self.n, terms)
+
+    def variational_meta(self):
+        """Saved with the circuit (optional; older versions keep the current concrete angles)."""
+        if not (self.parameters or self.observable):
+            return None
+        return {'parameters': dict(self.parameters), 'observable': self.observable,
+                'bindings': [{'row': r, 'column': c, 'field': f, 'name': n, 'factor': k}
+                             for (r, c, f), (n, k) in sorted(self.bindings.items())]}
+
+    def restore_variational(self, meta):
+        if not isinstance(meta, dict):
+            return False
+        try:
+            parameters = {str(k): float(v) for k, v in dict(meta.get('parameters') or {}).items()}
+            if not all(self.NAME.match(k) for k in parameters):
+                return False
+            bindings = {}
+            for b in meta.get('bindings') or []:
+                key = (int(b['row']), int(b['column']), str(b['field']))
+                gate = self.gates.get(key[:2])
+                if gate is None or key[2] not in self.BINDABLE.get(gate.name, ()) or b['name'] not in parameters:
+                    return False
+                bindings[key] = (str(b['name']), float(b['factor']))
+            observable = str(meta.get('observable') or '')
+            if observable:
+                from quantumscope.physics.observables import parse
+                parse(observable, self.n)
+        except (KeyError, TypeError, ValueError):
+            return False
+        self.parameters, self.bindings, self.observable = parameters, bindings, observable
+        self._apply_bindings()
+        return True
 
     MAX_LABEL = 24
 

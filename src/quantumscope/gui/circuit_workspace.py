@@ -119,7 +119,12 @@ class Grid(QTableWidget):
                 p.setBrush(canvas_color('gate_fill'));p.drawRoundedRect(box,5,5)
                 p.setPen(canvas_color('gate_text'))
                 p.setFont(QFont('Sans',10,QFont.Weight.DemiBold))
-                p.drawText(box,Qt.AlignmentFlag.AlignCenter,g.name)
+                bound=self.owner.model.binding_text((row,col))
+                if bound:                       # the parameter this angle follows, e.g. θ0 or 2·γ
+                    p.drawText(box.adjusted(0,1,0,-box.height()/2+2),Qt.AlignmentFlag.AlignCenter,g.name)
+                    p.setFont(QFont('Sans',8));p.drawText(box.adjusted(0,box.height()/2-2,0,-1),Qt.AlignmentFlag.AlignCenter,bound)
+                else:
+                    p.drawText(box,Qt.AlignmentFlag.AlignCenter,g.name)
         self._draw_blocks(p,blocks,rect)
         self._draw_noise(p,rows)
         self._draw_classical(p,rows)
@@ -618,6 +623,7 @@ class CircuitWorkspace(QWidget):
         self.verify_table.horizontalHeader().setStretchLastSection(True)
         verify_layout.addWidget(self.verify_table)
         v.addWidget(self.verify_panel)
+        self._build_parameter_panel(v)
         shots=QHBoxLayout();v.addLayout(shots);shots.addWidget(QLabel('Shots'))
         self.shots=QSpinBox();self.shots.setRange(1,100000);self.shots.setValue(prefs.get('circuits/default_shots'));shots.addWidget(self.shots)
         run=QPushButton('Run measurement shots');run.clicked.connect(self.measure);shots.addWidget(run)
@@ -690,6 +696,97 @@ class CircuitWorkspace(QWidget):
         self.status.setText(str(exc))
 
     def snapshot(self):self.model.snapshot()
+
+    # ---- parameters and the observable --------------------------------------------------------------
+    @staticmethod
+    def _parameter_reference(text):
+        """(name, factor) when an angle field names a parameter ('theta', '2*gamma', '-beta', 'pi/2*θ'), else None."""
+        import re
+        t=text.strip().replace('·','*').replace('−','-')
+        m=re.fullmatch(r'(?:(.+?)\s*\*\s*)?(-?)\s*([A-Za-z_\u03b1-\u03c9\u0391-\u03a9][A-Za-z0-9_\u03b1-\u03c9\u0391-\u03a9]*)',t)
+        if not m or m.group(3).lower()=='pi':return None
+        factor=parse_angle(m.group(1)) if m.group(1) else 1.0
+        return m.group(3),(-factor if m.group(2) else factor)
+    def _build_parameter_panel(self,v):
+        self.param_panel=QGroupBox('Parameters && observable')
+        layout=QVBoxLayout(self.param_panel)
+        self.param_rows=QVBoxLayout();layout.addLayout(self.param_rows)
+        add=QHBoxLayout()
+        self.param_name=QLineEdit();self.param_name.setPlaceholderText('new parameter, e.g. θ or gamma');add.addWidget(self.param_name,1)
+        add_button=QPushButton('Add parameter');add_button.clicked.connect(self._add_parameter_clicked);add.addWidget(add_button)
+        layout.addLayout(add)
+        hint=QLabel('To use a parameter, double-click a rotation gate (RX, RY, RZ, P, CP, U) and type its name as the angle.')
+        hint.setWordWrap(True);layout.addWidget(hint)
+        obs=QHBoxLayout();obs.addWidget(QLabel('Observable'))
+        self.observable_edit=QLineEdit();self.observable_edit.setPlaceholderText('e.g. Z0 Z1 + 0.5 X0')
+        self.observable_edit.editingFinished.connect(self._observable_edited);obs.addWidget(self.observable_edit,1)
+        layout.addLayout(obs)
+        self.expectation_label=QLabel('');self.expectation_label.setWordWrap(True);layout.addWidget(self.expectation_label)
+        v.addWidget(self.param_panel)
+        self._refresh_parameter_panel()
+    def _add_parameter_clicked(self):
+        try:self.model.add_parameter(self.param_name.text())
+        except EditorError as exc:self._rejected(exc);return
+        self.param_name.clear();self._changed();self._refresh_parameter_panel()
+    def _refresh_parameter_panel(self):
+        if not hasattr(self,'param_rows'):return
+        while self.param_rows.count():
+            item=self.param_rows.takeAt(0)
+            widget=item.widget()
+            if widget is not None:                   # hide and detach now: deleteLater alone leaves a ghost row
+                widget.hide();widget.setParent(None);widget.deleteLater()
+        self._param_widgets={}
+        for name,value in self.model.parameters.items():
+            row=QWidget();h=QHBoxLayout(row);h.setContentsMargins(0,0,0,0)
+            h.addWidget(QLabel(name))
+            slider=QSlider(Qt.Orientation.Horizontal);slider.setRange(-3600,3600)      # −2π … 2π in 1/1800 π steps
+            slider.setValue(round(value/math.pi*1800));h.addWidget(slider,1)
+            box=QDoubleSpinBox();box.setDecimals(6);box.setRange(-4*math.pi,4*math.pi);box.setSingleStep(0.05)
+            box.setSuffix(' rad');box.setValue(value);h.addWidget(box)
+            users=sum(1 for v in self.model.bindings.values() if v[0]==name)
+            count=QLabel(f'{users} gate{"s" if users!=1 else ""}');count.setObjectName('muted');h.addWidget(count)
+            remove=QPushButton('Delete');remove.setToolTip(f'Delete {name} (its gates keep their current angles)')
+            remove.clicked.connect(lambda _=False,n=name:self._remove_parameter(n));h.addWidget(remove)
+            slider.sliderPressed.connect(self.model.snapshot)                   # one undo step per drag
+            slider.valueChanged.connect(lambda v,n=name,b=box:self._parameter_moved(n,v*math.pi/1800,b))
+            box.editingFinished.connect(lambda n=name,b=box:self._parameter_typed(n,b.value()))
+            self.param_rows.addWidget(row);self._param_widgets[name]=(slider,box)
+        self.observable_edit.setText(self.model.observable)
+        self._update_expectation()
+    def _parameter_moved(self,name,value,box):
+        box.blockSignals(True);box.setValue(value);box.blockSignals(False)
+        self.model.set_parameter(name,value,record=False);self.refresh();self._update_expectation()
+    def _parameter_typed(self,name,value):
+        if self.model.set_parameter(name,value):
+            slider,_=self._param_widgets[name];slider.blockSignals(True);slider.setValue(round(value/math.pi*1800));slider.blockSignals(False)
+            self._changed();self._update_expectation()
+    def _sync_parameter_values(self):
+        for name,(slider,box) in getattr(self,'_param_widgets',{}).items():
+            value=self.model.parameters.get(name)
+            if value is None or slider.isSliderDown():continue
+            for w,v in ((slider,round(value/math.pi*1800)),(box,value)):
+                w.blockSignals(True);w.setValue(v);w.blockSignals(False)
+        if hasattr(self,'observable_edit') and not self.observable_edit.hasFocus():
+            self.observable_edit.setText(self.model.observable)
+    def _remove_parameter(self,name):
+        if self.model.remove_parameter(name):self._changed();self._refresh_parameter_panel()
+    def _observable_edited(self):
+        try:changed=self.model.set_observable(self.observable_edit.text())
+        except EditorError as exc:
+            self.expectation_label.setText(f'<span style="color:#ff8a8a">{html.escape(str(exc))}</span>');return
+        if changed:self._changed()
+        self._update_expectation()
+    def _update_expectation(self):
+        if not self.model.observable:
+            self.expectation_label.setText('Set an observable to see its expectation value ⟨O⟩ for the final state.');return
+        from quantumscope.physics.observables import ground_energy,parse
+        value=self.model.expectation()
+        key=(self.n,self.model.observable)            # the exact minimum depends only on these: compute once
+        if getattr(self,'_ground_cache',(None,None))[0]!=key:
+            self._ground_cache=(key,ground_energy(self.n,parse(self.model.observable,self.n)))
+        lowest=self._ground_cache[1]
+        extra=f'  ·  lowest possible (exact): {lowest:.6f}' if lowest is not None else ''
+        self.expectation_label.setText(f'⟨O⟩ = <b>{value:.6f}</b>{extra}')
 
     # ---- example identity: title bar and qubit roles -----------------------------------------------
     from quantumscope.learn.lessons import EXAMPLE_LESSONS as LESSONS   # the lecture behind each example
@@ -1152,23 +1249,34 @@ class CircuitWorkspace(QWidget):
         edits={}
         params=[('angle','θ' if gate.name not in ('P','CP') else 'λ')]
         if gate.name=='U':params.extend([('phi','φ'),('lam','λ')])
+        key=self.model.operation_at(row,col)[1]
         for attr,label in params:
-            field=QLineEdit(self._format_user_angle(getattr(gate,attr)))
-            field.setToolTip('Angle in radians. Examples: pi/2, -pi/4, 2*pi')
+            bound=self.model.binding_text(key,attr)
+            field=QLineEdit(bound.replace('·','*').replace('−','-') if bound else self._format_user_angle(getattr(gate,attr)))
+            field.setToolTip('A number, an expression such as pi/2, or a parameter: theta, 2*gamma, -beta')
             layout.addRow(f'{label} ({"degrees" if self._angle_units=="degrees" else "radians"})',field)
             edits[attr]=field
         layout.addRow(QLabel('Numbers are in '+('degrees' if self._angle_units=='degrees' else 'radians')
-                             +'; expressions with pi (e.g. pi/4) are always radians.'))
+                             +'; expressions with pi (e.g. pi/4) are always radians.\n'
+                             'Type a parameter name (θ, gamma, 2*beta …) to make the angle follow a parameter.'))
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         layout.addRow(buttons)
         buttons.rejected.connect(dialog.reject)
         def commit():
+            numbers,links={},{}
             try:
-                values={key:self._parse_user_angle(field.text()) for key,field in edits.items()}
-            except ValueError as exc:
+                for attr,field in edits.items():
+                    link=self._parameter_reference(field.text())
+                    if link:links[attr]=link
+                    else:numbers[attr]=self._parse_user_angle(field.text())
+                current={'angle':gate.angle,'phi':gate.phi,'lam':gate.lam}
+                current.update(numbers)
+                for attr in numbers:self.model.unbind(row,col,attr)
+                self.model.edit_parameters(row,col,current['angle'],current.get('phi'),current.get('lam'))
+                for attr,(name,factor) in links.items():self.model.bind(row,col,attr,name,factor)
+            except (ValueError,EditorError) as exc:
                 QMessageBox.warning(dialog,'Invalid gate parameter',str(exc));return
-            self.model.edit_parameters(row,col,values['angle'],values.get('phi'),values.get('lam'))
-            self._changed()
+            self._changed();self._refresh_parameter_panel()
             dialog.accept()
         buttons.accepted.connect(commit)
         dialog.exec()
@@ -1306,6 +1414,10 @@ class CircuitWorkspace(QWidget):
         self.noise_button.setText(self._noise_summary())
         self.grid.setVerticalHeaderLabels(self._qubit_labels())   # roles appear and disappear with the example
         self._update_example_bar()
+        if hasattr(self,'_param_widgets') and set(self._param_widgets)!=set(self.model.parameters):
+            self._refresh_parameter_panel()
+        elif hasattr(self,'expectation_label'):
+            self._sync_parameter_values();self._update_expectation()
         self.step.setRange(0,last+1)
         self.step.setValue(last+1)
         self.show_step(self.step.value())
@@ -1541,6 +1653,7 @@ class CircuitWorkspace(QWidget):
         self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks'],
                          layout.get('noise',()),layout.get('noise_model'),layout.get('classical',()),layout.get('conditions',()))
         self.model.restore_labels(layout.get('labels'))
+        self.model.restore_variational(layout.get('variational'))
         if self.model.restore_example(layout.get('example')):   # a saved example keeps its title, roles and check
             self.verify_circuit()
         self._sync_view();self.refresh()
@@ -1550,7 +1663,8 @@ class CircuitWorkspace(QWidget):
         layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states,
                 'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()],
                 'noise':self.model.noise_layout(),'noise_model':self.model.noise_model,
-                'example':self.model.example_meta(),'labels':self.model.labels_meta()}
+                'example':self.model.example_meta(),'labels':self.model.labels_meta(),
+                'variational':self.model.variational_meta()}
         layout['classical'],layout['conditions']=self.model.classical_layout()
         return to_native_measured(self.n,gates,sorted(self.measurements),layout=layout)
     def _suggest(self,name):
@@ -1588,6 +1702,14 @@ class CircuitWorkspace(QWidget):
         else:
             gates,comments=self.model.qasm_items()
             lines=to_qasm_measured(self.n,gates,sorted(self.measurements),self.model.initial_states,comments)
+        if self.model.parameters or self.model.observable:   # OpenQASM 2 has no symbols: record them as comments
+            notes=[f'// parameter {n} = {v:.10g} rad' for n,v in self.model.parameters.items()]
+            notes+=[f'// q{r} column {c} {f} = {self.model.binding_text((r,c),f).replace("·","*").replace("−","-")}'
+                    for (r,c,f) in sorted(self.model.bindings)]
+            if self.model.observable:notes.append(f'// observable: {self.model.observable}')
+            head,marker,rest=lines.partition('qreg q[')
+            first,_,tail=rest.partition('\n')
+            lines=head+marker+first+'\n'+'\n'.join(notes)+'\n'+tail
         if self.model.roles:                     # qubit labels as comments after the register declaration
             from quantumscope.physics.circuit_files import label_comments
             head,marker,rest=lines.partition('qreg q[')

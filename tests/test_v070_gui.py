@@ -86,3 +86,69 @@ def test_about_page_has_check_for_updates(app, monkeypatch):
     assert about.update_button.text() == 'Check for updates…'
     about.update_button.click()
     assert calls == [about]
+
+
+@pytest.fixture
+def ansatz(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.set_circuit(2, [])
+    w.place('RY', 0, 0)
+    w.place('RY', 1, 0)
+    w.place('CX', 1, 1)
+    w.cell_click(0, 1)
+    return w
+
+
+def test_gate_editor_accepts_parameter_names(ansatz, monkeypatch):
+    def type_into(text):
+        def run(dialog):
+            dialog.findChild(QtWidgets.QLineEdit).setText(text)
+            dialog.findChild(QtWidgets.QDialogButtonBox).accepted.emit()
+            return QtWidgets.QDialog.DialogCode.Accepted
+        return run
+    monkeypatch.setattr(QtWidgets.QDialog, 'exec', type_into('theta'))
+    ansatz.edit_gate_at(0, 0)
+    monkeypatch.setattr(QtWidgets.QDialog, 'exec', type_into('2*theta'))
+    ansatz.edit_gate_at(1, 0)
+    assert ansatz.model.bindings[(1, 0, 'angle')] == ('theta', 2.0) and 'theta' in ansatz._param_widgets
+    monkeypatch.setattr(QtWidgets.QDialog, 'exec', type_into('pi/2'))     # a plain number unbinds
+    ansatz.edit_gate_at(1, 0)
+    assert (1, 0, 'angle') not in ansatz.model.bindings
+
+
+def test_slider_drag_updates_gates_and_is_one_undo_step(ansatz):
+    import math
+    ansatz.model.bind(0, 0, 'angle', 'θ')
+    ansatz.model.bind(1, 0, 'angle', 'θ', 2.0)
+    ansatz._refresh_parameter_panel()
+    slider, box = ansatz._param_widgets['θ']
+    start = ansatz.model.parameters['θ']
+    slider.sliderPressed.emit()
+    for v in (300, 600, 900):
+        slider.setValue(v)
+    assert ansatz.model.parameters['θ'] == pytest.approx(math.pi / 2) and box.value() == pytest.approx(math.pi / 2, abs=1e-6)
+    assert ansatz.model.gates[(1, 0)].angle == pytest.approx(math.pi)
+    ansatz.undo()
+    assert ansatz.model.parameters['θ'] == pytest.approx(start)
+
+
+def test_observable_panel_and_exports(ansatz, tmp_path, monkeypatch):
+    ansatz.observable_edit.setText('Z0 Z1 + 0.5 X0')
+    ansatz._observable_edited()
+    assert '⟨O⟩' in ansatz.expectation_label.text() and '-1.118034' in ansatz.expectation_label.text()
+    ansatz.observable_edit.setText('Z7')
+    ansatz._observable_edited()
+    assert 'no qubit q7' in ansatz.expectation_label.text()
+    ansatz.model.bind(0, 0, 'angle', 'θ')
+    for name, action in (('v.qasm', ansatz.export_qasm), ('v.qscope', ansatz.save_native)):
+        path = str(tmp_path / name)
+        monkeypatch.setattr(QtWidgets.QFileDialog, 'getSaveFileName', staticmethod(lambda *a, p=path, **k: (p, '')))
+        action()
+    text = (tmp_path / 'v.qasm').read_text()
+    assert '// parameter θ' in text and '// observable: Z0 Z1 + 0.5 X0' in text
+    ansatz.clear()
+    assert not ansatz._param_widgets
+    monkeypatch.setattr(QtWidgets.QFileDialog, 'getOpenFileName', staticmethod(lambda *a, **k: (str(tmp_path / 'v.qscope'), '')))
+    ansatz.load_native()
+    assert 'θ' in ansatz._param_widgets and ansatz.observable_edit.text() == 'Z0 Z1 + 0.5 X0'
