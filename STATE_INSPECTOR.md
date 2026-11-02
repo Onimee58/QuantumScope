@@ -79,3 +79,9 @@ When the circuit has noise (see [NOISE.md](NOISE.md)), the inspected state is a 
 | **Circuit** | Also lists the global noise preset and the number of noise elements. |
 
 The header shows purity and fidelity at the current step. Up to 8 qubits this works at every step; for larger noisy circuits it is shown at the final column only.
+
+## Dynamic circuits: the Branches tab (v0.6.1)
+
+When a circuit measures mid-circuit (**M→c**), resets, or conditions gates on classical bits, the inspector shows the state averaged over all measurement outcomes, as a density matrix. The header gives the number of **branches**.
+
+The **Branches** tab, the last tab, lists one row per classical record (c0 first): its probability, the purity of the qubits in that branch, and every qubit's Bloch vector. Comparing a qubit's Bloch vector across the rows shows what a classically controlled correction achieves. In teleportation, for example, q2 differs from row to row before the corrections and is identical in every row after them.

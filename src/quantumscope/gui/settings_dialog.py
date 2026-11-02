@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QForm
 
 from quantumscope.gui import preferences as prefs
 
-SECTIONS = ('Appearance', 'Circuits', 'Graphics', 'Files')
+SECTIONS = ('Appearance', 'Circuits', 'Graphics', 'Files', 'Updates')
 
 
 class SettingsDialog(QDialog):
@@ -38,7 +38,7 @@ class SettingsDialog(QDialog):
         body.addWidget(self.nav)
         self.pages = QStackedWidget()
         body.addWidget(self.pages, 1)
-        for build in (self._appearance, self._circuits, self._graphics, self._files):
+        for build in (self._appearance, self._circuits, self._graphics, self._files, self._updates):
             page = QWidget()
             build(page)
             self.pages.addWidget(page)
@@ -197,6 +197,18 @@ class SettingsDialog(QDialog):
     def _refresh_graphics(self):
         text = self._call('graphics_information')
         self.graphics_info.setText(text or 'Graphics information is available once a 3D view has been drawn.')
+
+    def _updates(self, page):
+        from quantumscope import __version__
+        v, form = self._page(page, 'Updates', f'You have QuantumScope {__version__}.')
+        form.addRow(self._note('QuantumScope never checks automatically. When you press the button, it asks for '
+                               'permission, makes one request to github.com for the newest full release, and '
+                               'shows its notes. Downloads are verified with the release checksum before '
+                               'anything is installed.'))
+        check = QPushButton('Check for updates…')
+        check.clicked.connect(lambda: self._call('check_for_updates'))
+        form.addRow(check)
+        v.addStretch()
 
     def _files(self, page):
         v, form = self._page(page, 'Files')

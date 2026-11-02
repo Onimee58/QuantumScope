@@ -181,6 +181,10 @@ class Built:
     initial_states: list
     measured: tuple = ()
     note: str = ''
+    roles: tuple = ()                 # a short role per qubit, shown beside its label ('data', 'Bob', …)
+    parameters: tuple = ()            # ((name, value), …) for variational circuits
+    bindings: tuple = ()              # ((item index, field, parameter name, factor), …)
+    observable: str = ''              # e.g. a Hamiltonian as a Pauli sum
 
 
 @dataclass
@@ -192,6 +196,8 @@ class CircuitView:
     blocks: list                      # Block objects present
     measured: tuple
     final_state: np.ndarray = field(default=None)
+    branches: list = field(default=None)          # final branches (dynamic circuits)
+    simulate: object = field(default=None)        # simulate(initial vector) -> final branches of this circuit
 
 
 def marginal(state, n, qubits):
@@ -402,6 +408,305 @@ def _inputs_from(p, names):
     return [InitialState.preset(str(p.get(k, 0))) for k in names]
 
 
+# ---- dynamic examples (v0.6.1): mid-circuit measurement and feed-forward ---------------------
+
+def build_teleport(p):
+    from .dynamic import Conditioned, Measure
+    items = [Gate('H', (1,)), Gate('CX', (1, 2)),                 # shared Bell pair between q1 and q2
+             Gate('CX', (0, 1)), Gate('H', (0,)),                  # Bell measurement of q0 and q1 …
+             Measure(0, 0), Measure(1, 1),                         # … recorded in c0 and c1
+             Conditioned(Gate('X', (2,)), 1, 1), Conditioned(Gate('Z', (2,)), 0, 1)]   # corrections
+    return Built(3, items, [InitialState.preset(p['input']), InitialState.preset('0'), InitialState.preset('0')],
+                 note='Teleports q0\'s state to q2 using a Bell pair and two classical bits.',
+                 roles=('Alice · input', 'Alice', 'Bob'))
+
+
+TELEPORT_TESTS = ('0', '1', '+', '-', '+i', '-i')
+
+
+def spec_teleport(p, view):
+    """q2 must end in q0's starting state in every branch, for many inputs (not just the one shown)."""
+    from .noise import partial_trace
+    if view.n != 3 or view.simulate is None:
+        return [], 'Teleportation needs 3 qubits.'
+    rows = []
+    inputs = [(InitialState.preset(k).label, InitialState.preset(k).vector()) for k in TELEPORT_TESTS]
+    rng = np.random.default_rng(2026)
+    for i in range(4):
+        a = rng.normal(size=2) + 1j * rng.normal(size=2)
+        inputs.append((f'random input {i + 1}', a / np.linalg.norm(a)))
+    for label, a in inputs:
+        start = np.kron(a, np.array([1, 0, 0, 0], complex))
+        branches = view.simulate(start)
+        fidelities = [float(np.real(np.vdot(a, partial_trace(b.rho, 3, [2]) @ a))) for b in branches]
+        worst = min(fidelities)
+        rows.append(_row(label, f'q2 fidelity {worst:.6f} in {len(branches)} branch(es)', 'q2 = input in every branch',
+                         worst, worst > 1 - 1e-9))
+    return rows, 'Each input is teleported from q0 to q2; every measurement branch must end with q2 equal to the input.'
+
+
+def build_superdense(p):
+    from .dynamic import Measure
+    items = [Gate('H', (0,)), Gate('CX', (0, 1))]                 # shared Bell pair
+    if p['b1']:
+        items.append(Gate('X', (0,)))                              # encode: X for the second bit …
+    if p['b0']:
+        items.append(Gate('Z', (0,)))                              # … Z for the first
+    items += [Gate('CX', (0, 1)), Gate('H', (0,)), Measure(0, 0), Measure(1, 1)]   # decode
+    return Built(2, items, [InitialState.preset('0')] * 2,
+                 note=f'Sends the two bits {p["b0"]}{p["b1"]} by transmitting only q0.', roles=('Alice', 'Bob'))
+
+
+def spec_superdense(p, view):
+    from .dynamic import record_distribution
+    if not view.branches:
+        return [], 'Superdense coding needs mid-circuit measurements into c0 and c1.'
+    expected = f'{p["b0"]}{p["b1"]}'
+    record = record_distribution(view.branches)
+    probability = record.get(expected, 0.0)
+    best = max(record, key=record.get)
+    return [_row(f'message {expected}', f'received {best} (P = {record[best]:.6f})', f'received {expected}',
+                 probability, probability > 1 - 1e-9)], 'The two classical bits c0c1 must equal the message.'
+
+
+# ---- error correction (v0.6.2) ---------------------------------------------------------------
+
+QEC_ERRORS = (('No error', 'none'), ('Error on q0', 'q0'), ('Error on q1', 'q1'), ('Error on q2', 'q2'),
+              ('Two errors (q0 and q1)', 'q0q1'), ('Random errors on every data qubit', 'random'))
+QEC_STRENGTHS = tuple((f'p = {v:g}', v) for v in (0.01, 0.05, 0.1, 0.2, 0.3))
+
+
+def _repetition(code):
+    def build(p):
+        from .qec import build_repetition
+        n, items, states = build_repetition(code, p['logical'], p['error'], p.get('p', 0.1))
+        kind = 'Z (phase-flip)' if code == 'phase_flip' else 'X (bit-flip)'
+        return Built(n, items, states, note=f'Data q0–q2 encode q0\'s starting state; {kind} errors are '
+                                            'detected by q3, q4 (measured into c0, c1) and corrected.',
+                     roles=('data', 'data', 'data', 'syndrome', 'syndrome'))
+    return build
+
+
+def _repetition_spec(code):
+    def spec(p, view):
+        """The data qubits must hold the encoded input after correction (for the six standard inputs)."""
+        from .noise import partial_trace
+        from .qec import logical_state
+        if view.n != 5 or view.simulate is None:
+            return [], 'This check needs the 5-qubit code with mid-circuit syndrome measurement.'
+        rows = []
+        for key in ('0', '1', '+', '-', '+i', '-i'):
+            a = InitialState.preset(key).vector()
+            start = np.kron(a, np.eye(16)[0])
+            rho = partial_trace(sum(b.sigma for b in view.simulate(start)), 5, [0, 1, 2])
+            target = logical_state(code, a)
+            fidelity = float(np.real(np.vdot(target, rho @ target)))
+            rows.append(_row(f'logical {InitialState.preset(key).label}', f'fidelity {fidelity:.6f}',
+                             'encoded state restored', fidelity, fidelity > 1 - 1e-9))
+        limit = (' Two errors are beyond what the code can correct, so some inputs fail: that is its limit.'
+                 if p.get('error') == 'q0q1' else '')
+        noisy = (' With random errors, fidelity below 1 is expected: use Plot logical error rate.'
+                 if p.get('error') == 'random' else '')
+        return rows, 'After correction, q0–q2 must hold the encoded input for every starting state.' + limit + noisy
+    return spec
+
+
+def build_shor_example(p):
+    from .qec import build_shor
+    error = p['error']
+    qubit = None if error == 'none' else int(error[1:])
+    n, items, states = build_shor(p['logical'], qubit, error[0] if error != 'none' else 'X')
+    return Built(n, items, states, note='Shor\'s code spreads q0 over 9 qubits and corrects any single-qubit '
+                                        'error coherently; the logical qubit ends back in q0.',
+                 roles=('logical',) + ('code',) * 8)
+
+
+def spec_shor(p, view):
+    from .noise import density, partial_trace
+    from .circuits import evolution
+    rows = []
+    for key in ('0', '1', '+', '-', '+i', '-i'):
+        a = InitialState.preset(key).vector()
+        final = evolution(9, view.gates, np.kron(a, np.eye(256)[0]))[-1]
+        q0 = partial_trace(density(final), 9, [0])
+        fidelity = float(np.real(np.vdot(a, q0 @ a)))
+        rows.append(_row(f'input {InitialState.preset(key).label}', f'q0 fidelity {fidelity:.6f}', 'q0 = input',
+                         fidelity, fidelity > 1 - 1e-9))
+    return rows, 'q0 must end in its starting state whatever single-qubit error was injected.'
+
+
+SHOR_ERRORS = (('No error', 'none'),) + tuple((f'{k} on q{q}', f'{k}{q}') for k in 'XYZ' for q in range(9))
+
+
+# ---- quantum phase estimation (v0.6.2) ------------------------------------------------------
+
+QPE_PHASES = (('3/8 (exact with 3 or more counting qubits)', '3/8'), ('1/4 (exact)', '1/4'),
+              ('5/16 (exact with 4 or more)', '5/16'), ('1/3 (not exact)', '1/3'), ('0.3 (not exact)', '0.3'),
+              ('0.1 (not exact)', '0.1'))
+
+
+def _phase_value(text):
+    if '/' in text:
+        a, b = text.split('/')
+        return int(a) / int(b)
+    return float(text)
+
+
+def build_qpe(p):
+    """Estimate φ in U = P(2πφ), whose eigenstate |1⟩ sits in the last qubit."""
+    t, phi = p['t'], _phase_value(p['phase'])
+    target = t
+    items = [Gate('H', (j,)) for j in range(t)]
+    # counting qubit j controls U^(2^(t−1−j)): q0 holds the most significant bit of the estimate
+    items += [Gate('CP', (j, target), 2 * math.pi * phi * 2 ** (t - 1 - j)) for j in range(t)]
+    items.append(iqft_block(range(t)))
+    states = [InitialState.preset('0')] * t + [InitialState.preset('1')]
+    return Built(t + 1, items, states, measured=tuple(range(t)), roles=('count',) * t + ('eigenstate',),
+                 note=f'q0–q{t - 1} read out the best {t}-bit estimate of φ = {p["phase"]}; the last qubit holds U\'s eigenstate |1⟩.')
+
+
+def spec_qpe(p, view):
+    t, phi = p['t'], _phase_value(p['phase'])
+    if view.n != t + 1:
+        return [], f'Phase estimation with {t} counting qubits needs {t + 1} qubits.'
+    probs = marginal(view.final_state, view.n, list(range(t)))
+    best = max(probs, key=probs.get)
+    closest = round(phi * 2 ** t) % 2 ** t
+    exact = abs(phi * 2 ** t - round(phi * 2 ** t)) < 1e-9
+    target_bits = format(closest, f'0{t}b')
+    p_best = probs.get(target_bits, 0.0)
+    bound = 1.0 if exact else 4 / math.pi ** 2
+    rows = [_row(f'φ = {p["phase"]}', f'most likely {best} → {int(best, 2) / 2 ** t:.4f}',
+                 f'{target_bits} → {closest / 2 ** t:.4f}', p_best, best == target_bits and p_best >= bound - 1e-9)]
+    note = ('φ has an exact t-bit expansion, so the estimate is certain.' if exact else
+            f'φ is not a multiple of 1/{2 ** t}: the closest estimate wins with probability {p_best:.3f} '
+            f'(at least 4/π² ≈ 0.405 in theory); more counting qubits sharpen it.')
+    return rows, note
+
+
+# ---- variational quantum eigensolver (v0.7.0) -------------------------------------------------
+
+# Two-qubit H2 Hamiltonian (STO-3G, bond length 0.735 Å) in Hartree, including the nuclear
+# repulsion 0.7199689944 Ha. Its exact ground energy, −1.137306 Ha, matches the known value.
+H2_HAMILTONIAN = ('-0.332404256824 - 0.397937424843 Z0 + 0.397937424843 Z1 - 0.011280104256 Z0 Z1 '
+                  '+ 0.180931199784 X0 X1')
+
+
+def vqe_problem(key):
+    """(qubits, Hamiltonian as a Pauli sum, description) for the VQE examples."""
+    if key == 'h2':
+        return 2, H2_HAMILTONIAN, 'the H₂ molecule at 0.735 Å (energy in Hartree)'
+    kind, n = key.split('-')
+    n = int(n)
+    if kind == 'ising':
+        terms = [f'Z{q} Z{q + 1}' for q in range(n - 1)] + [f'0.5 X{q}' for q in range(n)]
+        return n, ' + '.join(terms), f'a {n}-spin transverse-field Ising chain (field 0.5)'
+    terms = [f'{p}{q} {p}{q + 1}' for q in range(n - 1) for p in 'XYZ']
+    return n, ' + '.join(terms), f'a {n}-spin Heisenberg chain'
+
+
+VQE_PROBLEMS = (('H₂ molecule (2 qubits)', 'h2'), ('Ising chain, 2 spins', 'ising-2'), ('Ising chain, 3 spins', 'ising-3'),
+                ('Ising chain, 4 spins', 'ising-4'), ('Heisenberg chain, 2 spins', 'heisenberg-2'),
+                ('Heisenberg chain, 3 spins', 'heisenberg-3'))
+
+
+def build_vqe(p):
+    """A hardware-efficient ansatz: layers of RY on every qubit with a CX chain between them.
+    Every RY has its own parameter θk; the observable is the problem's Hamiltonian."""
+    n, hamiltonian, about = vqe_problem(p['problem'])
+    items, bindings, parameters = [], [], []
+    k = 0
+    for layer in range(p['layers'] + 1):
+        for q in range(n):
+            items.append(Gate('RY', (q,), 0.0))
+            name = f'θ{k}'
+            start = 0.1 * (k + 1)                                     # a fixed, reproducible starting point
+            parameters.append((name, start))
+            bindings.append((len(items) - 1, 'angle', name, 1.0))
+            k += 1
+        if layer < p['layers']:
+            items += [Gate('CX', (q, q + 1)) for q in range(n - 1)]
+    return Built(n, items, defaults(n), roles=(), parameters=tuple(parameters), bindings=tuple(bindings),
+                 observable=hamiltonian,
+                 note=f'VQE for {about}: press Optimize in the Parameters panel to lower ⟨H⟩ toward the exact ground energy.')
+
+
+def spec_vqe(p, view):
+    """Passes when the circuit's ⟨H⟩ is within 1e-3 of the exact ground energy."""
+    from .observables import expectation, ground_energy, parse
+    n, hamiltonian, about = vqe_problem(p['problem'])
+    if view.n != n:
+        return [], f'This problem needs {n} qubits.'
+    terms = parse(hamiltonian, n)
+    energy = expectation(view.final_state, n, terms)
+    exact = ground_energy(n, terms)
+    gap = energy - exact
+    rows = [_row('⟨H⟩', f'{energy:.6f}', f'exact ground energy {exact:.6f}', max(0.0, 1 - gap), gap < 1e-3)]
+    return rows, ('Within 0.001 of the exact ground energy: the variational state has found the ground state.'
+                  if gap < 1e-3 else f'⟨H⟩ is {gap:.4f} above the exact ground energy. Press Optimize in the '
+                                     'Parameters panel (or move the sliders) to lower it. If it stops above the '
+                                     'exact value, the circuit cannot represent the ground state: try more '
+                                     'entangling layers (Change parameters…).')
+
+
+# ---- QAOA for MaxCut (v0.7.0) --------------------------------------------------------------
+
+def build_qaoa(p):
+    """QAOA: H on every node, then per layer k the cost step exp(iγk·ZZ/2) on every edge
+    (CX, RZ(−γk), CX) and the mixer RX(2βk) on every node. The observable is −(cut size)."""
+    from .maxcut import GRAPHS, hamiltonian
+    label, n, edges, _ = GRAPHS[p['graph']]
+    items = [Gate('H', (q,)) for q in range(n)]
+    bindings, parameters = [], []
+    for k in range(p['layers']):
+        gamma, beta = f'γ{k}', f'β{k}'
+        parameters += [(gamma, 0.4 * (k + 1) / p['layers']), (beta, 0.3 * (p['layers'] - k) / p['layers'])]
+        for i, j in edges:
+            items.append(Gate('CX', (i, j)))
+            items.append(Gate('RZ', (j,), 0.0))
+            bindings.append((len(items) - 1, 'angle', gamma, -1.0))
+            items.append(Gate('CX', (i, j)))
+        for q in range(n):
+            items.append(Gate('RX', (q,), 0.0))
+            bindings.append((len(items) - 1, 'angle', beta, 2.0))
+    return Built(n, items, defaults(n), measured=tuple(range(n)), roles=tuple(f'node {q}' for q in range(n)),
+                 parameters=tuple(parameters), bindings=tuple(bindings), observable=hamiltonian(edges),
+                 note=f'QAOA for MaxCut on the {label.lower()}: ⟨H⟩ is minus the expected number of cut edges. '
+                      'Press Optimize, then measure: the likeliest results should be the best cuts.')
+
+
+def qaoa_report(p, final_state):
+    """(expected cut, maximum cut, probability of a best cut, most likely bitstring and its cut)."""
+    from .maxcut import GRAPHS, best_cuts, cut_value, expected_cut
+    label, n, edges, _ = GRAPHS[p['graph']]
+    probs = marginal(final_state, n, list(range(n)))
+    best, cuts = best_cuts(n, edges)
+    likeliest = max(probs, key=probs.get)
+    return expected_cut(probs, edges), best, sum(probs.get(c, 0.0) for c in cuts), likeliest, cut_value(likeliest, edges)
+
+
+def spec_qaoa(p, view):
+    """Passes when the most likely measurement result is a maximum cut."""
+    from .maxcut import GRAPHS
+    n = GRAPHS[p['graph']][1]
+    if view.n != n:
+        return [], f'This graph needs {n} qubits.'
+    average, best, p_best, likeliest, value = qaoa_report(p, view.final_state)
+    rows = [_row('expected cut', f'{average:.3f} of {best} (ratio {average / best:.3f})', f'maximum cut {best}',
+                 average / best, average / best > 0.5),
+            _row('most likely result', f'{likeliest} cuts {value}', f'a cut of {best}', p_best, value == best)]
+    note = (f'A best cut is measured with probability {p_best:.3f}. ' +
+            ('The likeliest result is a maximum cut.' if value == best else
+             'Press Optimize (in the Parameters panel) so that the likeliest result becomes a maximum cut; '
+             'more layers raise the chance further.'))
+    return rows, note
+
+
+QAOA_GRAPHS = (('Square (4 nodes)', 'ring4'), ('Square with a diagonal (4 nodes)', 'diamond'),
+               ('Pentagon (5 nodes, odd)', 'ring5'), ('Hexagon (6 nodes)', 'ring6'),
+               ('Triangular prism (6 nodes)', 'prism'))
+
+
 def build_full_adder(p):
     gates = [Gate('CCX', (0, 1, 3)), Gate('CX', (0, 1)), Gate('CCX', (1, 2, 3)), Gate('CX', (1, 2)), Gate('CX', (0, 1))]
     return Built(4, gates, _inputs_from(p, ('a', 'b', 'cin')) + [InitialState()], (2, 3),
@@ -507,6 +812,41 @@ LIBRARY = (
           (Param('n', 'Qubits', 'int', 3, 1, 6), Param('x', 'Input value x', 'int', 5, 0, 63),
            Param('inverse', 'Follow with QFT†', 'choice', 'no', choices=(('No', 'no'), ('Yes', 'yes')))),
           build_qft, spec_qft, 'QFT of a basis state; phase patterns are visible in the State Inspector.'),
+    Entry('teleportation', 'Examples', 'Quantum teleportation',
+          (Param('input', 'State of q0 to teleport', 'choice', '+i',
+                 choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),),
+          build_teleport, spec_teleport, 'Mid-circuit measurement and classically controlled corrections'),
+    Entry('superdense', 'Examples', 'Superdense coding', (_bit('b0', 'first bit'), _bit('b1', 'second bit')),
+          build_superdense, spec_superdense, 'Two classical bits sent with one qubit and shared entanglement'),
+    Entry('qpe', 'Algorithms', 'Quantum phase estimation',
+          (Param('t', 'Counting qubits', 'int', 4, 1, 6), Param('phase', 'Phase φ of U = P(2πφ)', 'choice', '5/16',
+                                                                choices=QPE_PHASES)),
+          build_qpe, spec_qpe, 'Estimates an eigenphase with controlled powers of U and the inverse QFT'),
+    Entry('vqe', 'Algorithms', 'Variational quantum eigensolver (VQE)',
+          (Param('problem', 'Problem', 'choice', 'h2', choices=VQE_PROBLEMS),
+           Param('layers', 'Entangling layers', 'int', 1, 1, 3)),
+          build_vqe, spec_vqe, 'Finds a ground-state energy by minimising ⟨H⟩ over circuit parameters'),
+    Entry('qaoa', 'Algorithms', 'QAOA for MaxCut',
+          (Param('graph', 'Graph', 'choice', 'ring4', choices=QAOA_GRAPHS),
+           Param('layers', 'Layers (p)', 'int', 1, 1, 3)),
+          build_qaoa, spec_qaoa, 'Approximates the best cut of a graph with alternating cost and mixer layers'),
+    Entry('bit_flip_code', 'Examples', 'Bit-flip code',
+          (Param('logical', 'Logical state (q0)', 'choice', '1',
+                 choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),
+           Param('error', 'Error', 'choice', 'q1', choices=QEC_ERRORS),
+           Param('p', 'Random error strength', 'choice', 0.1, choices=QEC_STRENGTHS)),
+          _repetition('bit_flip'), _repetition_spec('bit_flip'), '3-qubit code with syndrome measurement and correction'),
+    Entry('phase_flip_code', 'Examples', 'Phase-flip code',
+          (Param('logical', 'Logical state (q0)', 'choice', '+',
+                 choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),
+           Param('error', 'Error', 'choice', 'q1', choices=QEC_ERRORS),
+           Param('p', 'Random error strength', 'choice', 0.1, choices=QEC_STRENGTHS)),
+          _repetition('phase_flip'), _repetition_spec('phase_flip'), 'The same code in the |±⟩ basis, for Z errors'),
+    Entry('shor_code', 'Examples', 'Shor code (9 qubits)',
+          (Param('logical', 'Logical state (q0)', 'choice', '+i',
+                 choices=tuple((InitialState.preset(k).label, k) for k in TELEPORT_TESTS)),
+           Param('error', 'Error', 'choice', 'Y4', choices=SHOR_ERRORS)),
+          build_shor_example, spec_shor, 'Corrects any single-qubit error, coherently'),
     Entry('full_adder', 'Examples', 'Full adder', (_bit('a', 'a'), _bit('b', 'b'), _bit('cin', 'cin')),
           build_full_adder, spec_full_adder),
     Entry('comparator', 'Examples', '2-bit comparator',

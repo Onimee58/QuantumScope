@@ -13,6 +13,19 @@ current circuit; a step is done when all of its checks pass:
     noise depolarizing               a noise channel of this kind is placed in the circuit
     fidelity <= 0.8                  fidelity of the (noisy) final state with the ideal one (also >=)
     purity <= 0.9                    purity Tr(ρ²) of the (noisy) final state (also >=)
+    measures >= 2                    number of mid-circuit measurements (M→c) (also <=, =)
+    conditions >= 1                  number of classically conditioned gates (also <=, =)
+    branches = 4                     number of measurement branches at the end (also <=, >=)
+    record 00=0.25 11=0.75           probabilities of classical records (c0 first)
+    teleports 0 2                    in every branch, qubit 2 ends in qubit 0's starting state
+    settles 0 0                      in every branch, qubit 0 ends in |0⟩ (or |1⟩ with "settles 0 1")
+    labeled 3 syndrome               qubit 3 is labeled (named) "syndrome" (case does not matter)
+    parameters >= 1                  the circuit has at least 1 parameter (also <=, =)
+    bound >= 2                       at least 2 gate angles follow a parameter (also <=, =)
+    observable Z0                    the observable is Z0 (any observable: "observable" alone)
+    expectation <= -0.99             ⟨observable⟩ for the final state compared with a value (also >=)
+    reaches 0.001                    ⟨observable⟩ is within 0.001 of its exact minimum
+    verified                         the example's own check passes
 """
 import numpy as np
 
@@ -81,6 +94,76 @@ def check(model, condition):
         measure = N.fidelity_with_pure(rho, ideal) if kind == 'fidelity' else N.purity(rho)
         ok = {'<=': measure <= float(value) + 1e-9, '>=': measure >= float(value) - 1e-9}[op]
         return ok, f'{kind} is {measure:.3f} (needs {op} {value})'
+    if kind in ('measures', 'conditions', 'branches'):
+        from quantumscope.physics.dynamic import Measure
+        op, value = rest.split()
+        if kind == 'measures':
+            count = sum(isinstance(v, Measure) for v in model.wires.values())
+        elif kind == 'conditions':
+            count = len(model.conditions)
+        else:
+            count = len(model.simulate_branches(store=False)[1][-1])
+        ok = {'<=': count <= int(value), '>=': count >= int(value), '=': count == int(value)}[op]
+        return ok, f'{kind}: {count} (needs {op} {value})'
+    if kind == 'record':
+        from quantumscope.physics.dynamic import record_distribution
+        record = record_distribution(model.simulate_branches(store=False)[1][-1])
+        for item in rest.split():
+            bits, _, value = item.partition('=')
+            if abs(record.get(bits, 0.0) - float(value)) > 1e-6:
+                return False, f'P(record {bits}) should be {value}'
+        return True, ''
+    if kind in ('teleports', 'settles'):
+        from quantumscope.physics import noise as N
+        a, b = (int(x) for x in rest.split())
+        if max(a, b if kind == 'teleports' else a) >= model.n:
+            return False, 'the circuit does not have these qubits'
+        branches = model.simulate_branches(store=False)[1][-1]
+        if kind == 'teleports':
+            target = model.initial_states[a].vector()
+            target_q = b
+        else:
+            target = np.array([1, 0] if b == 0 else [0, 1], complex)
+            target_q = a
+        worst = min(float(np.real(np.vdot(target, N.partial_trace(br.rho, model.n, [target_q]) @ target)))
+                    for br in branches)
+        return worst > 1 - 1e-6, f'q{target_q} does not match in every branch yet (worst fidelity {worst:.3f})'
+    if kind in ('parameters', 'bound'):
+        count = len(model.parameters) if kind == 'parameters' else len(model.bindings)
+        op, value = rest.split()
+        ok = {'>=': count >= int(value), '<=': count <= int(value), '=': count == int(value)}[op]
+        return ok, f'{kind} {count}'
+    if kind == 'observable':
+        if not rest.strip():
+            return bool(model.observable), 'an observable'
+        from quantumscope.physics.observables import parse
+        try:
+            same = model.observable and sorted(parse(model.observable, model.n)) == sorted(parse(rest, model.n))
+        except ValueError:
+            same = False
+        return bool(same), f'observable {rest.strip()}'
+    if kind == 'expectation':
+        op, value = rest.split()
+        current = model.expectation()
+        if current is None:
+            return False, 'no observable yet'
+        ok = current <= float(value) + 1e-9 if op == '<=' else current >= float(value) - 1e-9
+        return ok, f'⟨O⟩ = {current:.4f}'
+    if kind == 'reaches':
+        current = model.expectation()
+        if current is None:
+            return False, 'no observable yet'
+        from quantumscope.physics.observables import ground_energy, parse
+        gap = current - ground_energy(model.n, parse(model.observable, model.n))
+        return gap <= float(rest) + 1e-12, f'{gap:.4f} above the exact minimum'
+    if kind == 'verified':
+        rows, _ = model.verification()
+        return bool(rows) and all(r.passed for r in rows), 'the example check'
+    if kind == 'labeled':
+        qubit, _, text = rest.partition(' ')
+        q = int(qubit)
+        name = (model.roles + [''] * model.n)[q] if q < model.n else ''
+        return name.strip().lower() == text.strip().lower(), f'label q{q} "{text.strip()}"'
     raise ValueError(f'Unknown check: {kind}')
 
 

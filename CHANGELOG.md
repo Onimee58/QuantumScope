@@ -1,3 +1,141 @@
+## v0.7.0 — Variational algorithms
+
+### Updates
+- **ⓘ About → Check for updates…** (also in **Settings → Updates**):
+  - **with permission:** it asks first, makes one request to GitHub's release list, and only ever offers full releases (never pre-releases);
+  - **verified:** downloads are checked against the release's SHA-256 checksum, and a mismatched file is deleted;
+  - **installing:** happens after confirmation (the Windows installer, the macOS DMG, or the Ubuntu package with a password prompt). Source checkouts are shown the `git pull` instructions instead;
+  - **errors** have clear messages, including GitHub's rate limit.
+- **The release workflow** publishes a `.sha256` file next to each installer.
+
+### Parameterized circuits
+- **Parameters:** type a parameter name as a gate angle (RX, RY, RZ, P, CP, U).
+  - **Greek letters** are written as in LaTeX (`\theta` → θ); plain names stay as typed.
+  - **Factors** share a parameter among gates (`2*\gamma`, `-\beta`). Binding never changes the circuit, and bound gates show their parameter.
+- **The Parameters panel** (under the circuit, shown when in use) has sliders, exact values, usage counts and Delete. One drag is one undo step, and the panel keeps its rows readable and scrolls past four.
+- **Observables** are Pauli sums (`Z0 Z1 + 0.5 X0`). The panel shows ⟨O⟩, exactly, including under noise and mid-circuit measurement, next to the exact lowest possible value. It explains observables in words, with an Examples menu.
+- **Files and QASM:** saved with the circuit as an optional field (older versions open the circuit at its current angles), and written as QASM comments.
+
+### Optimization
+- **Methods:**
+  - **BFGS** (the default) and **gradient descent**, both with exact **parameter-shift** gradients. Gradient descent uses a backtracking line search, so it never goes uphill;
+  - **COBYLA** and **Nelder–Mead**, which need no gradients; only their improving steps are recorded.
+- **The live convergence window** shows the exact minimum, the steps and circuit evaluations used, and a Stop button. It gives a clear explanation when the circuit can't reach the exact minimum or no step helps.
+- **Parameters are wrapped** back into −π…π where that provably changes nothing.
+- **Energy landscapes** show one parameter as a curve or two as a color map, with the optimization path.
+
+### Algorithms
+- **VQE:**
+  - **problems:** H₂ (two qubits, 0.735 Å; −1.137306 Hartree, checked against the known value) and Ising and Heisenberg chains;
+  - **ansatz:** 1–3 entangling layers;
+  - **check:** ⟨H⟩ within 0.001 of the exact ground energy.
+- **QAOA for MaxCut:**
+  - **graphs:** five, from a square to a triangular prism, with 1–3 layers of γ and β;
+  - **graph view:** live, with the likeliest cut and the cut-size distribution;
+  - **check:** against the brute-force maximum cut. Even rings reach the known ratio 3/4 at one layer.
+
+### Learn
+- **Lectures:** *Observables and expectation values* (Quantum Principles); *Parameterized circuits*; *The parameter-shift rule*; *The variational quantum eigensolver*; *Optimizers, landscapes and plateaus*; *QAOA and MaxCut*.
+- **Labs:** *Tune a circuit by hand*; *Find H₂'s ground energy*; *Not enough layers*; *Cut a graph with QAOA*.
+- **For course authors:** new lab checks `parameters`, `bound`, `observable`, `expectation`, `reaches` and `verified`; Try it links accept `bind=` and `observable=`; **Learn more** now links VQE and QAOA to their lectures.
+
+### Fixes
+- **The circuit page** was measured once when built, so a growing panel was squeezed and controls overlapped; it now re-measures itself.
+- **The convergence chart** no longer zooms into rounding noise.
+
+### Quality
+- Automated tests: 1336 passing (1182 in v0.6.2 + 154 new), plus 101 opt-in GUI tests (run them with `tools/run_gui_tests.sh`, which keeps the 3-D Hydrogen tests in their own process). The 44-step editing replay is unchanged.
+
+## v0.6.2 — Error correction and phase estimation
+
+### Error correction
+- **Bit-flip code** and **phase-flip code** examples (5 qubits).
+  - **How they work:** data q0–q2 encode q0's state, and ancillas q3 and q4 measure the parities mid-circuit into c0 and c1. Corrections are conditioned on both bits.
+  - **Errors to inject:** none, one error on a chosen qubit, two errors (beyond the code), or random errors (noise boxes of strength p).
+- **Shor code (9 qubits):** corrects any single-qubit X, Y or Z error, coherently with Toffoli majority votes.
+- **Checks** test all six logical inputs on the current circuit.
+  - **Two errors fail**, as they should: that's the code's limit.
+  - **Removing the Shor code's final majority vote** fails the check.
+- **Logical error rate:** one exact sweep with two entry points.
+  - **Plot logical error rate** in the verification panel sweeps the noise boxes of the *current* circuit.
+  - **Quantum Circuits → + → Error-correction explorer** lets you choose the code and the noise type and drag p.
+  - **Exact agreement:** both reproduce 3p² − 2p³ for matched codes and (1 − (1 − 2p)³)/2 for mismatched ones.
+
+### Conditions on several classical bits
+- **In the editor:** **Run only if… → Several bits…** (e.g. c0c1 = 10), shown as a badge.
+- **Engine and files:** the branch engine, undo and **`.qscope` schema 6** all support them. Single-bit conditions stay schema 5.
+- **OpenQASM 2:** bits tested together share one register (`creg r0[2]`) and conditions become `if(r0==value)`. A condition on part of a register expands into one `if` per matching value. Multi-bit `if` is now imported too.
+
+### Quantum phase estimation
+- An Algorithms entry with 1–6 counting qubits and exact or inexact phases.
+- **The check:** the closest t-bit estimate must win, with probability 1 when φ is exact and at least 4/π² ≈ 0.405 otherwise.
+
+### Example titles and qubit labels
+- **A title bar** for circuits built from Examples or Algorithms: the title, its parameters, **Change parameters…**, and **Learn more**, which opens the matching lecture. It shows *(edited)* after changes and clears it when Undo restores the example.
+- **Qubit labels for any circuit:**
+  - examples fill them in;
+  - **click a qubit's label → Label this qubit…** to name your own;
+  - they're kept when the number of qubits changes, and cleared by Clear (Undo restores them);
+  - they're shown in PDF exports and as QASM comments.
+- **Saved with every circuit** as optional fields that older versions ignore, so the format is unchanged.
+
+### Learn
+- **Lectures:** *The bit-flip code*, *The phase-flip code*, *Logical error rates and thresholds*, *The Shor code and stabilizers*, *Quantum phase estimation*.
+- **Labs:** *Build the bit-flip code*, which includes labeling your own qubits; *Beat the noise*; *Phase estimation precision*.
+- **For course authors:** a new lab check `labeled`, links to the Examples (`qs:algorithm/bit_flip_code?…`), and the `qec` view.
+
+### Fixes
+- **Qubit roles** stayed after Clear, and a newly added qubit was left unlabeled.
+- **A test crash:** an intermittent crash at the end of GUI test runs, after all tests had passed. It was present in v0.6.1's tests too; Qt is now torn down in order.
+
+### Quality
+- Automated tests: 1182 passing (1051 in v0.6.1 + 131 new), plus 83 opt-in GUI tests. The 44-step editing replay is unchanged.
+
+## v0.6.1 — Measurement and feed-forward
+
+### Dynamic circuits
+- **Mid-circuit measurement (M→c, Classical palette):** measures a qubit at any point and stores the result in a classical bit c0–c9. The terminal **M** gates are unchanged.
+- **Classically controlled gates:** right-click → **Run only if… → cₖ = 0 or 1**, shown as a badge. Conditions on whole registers are planned for later.
+- **Reset** returns a qubit to |0⟩ mid-circuit.
+- **An exact branch engine** follows every measurement outcome. Branches with the same classical record are merged, noise works inside branches, and mid-circuit readout error flips the recorded bit while the qubit collapses to the true outcome.
+- **Results:**
+  - the status and result line describe the branches;
+  - a new **Branches** tab in the State Inspector shows each record's probability, purity and per-qubit Bloch vectors;
+  - shots record the classical bits.
+- **Tools that need a fixed unitary** (Simplify, Check equivalence and the noisy-success notes) explain why they don't apply to dynamic circuits.
+
+### Examples and experiments
+- **Quantum teleportation** (choose the state to send) and **Superdense coding** (choose two bits) examples.
+  - **The teleportation check** runs your *current* circuit on ten inputs and requires q2 to equal the input in every branch. Removing a correction, or making one unconditional, fails it.
+- **The Quantum Teleportation experiment** in Quantum Principles:
+  - **the story:** Alice, Bob and a classical channel, in five steps;
+  - **measurement results:** "unknown to Bob" (the average over all four) or a chosen or random result;
+  - **the payoff:** it shows that Bob's qubit is random until the two bits arrive and that Alice's original is destroyed;
+  - **Open in the circuit simulator** loads the matching circuit. It uses the same engine as the circuit.
+
+### Files and OpenQASM
+- **`.qscope` schema version 5** stores mid-circuit measurements, resets and conditions.
+- **OpenQASM 2 export** gives each classical bit a one-bit register (`creg m0[1]`), so `if(m1==1) …` expresses single-bit conditions exactly.
+- **OpenQASM 2 import** accepts measurements anywhere, `if` on one-bit registers and `reset`, packing every condition after its measurement. Ordinary programs still use the original importer.
+- **PDF export** draws M→c boxes, resets and condition badges.
+
+### Learn
+- **Lectures:** *Mid-circuit measurement and classical bits*, *Classical control, feed-forward and reset*, *Quantum teleportation*, *Superdense coding*, *The deferred-measurement principle*, and *Measurement, information and no-cloning* (Quantum Principles).
+- **Labs:** *Measure in the middle*, *Reset by feed-forward*, *Teleport a qubit*, *Send two bits with one qubit*, *Defer the measurement*.
+- **Interactive quizzes:** click an option to get ✓ Correct with the explanation, or ✗ Not quite and try again. Show answer is still available.
+- **Lab steps now tick off live in the app.** Previously they only updated after another click.
+- **For course authors:**
+  - new lab checks `measures`, `conditions`, `branches`, `record`, `teleports` and `settles`;
+  - Try it links accept `cols`, `measures`, `resets` and `conditions`, and can open the `teleportation` view.
+
+### Fixes
+- **Windows dark mode:** the category tabs and drop-down lists were drawn in the system's light colors. QuantumScope now sets a complete theme palette, and "&" in group titles is shown correctly.
+- **Math in table cells:** inline math using a bar inside a table cell fell back to plain text.
+- **Ubuntu CI:** a theme test skips cleanly on machines without graphics libraries.
+
+### Quality
+- Automated tests: 1051 passing (912 in v0.6.0 + 139 new), plus 75 opt-in GUI tests. The 44-step editing replay is unchanged.
+
 ## v0.6.0 — Noise and mixed states
 
 ### Noise

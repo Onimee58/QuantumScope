@@ -2,6 +2,9 @@
 
     qs:circuit?n=2&gates=H:0;CX:0,1&states=0,0&inspector=1
     qs:circuit?n=2&gates=H:0;CX:0,1&noise=Moderate&elements=depolarizing:1:2:0.4
+    qs:circuit?n=1&gates=X:0&cols=1&measures=0:0:0&conditions=0:1:0:1
+                                     (cols: each gate's column; measures qubit:column:bit; resets qubit:column;
+                                      conditions gate-row:column:bit:value)
                                      (noise: a preset; elements: channel:qubit:column:strength)
     qs:algorithm/grover?n=3&marked=101&iterations=-1
     qs:example/Full adder            (any title from the Examples menu)
@@ -23,7 +26,8 @@ from quantumscope.physics.circuits import ALL, DUAL, TRIPLE, MAX_QUBITS, Gate
 from quantumscope.physics.expressions import parse_angle
 from quantumscope.physics.initial_states import PRESETS, InitialState
 
-VIEWS = ('circuits', 'converter', 'orbital', 'dynamics2d', 'dynamics3d', 'doubleslit', 'superposition', 'entanglement')
+VIEWS = ('circuits', 'converter', 'orbital', 'dynamics2d', 'dynamics3d', 'doubleslit', 'superposition', 'entanglement',
+         'teleportation', 'qec')
 
 
 @dataclass(frozen=True)
@@ -85,7 +89,30 @@ def parse(link):
             if not 0 <= element.qubit < n or int(parts[2]) < 0:
                 raise ValueError(f'Noise element outside the circuit: {token}')
             elements.append((element, int(parts[2])))
+        from quantumscope.physics.dynamic import Measure, Reset
+        for token in filter(None, (t.strip() for t in params.get('measures', '').split(';'))):
+            q, col, cbit = (int(x) for x in token.split(':'))            # qubit:column:classical bit
+            if not 0 <= q < n:
+                raise ValueError(f'Measurement outside the circuit: {token}')
+            elements.append((Measure(q, cbit), col))
+        for token in filter(None, (t.strip() for t in params.get('resets', '').split(';'))):
+            q, col = (int(x) for x in token.split(':'))
+            if not 0 <= q < n:
+                raise ValueError(f'Reset outside the circuit: {token}')
+            elements.append((Reset(q), col))
+        conditions = []
+        for token in filter(None, (t.strip() for t in params.get('conditions', '').split(';'))):
+            row, col, cbit, value = (int(x) for x in token.split(':'))    # gate row:column:bit:value
+            conditions.append(((row, col), cbit, value))
+        columns = None
+        if params.get('cols'):
+            columns = [int(c) for c in params['cols'].split(',')]          # one column per gate, in order
+            if len(columns) != len(gates) or columns != sorted(columns) or min(columns) < 0:
+                raise ValueError('cols needs one non-decreasing column per gate')
         return Action('circuit', '', {'n': n, 'gates': gates, 'states': [InitialState.preset(s) for s in states],
+                                      'conditions': conditions, 'columns': columns,
+                                      'bindings': [tuple(t.split(':')) for t in params.get('bind', '').split(';') if t.strip()],
+                                      'observable': params.get('observable', ''),
                                       'inspector': params.get('inspector') == '1',
                                       'noise_model': NOISE_PRESETS[preset] if preset else None, 'elements': elements})
     if kind == 'algorithm':
@@ -95,8 +122,13 @@ def parse(link):
         values = {}
         for p in ENTRIES[target].params:
             if p.key in params:
-                values[p.key] = int(params[p.key]) if p.kind == 'int' or (
-                    p.kind == 'choice' and isinstance(p.default, int)) else params[p.key]
+                raw = params[p.key]
+                if p.kind == 'int' or (p.kind == 'choice' and isinstance(p.default, int)):
+                    values[p.key] = int(raw)
+                elif p.kind == 'choice' and isinstance(p.default, float):
+                    values[p.key] = float(raw)                 # e.g. an error strength p = 0.1
+                else:
+                    values[p.key] = raw
         validate_params(ENTRIES[target].params, values)
         from quantumscope.physics.noise import PRESETS as NOISE_PRESETS
         preset = params.get('noise')

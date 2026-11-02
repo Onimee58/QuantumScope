@@ -215,6 +215,13 @@ def test_analysis_counts_real_gates_inside_blocks():
 def test_every_library_entry_builds_and_passes(e):
     m = loaded(e.key)
     rows, _ = m.verification()
+    if e.key == 'vqe':
+        # VQE starts at a fixed, unoptimized point on purpose: its check passes only after optimizing.
+        assert rows and not rows[0].passed
+        from quantumscope.editor.variational import optimize
+        for name, value in zip(list(m.parameters), optimize(m, 'BFGS')[-1][0]):
+            m.set_parameter(name, value)
+        rows, _ = m.verification()
     assert rows and all(r.passed for r in rows)
 
 

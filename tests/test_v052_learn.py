@@ -179,6 +179,33 @@ LAB_SOLUTIONS = {
                                 Gate('SWAP', (0, 1))], '01'),
     'circuits/96-lab-bell-decoherence': (2, [Gate('H', (0,)), Gate('CX', (0, 1))], '00',
                                          [('depolarizing', 1, 2, 1.0)]),
+    # v0.6.1 labs: (n, gates, starts, noise, extra) with extra = columns, measures, resets, conditions
+    'circuits/97-lab-measure-in-the-middle': (2, [Gate('H', (0,)), Gate('CX', (0, 1))], '00', [],
+                                              {'measures': [(0, 2, 0), (1, 2, 1)]}),
+    'circuits/98-lab-reset-by-feed-forward': (1, [], '+', [], {'resets': [(0, 0)]}),
+    'circuits/99-lab-teleport-a-qubit': (3, [Gate('H', (1,)), Gate('CX', (1, 2)), Gate('CX', (0, 1)), Gate('H', (0,)),
+                                             Gate('X', (2,)), Gate('Z', (2,))], ('+i', '0', '0'), [],
+                                         {'columns': [0, 1, 2, 3, 5, 6], 'measures': [(0, 4, 0), (1, 4, 1)],
+                                          'conditions': [((2, 5), 1, 1), ((2, 6), 0, 1)]}),
+    'circuits/100-lab-superdense-coding': (2, [Gate('H', (0,)), Gate('CX', (0, 1)), Gate('Z', (0,)), Gate('CX', (0, 1)),
+                                               Gate('H', (0,))], '00', [], {'measures': [(0, 5, 0), (1, 5, 1)]}),
+    'circuits/101-lab-defer-the-measurement': (3, [Gate('H', (1,)), Gate('CX', (1, 2)), Gate('CX', (0, 1)),
+                                                   Gate('H', (0,)), Gate('CX', (1, 2)), Gate('CZ', (0, 2))],
+                                               ('+i', '0', '0'), [], {}),
+    # v0.6.2
+    'circuits/102-lab-bit-flip-code': (5, [Gate('CX', (0, 1)), Gate('CX', (0, 2)), Gate('X', (1,)), Gate('CX', (0, 3)),
+                                           Gate('CX', (1, 3)), Gate('CX', (1, 4)), Gate('CX', (2, 4)), Gate('X', (1,))],
+                                       ('1', '0', '0', '0', '0'), [],
+                                       {'columns': [0, 1, 2, 3, 4, 5, 6, 8], 'measures': [(3, 7, 0), (4, 7, 1)],
+                                        'conditions': [((1, 8), (0, 1), (1, 1))],
+                                        'labels': ['', '', '', 'syndrome', 'syndrome']}),
+    'circuits/103-lab-beat-the-noise': ('library', 'bit_flip_code', {'logical': '0', 'error': 'random', 'p': 0.1}),
+    'circuits/104-lab-phase-estimation': ('library', 'qpe', {'t': 6, 'phase': '1/3'}),
+    # v0.7.0: variational labs (examples optimized like a student would, or built by hand)
+    'circuits/105-lab-tune-by-hand': ('build', 'tune'),
+    'circuits/106-lab-h2-ground-energy': ('library', 'vqe', {'problem': 'h2', 'layers': 1}, True),
+    'circuits/107-lab-not-enough-layers': ('library', 'vqe', {'problem': 'heisenberg-3', 'layers': 2}, True),
+    'circuits/108-lab-qaoa-maxcut': ('library', 'qaoa', {'graph': 'ring4', 'layers': 2}, True),
 }
 
 
@@ -190,14 +217,41 @@ def test_every_lab_has_a_tested_solution():
 @pytest.mark.parametrize('key', sorted(LAB_SOLUTIONS))
 def test_lab_solution_completes_every_step(key):
     lesson = next(l for l in LESSONS if l.key == key)
-    n, gates, starts, *extra = LAB_SOLUTIONS[key]
+    if LAB_SOLUTIONS[key][0] == 'build':                       # built by hand, as the lab describes
+        import math
+        m = CircuitModel(1)
+        m.place('RY', 0, 0, angle=0.4)
+        m.bind(0, 0, 'angle', '\\theta')
+        m.set_observable('Z0')
+        m.set_parameter('θ', math.pi)
+        lesson = next(l for l in LESSONS if l.key == key)
+        assert all(labs.progress(m, steps_of(lesson.body)).values())
+        return
+    if LAB_SOLUTIONS[key][0] == 'library':                     # labs that start from an example
+        _, entry, params, *optimize_it = LAB_SOLUTIONS[key]
+        m = CircuitModel()
+        m.load_library(entry, params)
+        if optimize_it:
+            from quantumscope.editor.variational import optimize
+            for name, value in zip(list(m.parameters), optimize(m, 'BFGS', steps=300)[-1][0]):
+                m.set_parameter(name, value)
+        lesson = next(l for l in LESSONS if l.key == key)
+        assert all(labs.progress(m, steps_of(lesson.body)).values())
+        return
+    n, gates, starts, *rest = LAB_SOLUTIONS[key]
+    from quantumscope.physics.dynamic import Measure, Reset
     from quantumscope.physics.noise import NoiseElement
-    noise = [(NoiseElement(kind, q, p), c) for kind, q, c, p in (extra[0] if extra else [])]
-    states = []
-    for ch in starts:
-        states.append(InitialState.preset({'0': '0', '1': '1', '+': '+', '-': '-'}[ch]))
+    noise = [(NoiseElement(kind, q, p), c) for kind, q, c, p in (rest[0] if rest else [])]
+    extra = rest[1] if len(rest) > 1 else {}
+    classical = [(Measure(q, b), c) for q, c, b in extra.get('measures', [])] + \
+                [(Reset(q), c) for q, c in extra.get('resets', [])]
+    states = [InitialState.preset(k) for k in (starts if isinstance(starts, tuple) else tuple(starts))]
     m = CircuitModel(n)
-    m.set_circuit(n, gates, initial_states=states, noise=noise)
+    m.set_circuit(n, gates, extra.get('columns'), initial_states=states, noise=noise, classical=classical,
+                  conditions=extra.get('conditions', ()))
+    for q, name in enumerate(extra.get('labels', [])):
+        if name:
+            m.set_label(q, name)
     assert all(labs.progress(m, steps_of(lesson.body)).values())
 
 
@@ -253,7 +307,7 @@ def test_grover_table_matches_the_formula():
 def test_every_area_has_lessons():
     areas = {l.area for l in LESSONS}
     assert areas == {'circuits', 'principles', 'hydrogen'}
-    assert sum(l.kind == 'lab' for l in LESSONS) == 7 and len(LESSONS) == 30
+    assert sum(l.kind == 'lab' for l in LESSONS) == 19 and len(LESSONS) == 59
 
 
 def test_png_size_matches_the_image_and_needs_no_qt():
@@ -312,3 +366,76 @@ def test_noise_lab_checks():
     assert labs.check(m, 'fidelity >= 1')[0] and labs.check(m, 'purity >= 1')[0] and not labs.check(m, 'noise bit_flip')[0]
     m.set_circuit(2, [Gate('H', (0,)), Gate('CX', (0, 1))], noise=[(NoiseElement('bit_flip', 0, 0.5), 2)])
     assert labs.check(m, 'noise bit_flip')[0] and labs.check(m, 'purity <= 0.6')[0]
+
+
+def test_quiz_rendering_states():
+    from quantumscope.learn.lessons import parse
+    lesson = parse('# T\n```quiz\nQ: 1 + 1?\n- 3\n* 2\nE: Because.\n```', 'course/t.md', '.')
+    fresh = to_html(lesson, 'dark', EQ)
+    assert 'qsquiz:0:0' in fresh and 'qsquiz:0:1' in fresh and 'Show answer' in fresh
+    wrong = to_html(lesson, 'dark', EQ, answers={0: 0})
+    assert 'Not quite' in wrong and 'qsquiz:0:1' in wrong and 'Because.' not in wrong
+    right = to_html(lesson, 'light', EQ, answers={0: 1})
+    assert 'Correct!' in right and 'Because.' in right and 'qsquiz:0:' not in right
+    revealed = to_html(lesson, 'dark', EQ, revealed={0})
+    assert 'Because.' in revealed and 'Correct!' not in revealed
+
+
+def test_quiz_feedback_colors_are_readable():
+    from quantumscope.gui.theme import contrast_ratio
+    from quantumscope.learn.render import PALETTES
+    for name in ('dark', 'light'):
+        p = PALETTES[name]
+        assert contrast_ratio(p['wrong'], p['note_bg']) >= 4.5 and contrast_ratio(p['answer'], p['note_bg']) >= 4.5
+
+
+
+def test_error_correction_lecture_numbers_match_the_sweep():
+    from quantumscope.editor import qec_analysis as qa
+    model, data = qa.example_model('bit_flip', 'bit_flip')
+    at = lambda p: qa.logical_failure(model, p, data)
+    text = lesson_text('circuits/19-logical-error-rates')
+    assert f'{at(0.1):.3f}' == '0.028' and '0.028' in text and '3.6 times' in text
+    assert round(0.1 / at(0.1), 1) == 3.6
+    assert f'{at(0.2):.3f}' == '0.104' and '0.104' in lesson_text('circuits/19-logical-error-rates')
+    lab = lesson_text('circuits/103-lab-beat-the-noise')
+    assert '2.8%' in lab and '3.6 times' in lab
+
+
+def test_phase_estimation_lab_peaks_match_the_simulator():
+    from quantumscope.physics.algorithms import marginal
+    text = lesson_text('circuits/104-lab-phase-estimation')
+    for t, bits, shown in ((3, '011', '3/8 = 0.375'), (6, '010101', '21/64 ≈ 0.328')):
+        m = CircuitModel()
+        m.load_library('qpe', {'t': t, 'phase': '1/3'})
+        probs = marginal(m.circuit_view().final_state, m.n, list(range(t)))
+        assert max(probs, key=probs.get) == bits and bits in text and shown in text
+
+
+def test_learn_more_targets_exist():
+    from quantumscope.learn.lessons import EXAMPLE_LESSONS
+    from quantumscope.physics.algorithms import ENTRIES
+    keys = {l.key for l in LESSONS}
+    assert set(EXAMPLE_LESSONS.values()) <= keys and set(EXAMPLE_LESSONS) <= set(ENTRIES)
+
+
+
+def test_variational_lecture_numbers_match_the_simulator():
+    import math
+    from quantumscope.editor.variational import Evaluator, optimize
+    from quantumscope.physics.algorithms import H2_HAMILTONIAN
+    from quantumscope.physics.observables import ground_energy, parse
+    assert f'{ground_energy(2, parse(H2_HAMILTONIAN)):.6f}' == '-1.137306' and '-1.137306' in lesson_text('circuits/24-vqe')
+    m = CircuitModel()
+    m.load_library('vqe', {'problem': 'heisenberg-3', 'layers': 1})
+    assert optimize(m, 'BFGS')[-1][1] == pytest.approx(-(1 + 2 * math.sqrt(2)), abs=1e-6)
+    assert '1 + 2\\sqrt{2}' in lesson_text('circuits/24-vqe')
+    ratios = {}
+    for graph, layers, edges in (('ring6', 1, 6), ('ring6', 2, 6), ('ring4', 2, 4)):
+        q = CircuitModel()
+        q.load_library('qaoa', {'graph': graph, 'layers': layers})
+        ratios[(graph, layers)] = -optimize(q, 'BFGS')[-1][1] / edges
+    assert ratios[('ring6', 1)] == pytest.approx(0.75, abs=1e-6) and ratios[('ring6', 2)] == pytest.approx(5 / 6, abs=1e-6)
+    assert ratios[('ring4', 2)] == pytest.approx(1, abs=1e-6)
+    text = lesson_text('circuits/26-qaoa-maxcut')
+    assert '3/4' in text and '5/6' in text and '-0.6' in text

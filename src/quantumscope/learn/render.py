@@ -13,9 +13,11 @@ from .equations import DISPLAY, INLINE, image_name
 
 PALETTES = {
     'dark': {'text': '#dce7f7', 'muted': '#9fb4cb', 'link': '#6fd6ee', 'note_bg': '#16283b', 'note_border': '#3c6d93',
-             'code_bg': '#0d1520', 'ok': '#77e6a1', 'todo': '#9fb4cb', 'answer': '#77e6a1', 'rule': '#304058'},
+             'code_bg': '#0d1520', 'ok': '#77e6a1', 'todo': '#9fb4cb', 'answer': '#77e6a1', 'rule': '#304058',
+             'wrong': '#ff9b9b'},
     'light': {'text': '#1b364e', 'muted': '#4d6a82', 'link': '#0b6f8f', 'note_bg': '#e8f2fa', 'note_border': '#7aa7c7',
-              'code_bg': '#eef3f8', 'ok': '#17703a', 'todo': '#4d6a82', 'answer': '#17703a', 'rule': '#c4d6e4'},
+              'code_bg': '#eef3f8', 'ok': '#17703a', 'todo': '#4d6a82', 'answer': '#17703a', 'rule': '#c4d6e4',
+              'wrong': '#b3261e'},
 }
 
 
@@ -99,20 +101,32 @@ def _quiz(body, number, ctx):
             options.append((line[:1] == '*', line[2:].strip()))
         elif line.startswith('E:'):
             explanation = line[2:].strip()
-    shown = number in ctx['revealed']
+    chosen = ctx['answers'].get(number)
+    correct_index = next((i for i, (ok, _) in enumerate(options) if ok), None)
+    solved = chosen is not None and chosen == correct_index
+    shown = number in ctx['revealed'] or solved
     p = ctx['p']
     parts = [f'<div style="background:{p["note_bg"]}; border-left:3px solid {p["note_border"]}; padding:8px">',
              f'<p><b>Check your understanding {number + 1}.</b> {_inline(html.escape(question), ctx)}</p><ol type="A">']
-    for correct, text in options:
+    for i, (correct, text) in enumerate(options):
         item = _inline(html.escape(text), ctx)
         if shown and correct:
             item = f'<b style="color:{p["answer"]}">{item}  ✓</b>'
+        elif chosen == i and not correct:
+            item = f'<span style="color:{p["wrong"]}">{item}  ✗</span>'
+        elif not shown:                            # clickable until answered correctly
+            item = f'<a href="qsquiz:{number}:{i}" style="color:{p["text"]}; text-decoration:none">{item}</a>'
         parts.append(f'<li>{item}</li>')
     parts.append('</ol>')
-    if shown:
+    if solved:
+        parts.append(f'<p><b style="color:{p["answer"]}">✓ Correct!</b> {_inline(html.escape(explanation), ctx)}</p>')
+    elif shown:
         parts.append(f'<p>{_inline(html.escape(explanation), ctx)}</p>' if explanation else '')
     else:
-        parts.append(f'<p><a href="qsquiz:{number}" style="color:{p["link"]}">Show answer</a></p>')
+        if chosen is not None:
+            parts.append(f'<p><b style="color:{p["wrong"]}">✗ Not quite</b> — try another option.</p>')
+        parts.append(f'<p><i>Click an option to check it.</i> · '
+                     f'<a href="qsquiz:{number}" style="color:{p["link"]}">Show answer</a></p>')
     parts.append('</div>')
     return ''.join(parts)
 
@@ -153,11 +167,12 @@ def steps_of(body):
     return [parse_step(m.group(1)) for m in re.finditer(r'```step\n(.*?)```', body, re.S)]
 
 
-def to_html(lesson, theme='dark', eq_folder='', revealed=(), steps=None, font_size=15):
-    """HTML for the reader. revealed: quiz numbers whose answers are shown; steps: {number: done?}."""
+def to_html(lesson, theme='dark', eq_folder='', revealed=(), steps=None, font_size=15, answers=None):
+    """HTML for the reader. revealed: quiz numbers whose answers are shown; steps: {number: done?};
+    answers: {quiz number: chosen option index} (checked at once, correct or not)."""
     p = PALETTES.get(theme, PALETTES['dark'])
     ctx = {'p': p, 'theme': theme, 'eq_folder': eq_folder, 'folder': lesson.folder,
-           'revealed': set(revealed), 'steps': dict(steps or {})}
+           'revealed': set(revealed), 'steps': dict(steps or {}), 'answers': dict(answers or {})}
     out = [f'<html><body style="color:{p["text"]}; font-size:{font_size}px">']
     pending = {'objectives': ''}
     if lesson.objectives:

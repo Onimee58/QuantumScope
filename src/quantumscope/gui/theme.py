@@ -76,6 +76,12 @@ QHeaderView::section { background:#1b3047; color:#e3f2ff; border:1px solid #3451
 QHeaderView { background:#101c2c; }
 QTableCornerButton::section { background:#1b3047; border:1px solid #34516d; }
 QTextEdit { background:#101c2c; color:#deefff; border:1px solid #304962; }
+QTabWidget#categoryWorkspace QTabBar::tab { background: #162336; color: #b7cbe0; border: 1px solid #304058;
+    padding: 7px 16px; border-top-left-radius: 6px; border-top-right-radius: 6px; }
+QTabWidget#categoryWorkspace QTabBar::tab:selected { background: #234766; color: #ffffff; border-color: #3d7aa3; }
+QTabWidget#categoryWorkspace QTabBar::tab:hover:!selected { background: #1d3049; color: #e3eefa; }
+QComboBox QAbstractItemView { background: #17283b; color: #eef7ff; border: 1px solid #3b5975;
+    selection-background-color: #1c6987; selection-color: #ffffff; outline: 0; }
 """
 
 # Light appearance is an optional preference; the default remains QuantumScope dark.
@@ -125,6 +131,11 @@ QCheckBox { color:#183a54; }
 # Explicit rules for nested tabs and dialogs: Qt styles do not automatically
 # translate the dark widget-specific selectors into a readable light palette.
 LIGHT_STYLESHEET += """
+QTabWidget#categoryWorkspace QTabBar::tab { background: #e4edf6; color: #26465d; border: 1px solid #b4cada; }
+QTabWidget#categoryWorkspace QTabBar::tab:selected { background: #ffffff; color: #103850; border-color: #1d879d; }
+QTabWidget#categoryWorkspace QTabBar::tab:hover:!selected { background: #d5e7f5; color: #143a54; }
+QComboBox QAbstractItemView { background: #ffffff; color: #193a52; border: 1px solid #a7bfd2;
+    selection-background-color: #b9dff0; selection-color: #10324a; outline: 0; }
 QDialog, QDialog QWidget, QTabWidget, QTabWidget::pane { background:#f8fbff; color:#20374d; }
 QTabBar::tab { background:#e0ebf5; color:#26465d; border:1px solid #a9c3d5; padding:7px 12px; }
 QTabBar::tab:selected { background:#ffffff; color:#103850; border-bottom:2px solid #177eaa; }
@@ -288,6 +299,32 @@ def system_is_dark():
         return False
 
 
+PALETTES = {
+    # role: (dark, light)
+    'Window': ('#101824', '#f5f8fc'), 'WindowText': ('#dce7f7', '#1b364e'),
+    'Base': ('#17283b', '#ffffff'), 'AlternateBase': ('#13202f', '#eef3f8'),
+    'Text': ('#eef7ff', '#193a52'), 'Button': ('#1d3049', '#e4edf6'), 'ButtonText': ('#e6f1fc', '#1b4058'),
+    'BrightText': ('#ffffff', '#000000'), 'Highlight': ('#1c6987', '#1b6d91'), 'HighlightedText': ('#ffffff', '#ffffff'),
+    'ToolTipBase': ('#1d3049', '#ffffff'), 'ToolTipText': ('#eef7ff', '#193a52'),
+    'PlaceholderText': ('#7f93a8', '#6b8296'), 'Link': ('#6fd6ee', '#0b6f8f'),
+    'Light': ('#2b4460', '#ffffff'), 'Midlight': ('#22374f', '#e9f0f7'), 'Mid': ('#304058', '#b4cada'),
+    'Dark': ('#0b121b', '#9fb4c6'), 'Shadow': ('#05090e', '#6b8296'),
+}
+DISABLED = {'WindowText': ('#75869b', '#8aa0b3'), 'Text': ('#75869b', '#8aa0b3'), 'ButtonText': ('#75869b', '#8aa0b3')}
+
+
+def theme_palette(resolved):
+    """A complete QPalette for 'dark' or 'light', so no widget falls back to the OS colors."""
+    from PySide6.QtGui import QColor, QPalette
+    index = 0 if resolved == 'dark' else 1
+    palette = QPalette()
+    for role, colors in PALETTES.items():
+        palette.setColor(getattr(QPalette.ColorRole, role), QColor(colors[index]))
+    for role, colors in DISABLED.items():
+        palette.setColor(QPalette.ColorGroup.Disabled, getattr(QPalette.ColorRole, role), QColor(colors[index]))
+    return palette
+
+
 def apply_theme(choice):
     """Apply 'dark', 'light' or 'system' to the running application; returns 'dark' or 'light'."""
     from PySide6.QtWidgets import QApplication
@@ -295,6 +332,7 @@ def apply_theme(choice):
     resolved = resolve_theme(choice, system_is_dark())
     app = QApplication.instance()
     app.setProperty('quantumscope_light', resolved == 'light')
+    app.setPalette(theme_palette(resolved))          # never fall back to the OS palette (e.g. Windows light)
     app.setStyleSheet(LIGHT_STYLESHEET if resolved == 'light' else STYLESHEET)
     for widget in app.allWidgets():
         widget.update()

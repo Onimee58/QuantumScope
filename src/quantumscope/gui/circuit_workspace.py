@@ -5,7 +5,7 @@ import html
 import numpy as np
 from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QDrag, QFont, QBrush, QWheelEvent, QPdfWriter, QPageSize
-from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
+from PySide6.QtWidgets import (QFrame, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
     QLabel, QPushButton, QListWidget, QTableWidget, QTableWidgetItem, QSpinBox,
     QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton, QSizePolicy, QDialog, QDialogButtonBox, QLineEdit, QTabWidget, QApplication, QDoubleSpinBox)
 from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured, from_native_layout, from_qasm_layout
@@ -17,6 +17,7 @@ from quantumscope.physics import noise as noisemod
 # Palette names for placeable noise channels -> channel kind (drawn as dashed boxes).
 NOISE_PALETTE = {'Bit flip': 'bit_flip', 'Phase flip': 'phase_flip', 'Depolarize': 'depolarizing',
                  'Amp. damp': 'amplitude_damping', 'Dephase': 'phase_damping'}
+CLASSICAL_PALETTE = ('M→c', 'Reset')     # mid-circuit measurement into a classical bit; reset to |0⟩
 NOISE_SHORT = {'bit_flip': 'BF', 'phase_flip': 'PF', 'depolarizing': 'DEP', 'amplitude_damping': 'AD',
                'phase_damping': 'PD'}
 from quantumscope.gui import preferences as prefs
@@ -118,9 +119,15 @@ class Grid(QTableWidget):
                 p.setBrush(canvas_color('gate_fill'));p.drawRoundedRect(box,5,5)
                 p.setPen(canvas_color('gate_text'))
                 p.setFont(QFont('Sans',10,QFont.Weight.DemiBold))
-                p.drawText(box,Qt.AlignmentFlag.AlignCenter,g.name)
+                bound=self.owner.model.binding_text((row,col))
+                if bound:                       # the parameter this angle follows, e.g. θ0 or 2·γ
+                    p.drawText(box.adjusted(0,1,0,-box.height()/2+2),Qt.AlignmentFlag.AlignCenter,g.name)
+                    p.setFont(QFont('Sans',8));p.drawText(box.adjusted(0,box.height()/2-2,0,-1),Qt.AlignmentFlag.AlignCenter,bound)
+                else:
+                    p.drawText(box,Qt.AlignmentFlag.AlignCenter,g.name)
         self._draw_blocks(p,blocks,rect)
         self._draw_noise(p,rows)
+        self._draw_classical(p,rows)
         # Draw incomplete multi-qubit placement as a preview, not a committed gate.
         pending = getattr(self.owner, '_pending_gate', None)
         if pending:
@@ -161,6 +168,44 @@ class Grid(QTableWidget):
         top=self.visualRect(self.model().index(pl.block.low,pl.col))
         bottom=self.visualRect(self.model().index(pl.block.high,min(pl.end,self.columnCount()-1)))
         return QRectF(top.left(),top.top(),bottom.right()-top.left(),bottom.bottom()-top.top())
+
+    def _draw_classical(self,p,rows):
+        """Mid-circuit measurements (M→c), resets, and 'if c = v' badges on conditioned gates."""
+        from quantumscope.physics.dynamic import Measure, Reset
+        model=self.owner.model
+        for (row,col),item in model.wires.items():
+            if row>=rows or col>=self.columnCount() or not isinstance(item,(Measure,Reset)):continue
+            box=QRectF(self.visualRect(self.model().index(row,col))).adjusted(9,6,-9,-6)
+            if isinstance(item,Measure):
+                p.setPen(QPen(canvas_color('measure_border'),2));p.setBrush(canvas_color('measure_fill'))
+                p.drawRoundedRect(box,5,5)
+                p.setPen(canvas_color('measure_text'))
+                p.setFont(QFont('Sans',10,QFont.Weight.Bold))
+                p.drawText(box.adjusted(0,1,0,-box.height()/2+2),Qt.AlignmentFlag.AlignCenter,'M')
+                p.setFont(QFont('Sans',8,QFont.Weight.DemiBold))
+                p.drawText(box.adjusted(0,box.height()/2-2,0,-1),Qt.AlignmentFlag.AlignCenter,f'→c{item.cbit}')
+            else:
+                p.setPen(QPen(canvas_color('gate_border'),1.7));p.setBrush(canvas_color('gate_fill'))
+                p.drawRoundedRect(box,5,5)
+                p.setPen(canvas_color('gate_text'))
+                p.setFont(QFont('Sans',10,QFont.Weight.DemiBold))
+                p.drawText(box.adjusted(0,1,0,-box.height()/2+2),Qt.AlignmentFlag.AlignCenter,'|0⟩')
+                p.setFont(QFont('Sans',7))
+                p.drawText(box.adjusted(0,box.height()/2-2,0,-1),Qt.AlignmentFlag.AlignCenter,'reset')
+        from quantumscope.physics.dynamic import condition_text
+        for (row,col),(cbit,value) in model.conditions.items():
+            gate=model.gates.get((row,col))
+            if gate is None or col>=self.columnCount():continue
+            target=gate.targets[-1]
+            if target>=rows:continue
+            cell=QRectF(self.visualRect(self.model().index(target,col)))
+            text=condition_text(cbit,value).replace(' ','')
+            width=max(44,7*len(text)+8)
+            badge=QRectF(cell.center().x()-width/2,cell.top()-1,width,13)
+            p.setPen(QPen(canvas_color('measure_border'),1.2));p.setBrush(canvas_color('measure_fill'))
+            p.drawRoundedRect(badge,4,4)
+            p.setPen(canvas_color('measure_text'));p.setFont(QFont('Sans',7,QFont.Weight.Bold))
+            p.drawText(badge,Qt.AlignmentFlag.AlignCenter,text)
 
     def _draw_noise(self,p,rows):
         """Noise channels: a dashed orange box, never mistaken for a gate."""
@@ -465,6 +510,9 @@ class CircuitWorkspace(QWidget):
         tools.addAction('Simplify circuit…',self.simplify_dialog)
         tools.addAction('Check equivalence with a saved circuit…',self.check_equivalence)
         self.tools_button.setMenu(tools);edits.addWidget(self.tools_button)
+        self.param_toggle=QPushButton('Parameters');self.param_toggle.setCheckable(True)
+        self.param_toggle.setToolTip('Show the panel for parameters (sliders for gate angles) and an observable to measure')
+        self.param_toggle.toggled.connect(lambda on:self._update_parameter_visibility());edits.addWidget(self.param_toggle)
         self.inspector_button=QPushButton('State Inspector…')
         self.inspector_button.setToolTip('Open amplitudes, statevector, reduced density matrices and circuit statistics')
         self.inspector_button.clicked.connect(self.open_state_inspector);edits.addWidget(self.inspector_button)
@@ -489,6 +537,12 @@ class CircuitWorkspace(QWidget):
         self.palette.setToolTip('Drag to place a gate; double-click for the Gate Explorer')
         self.palette.itemDoubleClicked.connect(lambda item:self.show_gate_explorer(item.text()))
         sv.addWidget(self.palette)
+        sv.addWidget(QLabel('Classical'))
+        self.classical_palette=Palette();self.classical_palette.addItems(list(CLASSICAL_PALETTE));self._grid_palette(self.classical_palette,2,92)
+        self.classical_palette.item(0).setToolTip('Mid-circuit measurement: measures the qubit here and stores the result '
+                                                   'in a classical bit (c0 by default for q0, c1 for q1 …); later gates can be conditioned on it')
+        self.classical_palette.item(1).setToolTip('Reset: returns the qubit to |0⟩ at this point')
+        sv.addWidget(self.classical_palette)
         sv.addWidget(QLabel('Noise'))
         self.noise_palette=Palette();self.noise_palette.addItems(list(NOISE_PALETTE));self._grid_palette(self.noise_palette,2,92)
         self.noise_palette.setToolTip('Drag a noise channel onto a wire; double-click here to learn what it does')
@@ -499,7 +553,7 @@ class CircuitWorkspace(QWidget):
         split.addWidget(side)
         center=QWidget();v=QVBoxLayout(center);split.addWidget(center)
         self.grid=Grid(self);self.grid.setRowCount(self.n);self.grid.setColumnCount(self.columns)
-        self.grid.setHorizontalHeaderLabels([f'{i+1}' for i in range(self.columns)]);self.grid.setVerticalHeaderLabels([f'q{i} ─' for i in range(self.n)])
+        self.grid.setHorizontalHeaderLabels([f'{i+1}' for i in range(self.columns)]);self.grid.setVerticalHeaderLabels(self._qubit_labels())
         self.grid.verticalHeader().setDefaultSectionSize(54);self.grid.horizontalHeader().setDefaultSectionSize(82)
         # Reserve room for ten wires at the default scale.  The model still
         # contains only active qubits, leaving the remaining canvas blank.
@@ -511,6 +565,13 @@ class CircuitWorkspace(QWidget):
         self.grid.setShowGrid(False)
         self.grid.setAlternatingRowColors(False)
         self.grid.setToolTip('Drag gates onto empty cells; click to select. Middle-drag to pan, Ctrl+wheel to zoom.')
+        # Example title bar: what this circuit is, its parameters, and where to learn about it.
+        self.example_bar=QWidget();bar=QHBoxLayout(self.example_bar);bar.setContentsMargins(0,0,0,0)
+        self.example_title=QLabel();self.example_title.setObjectName('exampleTitle');bar.addWidget(self.example_title,1)
+        self.example_params=QPushButton('Change parameters…');self.example_params.clicked.connect(self.change_example_parameters)
+        self.example_learn=QPushButton('Learn more');self.example_learn.clicked.connect(self.open_example_lesson)
+        bar.addWidget(self.example_params);bar.addWidget(self.example_learn)
+        self.example_bar.setVisible(False);v.addWidget(self.example_bar)
         nav=QHBoxLayout();v.addLayout(nav)
         for label,callback in [('− Zoom',lambda:self.grid.zoom_by(1/1.15)),('+ Zoom',lambda:self.grid.zoom_by(1.15)),('Fit Circuit',lambda:self.grid.fit_view()),('Reset Zoom',lambda:self.grid.reset_zoom())]:
             b=QPushButton(label);b.clicked.connect(callback);nav.addWidget(b)
@@ -524,6 +585,7 @@ class CircuitWorkspace(QWidget):
         self.inline_blochs=InlineBlochs(self.grid);wires.addWidget(self.inline_blochs)
         self.show_blochs.toggled.connect(self.inline_blochs.setVisible)
         self.grid.verticalScrollBar().valueChanged.connect(lambda _:self.inline_blochs.update())
+        self._build_parameter_panel(v)          # right under the circuit, shown when in use
         helptext=QLabel('Drag a multi-qubit gate to its first operand, then click remaining qubits in the same column. Right-click to remove a gate. Up to 10 qubits; ideal statevector.')
         helptext.setWordWrap(True);v.addWidget(helptext)
         self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -550,10 +612,15 @@ class CircuitWorkspace(QWidget):
         self.bloch_scroller.hide() # Inline per-wire view replaces separate stacked sphere panel
         self.bars=ProbabilityBars();self.bars.setMinimumHeight(165);v.addWidget(self.bars,2)
         self.result=QTextEdit();self.result.setReadOnly(True);self.result.setMaximumHeight(105);v.addWidget(self.result)
-        self.verify_panel=QGroupBox('Circuit Verification & Truth Table')
+        self.verify_panel=QGroupBox('Circuit Verification && Truth Table')
         verify_layout=QVBoxLayout(self.verify_panel)
         controls=QHBoxLayout()
         self.verify_button=QPushButton('Verify circuit / Show truth table');self.verify_button.clicked.connect(self.verify_circuit);controls.addWidget(self.verify_button)
+        self.qec_button=QPushButton('Plot logical error rate')
+        self.qec_button.setToolTip('Sweep the strength of this circuit\'s noise boxes and compare with an unprotected qubit')
+        self.qec_button.clicked.connect(self.plot_logical_error_rate);self.qec_button.setVisible(False);controls.addWidget(self.qec_button)
+        self.graph_button=QPushButton('Show the graph');self.graph_button.setToolTip('The MaxCut graph with the likeliest cut, updated live')
+        self.graph_button.clicked.connect(self.show_maxcut_graph);self.graph_button.setVisible(False);controls.addWidget(self.graph_button)
         self.verify_status=QLabel('Select an example to verify arithmetic, or inspect basis-state inputs.');self.verify_status.setWordWrap(True);controls.addWidget(self.verify_status,1)
         verify_layout.addLayout(controls)
         self.verify_table=QTableWidget(0,4);self.verify_table.setHorizontalHeaderLabels(['Input','Simulated output','Expected','Probability / Result'])
@@ -567,8 +634,8 @@ class CircuitWorkspace(QWidget):
         run=QPushButton('Run measurement shots');run.clicked.connect(self.measure);shots.addWidget(run)
         # Maintain the complete ten-wire canvas even when the host tab is short.
         # The page scrolls instead of allowing the splitter to compress it.
-        center.setMinimumHeight(center.sizeHint().height())
-        split.setMinimumHeight(center.minimumHeight() + 8)
+        self._center,self._split=center,split
+        self._refit_page()
         split.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         split.setStretchFactor(1,1)
         self.qubits.valueChanged.connect(self.resize_qubits);self.step.valueChanged.connect(self.show_step)
@@ -618,7 +685,8 @@ class CircuitWorkspace(QWidget):
             self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
         if self.grid.rowCount()!=n:
             self.grid.setRowCount(n)
-        self.grid.setVerticalHeaderLabels([f'q{i} {s.label} ─' for i,s in enumerate(self.model.initial_states)])
+        self.grid.setVerticalHeaderLabels(self._qubit_labels())
+        self._update_example_bar()
         needed=self.model.columns
         if needed!=self.grid.columnCount():
             offset=self.grid.horizontalScrollBar().value()
@@ -633,6 +701,294 @@ class CircuitWorkspace(QWidget):
         self.status.setText(str(exc))
 
     def snapshot(self):self.model.snapshot()
+
+    # ---- parameters and the observable --------------------------------------------------------------
+    @staticmethod
+    def _parameter_reference(text):
+        """(name, factor) when an angle field names a parameter ('theta', '2*gamma', '-beta', 'pi/2*θ'), else None."""
+        import re
+        t=text.strip().replace('·','*').replace('−','-')
+        m=re.fullmatch(r'(?:(.+?)\s*\*\s*)?(-?)\s*(\\?[A-Za-z_\u03b1-\u03c9\u0391-\u03a9][A-Za-z0-9_\u03b1-\u03c9\u0391-\u03a9]*)',t)
+        if not m or m.group(3).lower()=='pi':return None
+        factor=parse_angle(m.group(1)) if m.group(1) else 1.0
+        return CircuitModel.greek_name(m.group(3)),(-factor if m.group(2) else factor)
+    PARAM_ROW=34
+    def _fit_parameter_panel(self):
+        """Reserve the height the panel's contents need, so the layout cannot squeeze its rows."""
+        count=len(self.model.parameters)
+        self.param_list.setMinimumHeight(count*self.PARAM_ROW+max(0,count-1)*4)   # rows scroll, never squash
+        self.param_panel.layout().activate()
+        self.param_panel.setMinimumHeight(self.param_panel.layout().sizeHint().height()
+                                          if self.param_panel.isVisibleTo(self) else 0)
+        self.param_panel.updateGeometry()
+        self._refit_page()
+    def _refit_page(self):
+        """The page grows with its contents (it was measured only once before, so a growing panel
+        was squeezed into the old height and widgets overlapped)."""
+        if not hasattr(self,'_center'):return
+        self._center.setMinimumHeight(0)
+        self._center.layout().activate()
+        need=self._center.sizeHint().height()
+        self._center.setMinimumHeight(need)
+        self._split.setMinimumHeight(need+8)
+    def _build_parameter_panel(self,v):
+        self.param_panel=QGroupBox('Parameters && observable')
+        # Keep the height the contents need: the canvas above must never squeeze these rows.
+        self.param_panel.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)
+        layout=QVBoxLayout(self.param_panel)
+        # Parameter rows keep a fixed height; more than four scroll instead of being squashed.
+        self.param_list=QWidget();self.param_rows=QVBoxLayout(self.param_list)
+        self.param_rows.setContentsMargins(0,0,0,0);self.param_rows.setSpacing(4)
+        self.param_scroll=QScrollArea();self.param_scroll.setWidgetResizable(True);self.param_scroll.setWidget(self.param_list)
+        self.param_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.param_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        layout.addWidget(self.param_scroll)
+        add=QHBoxLayout()
+        self.param_name=QLineEdit();self.param_name.setPlaceholderText('new parameter, e.g. a, angle1, or \\gamma1 for γ1')
+        self.param_name.setToolTip('Type Greek letters as in LaTeX: \\theta → θ, \\gamma0 → γ0, \\beta → β')
+        add.addWidget(self.param_name,1)
+        add_button=QPushButton('Add parameter');add_button.clicked.connect(self._add_parameter_clicked);add.addWidget(add_button)
+        layout.addLayout(add)
+        hint=QLabel('To use a parameter, double-click a rotation gate (RX, RY, RZ, P, CP, U) and type its name as the angle. '
+                    'Type Greek letters as in LaTeX: \\theta → θ, \\gamma0 → γ0, 2*\\beta → 2·β.')
+        hint.setWordWrap(True);layout.addWidget(hint)
+        obs=QHBoxLayout();obs.addWidget(QLabel('Observable'))
+        self.observable_edit=QLineEdit();self.observable_edit.setPlaceholderText('e.g. Z0 Z1 + 0.5 X0')
+        self.observable_edit.editingFinished.connect(self._observable_edited);obs.addWidget(self.observable_edit,4)
+        self.observable_examples=QComboBox();self.observable_examples.setToolTip('Ready-made observables, explained')
+        self.observable_examples.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.observable_examples.setMinimumContentsLength(12)       # the text box gets the room, not the menu
+        self.observable_examples.activated.connect(self._observable_example_chosen);obs.addWidget(self.observable_examples,1)
+        layout.addLayout(obs)
+        explain=QLabel('An observable is a quantity you could measure. Zk is +1 if qubit k is 0 and −1 if it is 1; '
+                       'Z0 Z1 is +1 when q0 and q1 agree; Xk measures along x (+1 for |+⟩). Numbers weight the terms. '
+                       '⟨O⟩ is its average over many measurements of the current state.')
+        explain.setWordWrap(True);explain.setObjectName('muted');layout.addWidget(explain)
+        self.expectation_label=QLabel('');self.expectation_label.setWordWrap(True);layout.addWidget(self.expectation_label)
+        opt=QHBoxLayout();opt.addWidget(QLabel('Optimize'))
+        from quantumscope.gui.variational_views import METHODS
+        self.opt_method=QComboBox()
+        for label,key in METHODS:self.opt_method.addItem(label,key)
+        self.opt_method.setToolTip('BFGS uses exact parameter-shift gradients; gradient descent shows the plain method '
+                                   '(it can crawl across flat regions); COBYLA and Nelder–Mead need no gradients')
+        opt.addWidget(self.opt_method,1)
+        opt.addWidget(QLabel('max steps'));self.opt_steps=QSpinBox();self.opt_steps.setRange(5,2000);self.opt_steps.setValue(200);opt.addWidget(self.opt_steps)
+        self.opt_button=QPushButton('Optimize');self.opt_button.setToolTip('Lower ⟨O⟩ by changing every parameter')
+        self.opt_button.clicked.connect(self.optimize_parameters);opt.addWidget(self.opt_button)
+        self.landscape_button=QPushButton('Landscape…');self.landscape_button.clicked.connect(self.show_landscape);opt.addWidget(self.landscape_button)
+        layout.addLayout(opt)
+        v.addWidget(self.param_panel)
+        self._refresh_parameter_panel()
+    def optimize_parameters(self):
+        """Runs in the existing Optimize window when there is one (no new window each time)."""
+        from quantumscope.gui.variational_views import OptimizeDialog
+        if not self.model.parameters or not self.model.observable:
+            self.status.setText('Optimize needs at least one parameter and an observable.');return None
+        dialog=getattr(self,'_optimize_dialog',None)
+        if dialog is None:
+            dialog=self._optimize_dialog=OptimizeDialog(self,self.opt_method.currentData(),self.opt_steps.value())
+        dialog.configure(self.opt_method.currentData(),self.opt_steps.value())
+        dialog.show();dialog.raise_();dialog.activateWindow()
+        self._last_path=dialog.run()
+        self._last_path_for=self._path_key()
+        self._refresh_parameter_panel()
+        landscape=getattr(self,'_landscape_dialog',None)
+        if landscape is not None and landscape.isVisible():     # the open landscape shows the new path
+            landscape.refresh_names();landscape.draw()
+        return dialog
+    def _path_key(self):
+        """What an optimization path belongs to: drawn only while the circuit still matches."""
+        m=self.model
+        return (m.n,tuple(m.parameters),m.observable,tuple(sorted(m.bindings.items())),
+                tuple(sorted((k,g.name,g.targets) for k,g in m.gates.items())))
+    def optimization_path(self):
+        if getattr(self,'_last_path_for',None)!=self._path_key():return None
+        return getattr(self,'_last_path',None)
+    def show_landscape(self):
+        """Shows (and redraws) the existing Landscape window when there is one."""
+        from quantumscope.gui.variational_views import LandscapeDialog
+        if not self.model.parameters or not self.model.observable:
+            self.status.setText('The landscape needs at least one parameter and an observable.');return None
+        dialog=getattr(self,'_landscape_dialog',None)
+        if dialog is None:
+            dialog=self._landscape_dialog=LandscapeDialog(self)
+        else:
+            dialog.refresh_names()
+        dialog.draw();dialog.show();dialog.raise_();dialog.activateWindow()
+        return dialog
+    def _observable_choices(self):
+        """Example observables for this many qubits: (text, plain-words description)."""
+        n=self.n
+        choices=[('Z0','is q0 0 (+1) or 1 (−1)?'),('X0','q0 along x: +1 for |+⟩, −1 for |−⟩')]
+        if n>=2:
+            choices.insert(1,('Z0 Z1','do q0 and q1 agree (+1) or differ (−1)?'))
+            choices.append((' + '.join(f'Z{q}' for q in range(n)),'total "magnetization": how many qubits are 0 minus how many are 1'))
+            ising=' + '.join(f'Z{q} Z{q+1}' for q in range(n-1))+' + '+' + '.join(f'0.5 X{q}' for q in range(n))
+            choices.append((ising,'energy of an Ising chain: neighbours agreeing, plus a transverse field'))
+        return choices
+    def _fill_observable_examples(self):
+        self.observable_examples.blockSignals(True);self.observable_examples.clear()
+        self.observable_examples.addItem('Examples…',None)
+        for text,meaning in self._observable_choices():
+            self.observable_examples.addItem(f'{text}  —  {meaning}',text)
+        self.observable_examples.setCurrentIndex(0);self.observable_examples.blockSignals(False)
+    def _observable_example_chosen(self,index):
+        text=self.observable_examples.itemData(index)
+        self.observable_examples.setCurrentIndex(0)
+        if text:
+            self.observable_edit.setText(text);self._observable_edited()
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if hasattr(self,'param_panel') and self.param_panel.isVisible():self._fit_parameter_panel()
+    def _update_parameter_visibility(self):
+        if hasattr(self,'param_panel'):
+            in_use=bool(self.model.parameters or self.model.observable)
+            visible=in_use or self.param_toggle.isChecked()
+            if visible!=self.param_panel.isVisibleTo(self):
+                self.param_panel.setVisible(visible);self._fit_parameter_panel()
+            ready=bool(self.model.parameters and self.model.observable)
+            self.opt_button.setEnabled(ready);self.landscape_button.setEnabled(ready)
+    def _add_parameter_clicked(self):
+        try:self.model.add_parameter(self.param_name.text())
+        except EditorError as exc:self._rejected(exc);return
+        self.param_name.clear();self._changed();self._refresh_parameter_panel()
+    def _refresh_parameter_panel(self):
+        if not hasattr(self,'param_rows'):return
+        while self.param_rows.count():
+            item=self.param_rows.takeAt(0)
+            widget=item.widget()
+            if widget is not None:                   # hide and detach now: deleteLater alone leaves a ghost row
+                widget.hide();widget.setParent(None);widget.deleteLater()
+        self._param_widgets={}
+        for name,value in self.model.parameters.items():
+            row=QWidget();row.setFixedHeight(self.PARAM_ROW);h=QHBoxLayout(row);h.setContentsMargins(0,0,0,0)
+            label=QLabel(name);label.setMinimumWidth(56);h.addWidget(label)
+            slider=QSlider(Qt.Orientation.Horizontal);slider.setRange(-3600,3600)      # −2π … 2π in 1/1800 π steps
+            slider.setValue(round(value/math.pi*1800));h.addWidget(slider,1)
+            box=QDoubleSpinBox();box.setDecimals(6);box.setRange(-4*math.pi,4*math.pi);box.setSingleStep(0.05)
+            box.setSuffix(' rad');box.setValue(value);h.addWidget(box)
+            users=sum(1 for v in self.model.bindings.values() if v[0]==name)
+            count=QLabel(f'{users} gate{"s" if users!=1 else ""}');count.setObjectName('muted');h.addWidget(count)
+            remove=QPushButton('Delete');remove.setToolTip(f'Delete {name} (its gates keep their current angles)')
+            remove.clicked.connect(lambda _=False,n=name:self._remove_parameter(n));h.addWidget(remove)
+            slider.sliderPressed.connect(self.model.snapshot)                   # one undo step per drag
+            slider.valueChanged.connect(lambda v,n=name,b=box:self._parameter_moved(n,v*math.pi/1800,b))
+            box.editingFinished.connect(lambda n=name,b=box:self._parameter_typed(n,b.value()))
+            self.param_rows.addWidget(row);self._param_widgets[name]=(slider,box)
+        shown=min(len(self.model.parameters),4)
+        self.param_scroll.setVisible(shown>0)
+        self.param_scroll.setFixedHeight(shown*(self.PARAM_ROW+4)+2 if shown else 0)
+        self._fit_parameter_panel()
+        self.observable_edit.setText(self.model.observable)
+        self._fill_observable_examples()
+        self._update_parameter_visibility()
+        self._update_expectation()
+    def _parameter_moved(self,name,value,box):
+        box.blockSignals(True);box.setValue(value);box.blockSignals(False)
+        self.model.set_parameter(name,value,record=False);self.refresh();self._update_expectation()
+    def _parameter_typed(self,name,value):
+        if self.model.set_parameter(name,value):
+            slider,_=self._param_widgets[name];slider.blockSignals(True);slider.setValue(round(value/math.pi*1800));slider.blockSignals(False)
+            self._changed();self._update_expectation()
+    def _sync_parameter_values(self):
+        for name,(slider,box) in getattr(self,'_param_widgets',{}).items():
+            value=self.model.parameters.get(name)
+            if value is None or slider.isSliderDown():continue
+            for w,v in ((slider,round(value/math.pi*1800)),(box,value)):
+                w.blockSignals(True);w.setValue(v);w.blockSignals(False)
+        if hasattr(self,'observable_edit') and not self.observable_edit.hasFocus():
+            self.observable_edit.setText(self.model.observable)
+    def _remove_parameter(self,name):
+        if self.model.remove_parameter(name):self._changed();self._refresh_parameter_panel()
+    def _observable_edited(self):
+        try:changed=self.model.set_observable(self.observable_edit.text())
+        except EditorError as exc:
+            self.expectation_label.setText(f'<span style="color:#ff8a8a">{html.escape(str(exc))}</span>');return
+        if changed:self._changed()
+        self._update_expectation()
+    def _update_expectation(self):
+        if not self.model.observable:
+            self.expectation_label.setText('Set an observable to see its expectation value ⟨O⟩ for the final state.');return
+        from quantumscope.physics.observables import ground_energy,parse
+        value=self.model.expectation()
+        key=(self.n,self.model.observable)            # the exact minimum depends only on these: compute once
+        if getattr(self,'_ground_cache',(None,None))[0]!=key:
+            self._ground_cache=(key,ground_energy(self.n,parse(self.model.observable,self.n)))
+        lowest=self._ground_cache[1]
+        extra=f'  ·  lowest possible (exact): {lowest:.6f}' if lowest is not None else ''
+        self.expectation_label.setText(f'⟨O⟩ = <b>{value:.6f}</b>{extra}')
+
+    # ---- example identity: title bar and qubit roles -----------------------------------------------
+    from quantumscope.learn.lessons import EXAMPLE_LESSONS as LESSONS   # the lecture behind each example
+    def _qubit_labels(self):
+        roles=self.model.roles
+        states=self.model.initial_states
+        return [f'q{i}'+(f' {roles[i]}' if i<len(roles) and roles[i] else '')+(f' {states[i].label}' if i<len(states) else '')+' ─'
+                for i in range(self.n)]
+    def _update_example_bar(self):
+        entry=self.model.active_entry
+        if not entry:
+            self.example_bar.setVisible(False);return
+        from quantumscope.physics.algorithms import ENTRIES
+        e=ENTRIES.get(entry[0])
+        if e is None:
+            self.example_bar.setVisible(False);return
+        shown=[]
+        values=dict(entry[1])
+        for param in e.params:
+            if param.key=='p' and values.get('error')!='random':continue   # strength only matters for random errors
+            value=values.get(param.key,param.default)
+            label=next((lab for lab,val in param.choices if val==value),None) if param.choices else None
+            shown.append(f'{param.label}: {label if label is not None else value}')
+        edited='  <i>(edited)</i>' if self.model.entry_edited else ''
+        self.example_title.setText(f'<b>{html.escape(e.title)}</b>  ·  '+html.escape(' · '.join(shown))+edited)
+        self.example_title.setToolTip(e.description)
+        self.example_params.setEnabled(bool(e.params))
+        self.example_learn.setVisible(self._example_lesson() is not None)
+        self.example_bar.setVisible(True)
+    def _example_lesson(self):
+        entry=self.model.active_entry
+        key=self.LESSONS.get(entry[0]) if entry else None
+        if key is None:return None
+        from quantumscope.learn.lessons import builtin_lessons
+        return key if any(l.key==key for l in builtin_lessons()) else None
+    def change_example_parameters(self):
+        entry=self.model.active_entry
+        if not entry:return
+        from quantumscope.physics.algorithms import entry as lookup
+        from quantumscope.gui.parameter_dialog import ParameterDialog
+        e=lookup(entry[0])
+        dialog=ParameterDialog(e.title,e.params,dict(entry[1]),self,description=e.description)
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            self.load_library(e.key,dialog.values())
+    def open_example_lesson(self):
+        key=self._example_lesson()
+        window=self.window()
+        if key and hasattr(window,'open_learn'):
+            window.open_learn('circuits')
+            learn=getattr(window,'_learn',None)
+            if learn is not None:learn.open_lesson(key)
+    def _several_bits_dialog(self,bits,current=None):
+        """Choose 0, 1 or 'any' for each classical bit; returns ((bits…), (values…)) or None."""
+        from quantumscope.physics.dynamic import condition_parts
+        known=dict(zip(*condition_parts(*current))) if current else {}
+        dialog=QDialog(self);dialog.setWindowTitle('Run only if…')
+        form=QFormLayout(dialog)
+        form.addRow(QLabel('The gate runs only when every chosen bit has its value (for example c0c1 = 10).'))
+        boxes={}
+        for k in bits:
+            box=QComboBox();box.addItems(['any','0','1'])
+            box.setCurrentText(str(known[k]) if k in known else 'any');form.addRow(f'c{k}',box);boxes[k]=box
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel);form.addRow(buttons)
+        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject)
+        if dialog.exec()!=QDialog.DialogCode.Accepted:return None
+        chosen=[(k,int(b.currentText())) for k,b in boxes.items() if b.currentText()!='any']
+        if not chosen:return None
+        if len(chosen)==1:return chosen[0]
+        return tuple(k for k,_ in chosen),tuple(v for _,v in chosen)
+    def _exec_menu(self,menu,pos):
+        """Show a right-click menu at a canvas position (one place, so tests can choose an entry)."""
+        return menu.exec(self.grid.viewport().mapToGlobal(pos))
 
     # ---- noise ------------------------------------------------------------------------------
     @staticmethod
@@ -704,6 +1060,13 @@ class CircuitWorkspace(QWidget):
         chosen=noisemod.NoiseModel(enabled.isChecked(),idle=idle.isChecked(),**{k:b.value() for k,b in fields.items()})
         if self.model.set_noise_model(chosen):self._changed()
         else:self.noise_button.setText(self._noise_summary())
+    def _branches_at(self,k):
+        """The branches (classical record + state) after column k, or None."""
+        if not self.branch_view:return None
+        occupied,history=self.branch_view
+        if self.model.n<=noisemod.MAX_STORED_QUBITS:
+            return history[sum(1 for c in occupied if c<k)]
+        return history[-1] if k>=self.step.maximum() else None
     def _noisy_state_at(self,k):
         """Density matrix after column k when noise is simulated (None if not available for this step)."""
         view=self.noisy_view
@@ -720,7 +1083,9 @@ class CircuitWorkspace(QWidget):
         from quantumscope.physics.gate_education import angle_text
         return f'the same unitary up to a global phase of e^(i·{angle_text(float(np.angle(phase)))}), which has no observable effect'
     def simplify_dialog(self):
-        kept,changes,ok,phase=self.model.simplification()
+        try:kept,changes,ok,phase=self.model.simplification()
+        except EditorError as exc:
+            QMessageBox.information(self,'Simplify circuit',str(exc)+'.');return
         if not changes:
             QMessageBox.information(self,'Simplify circuit','Nothing to simplify: no neighboring gates cancel or merge.'
                                     +(' Gates inside blocks are never changed.' if self.model.blocks else ''));return
@@ -749,6 +1114,9 @@ class CircuitWorkspace(QWidget):
             with open(path,encoding='utf-8') as f:n,ops,ms,layout=from_native_layout(f.read())
         except (OSError,ValueError) as exc:
             QMessageBox.warning(self,'Check equivalence',str(exc));return None
+        if self.model.dynamic or layout.get('classical') or layout.get('conditions'):
+            QMessageBox.information(self,'Check equivalence','Equivalence compares unitaries, so it needs circuits without '
+                                    'mid-circuit measurements, resets or classical conditions.');return None
         if n!=self.n:
             QMessageBox.information(self,'Check equivalence',f'Not comparable: this circuit has {self.n} qubits, the saved one has {n}.');return False
         other,_=flatten_with_comments([(g.targets[0],c,g) for g,c in zip(ops,layout['columns'])],
@@ -818,9 +1186,24 @@ class CircuitWorkspace(QWidget):
             action.setChecked(current.preset_key==key);actions[action]=key
         menu.addSeparator()
         custom=menu.addAction('Custom (θ, φ)…');custom.setCheckable(True);custom.setChecked(current.preset_key is None)
+        menu.addSeparator()
+        rename=menu.addAction('Label this qubit…')
+        rename.setToolTip('Give q'+str(qubit)+' a short name such as data, syndrome, ancilla or Alice')
         chosen=menu.exec(QCursor.pos())
         if chosen in actions:self.set_initial_state(qubit,InitialState.preset(actions[chosen]))
         elif chosen is custom:self._custom_initial_state(qubit)
+        elif chosen is rename:self.label_qubit(qubit)
+    def label_qubit(self,qubit,text=None):
+        """Ask for (or set) a qubit's label; an empty label removes it."""
+        if text is None:
+            current=(self.model.roles+['']*self.n)[qubit]
+            text,ok=QInputDialog.getText(self,f'Label q{qubit}',
+                                         f'Name for q{qubit} (up to {self.model.MAX_LABEL} characters; empty removes it):',
+                                         QLineEdit.EchoMode.Normal,current)
+            if not ok:return
+        try:changed=self.model.set_label(qubit,text)
+        except EditorError as exc:self._rejected(exc);return
+        if changed:self._changed()
     def _custom_initial_state(self,qubit):
         current=self.model.initial_states[qubit]
         dialog=QDialog(self);dialog.setWindowTitle(f'Custom initial state for q{qubit}')
@@ -866,7 +1249,8 @@ class CircuitWorkspace(QWidget):
         states=getattr(self,'column_states',None) or [self.model.initial_vector()]
         return {'state':states[min(completed,len(states)-1)],'n':self.model.n,'step':k,
                 'steps':self.step.maximum(),'layers_done':completed,'model':self.model,
-                'rho':self._noisy_state_at(k) if self.noisy_view else None,'noisy':bool(self.noisy_view)}
+                'rho':self._noisy_state_at(k) if self.noisy_view else None,'noisy':bool(self.noisy_view),
+                'branches':self._branches_at(k),'dynamic':bool(self.branch_view)}
     def undo(self):
         if self.model.undo():self._changed()
     def redo(self):
@@ -919,6 +1303,11 @@ class CircuitWorkspace(QWidget):
         super().keyPressEvent(event)
 
     def place(self,name,row,col,operands=None):
+        if name in CLASSICAL_PALETTE:
+            try:placed=self.model.place_measure(row,col) if name=='M→c' else self.model.place_reset(row,col)
+            except EditorError as exc:self._rejected(exc);return
+            if placed:self._changed()
+            return
         if name in NOISE_PALETTE:
             try:placed=self.model.place_noise(NOISE_PALETTE[name],row,col,self.new_noise_p)
             except EditorError as exc:self._rejected(exc);return
@@ -990,23 +1379,35 @@ class CircuitWorkspace(QWidget):
         edits={}
         params=[('angle','θ' if gate.name not in ('P','CP') else 'λ')]
         if gate.name=='U':params.extend([('phi','φ'),('lam','λ')])
+        key=self.model.operation_at(row,col)[1]
         for attr,label in params:
-            field=QLineEdit(self._format_user_angle(getattr(gate,attr)))
-            field.setToolTip('Angle in radians. Examples: pi/2, -pi/4, 2*pi')
+            bound=self.model.binding_text(key,attr)
+            field=QLineEdit(bound.replace('·','*').replace('−','-') if bound else self._format_user_angle(getattr(gate,attr)))
+            field.setToolTip('A number, an expression such as pi/2, or a parameter: a, 2*\\gamma0, -\\beta '
+                             '(LaTeX names become Greek: \\gamma0 → γ0)')
             layout.addRow(f'{label} ({"degrees" if self._angle_units=="degrees" else "radians"})',field)
             edits[attr]=field
         layout.addRow(QLabel('Numbers are in '+('degrees' if self._angle_units=='degrees' else 'radians')
-                             +'; expressions with pi (e.g. pi/4) are always radians.'))
+                             +'; expressions with pi (e.g. pi/4) are always radians.\n'
+                             'Type a parameter name (θ, gamma, 2*beta …) to make the angle follow a parameter.'))
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         layout.addRow(buttons)
         buttons.rejected.connect(dialog.reject)
         def commit():
+            numbers,links={},{}
             try:
-                values={key:self._parse_user_angle(field.text()) for key,field in edits.items()}
-            except ValueError as exc:
+                for attr,field in edits.items():
+                    link=self._parameter_reference(field.text())
+                    if link:links[attr]=link
+                    else:numbers[attr]=self._parse_user_angle(field.text())
+                current={'angle':gate.angle,'phi':gate.phi,'lam':gate.lam}
+                current.update(numbers)
+                for attr in numbers:self.model.unbind(row,col,attr)
+                self.model.edit_parameters(row,col,current['angle'],current.get('phi'),current.get('lam'))
+                for attr,(name,factor) in links.items():self.model.bind(row,col,attr,name,factor)
+            except (ValueError,EditorError) as exc:
                 QMessageBox.warning(dialog,'Invalid gate parameter',str(exc));return
-            self.model.edit_parameters(row,col,values['angle'],values.get('phi'),values.get('lam'))
-            self._changed()
+            self._changed();self._refresh_parameter_panel()
             dialog.accept()
         buttons.accepted.connect(commit)
         dialog.exec()
@@ -1019,11 +1420,25 @@ class CircuitWorkspace(QWidget):
         if found is None:return
         if found[0]=='block' and not self.model.pending:
             self._block_menu(found[1],found[2],pos);return
+        if found[0] in ('measure','reset') and not self.model.pending:
+            menu=QMenu(self)
+            title=menu.addAction(found[2].label);title.setEnabled(False)
+            bits={}
+            if found[0]=='measure':
+                store=menu.addMenu('Store result in')
+                for k in range(10):
+                    action=store.addAction(f'c{k}');action.setCheckable(True);action.setChecked(k==found[2].cbit);bits[action]=k
+            remove=menu.addAction('Remove')
+            chosen=self._exec_menu(menu,pos)
+            if chosen in bits:
+                if self.model.set_measure_bit(row,col,bits[chosen]):self._changed()
+            elif chosen is remove:self.remove_at(pos)
+            return
         if found[0]=='noise' and not self.model.pending:
             menu=QMenu(self)
             title=menu.addAction(found[2].label);title.setEnabled(False)
             edit=menu.addAction('Edit noise…');about=menu.addAction('About this channel…');remove=menu.addAction('Remove noise')
-            chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
+            chosen=self._exec_menu(menu,pos)
             if chosen is edit:self.edit_noise_dialog(row,col)
             elif chosen is about:self.show_noise_explorer(found[2].kind,found[2].p)
             elif chosen is remove:self.remove_at(pos)
@@ -1031,13 +1446,44 @@ class CircuitWorkspace(QWidget):
         menu=QMenu(self)
         if self.model.pending:
             cancel=menu.addAction('Cancel multi-qubit placement')
-            if menu.exec(self.grid.viewport().mapToGlobal(pos)) is cancel:self.cancel_pending()
+            if self._exec_menu(menu,pos) is cancel:self.cancel_pending()
             return
         edit=menu.addAction('Edit parameters…') if self.model.editable_gate(row,col) else None
+        conditions={}
+        if found[0]=='gate':
+            from quantumscope.physics.dynamic import Measure
+            # "Run only if": classical conditions on bits written by mid-circuit measurements
+            current=self.model.conditions.get(found[1])
+            when=menu.addMenu('Run only if…')
+            always=when.addAction('Always (no condition)');always.setCheckable(True);always.setChecked(current is None)
+            conditions[always]=None
+            from quantumscope.physics.dynamic import condition_parts
+            bits=sorted({item.cbit for item in self.model.wires.values() if isinstance(item,Measure)}
+                        |(set(condition_parts(*current)[0]) if current else set()))
+            if not bits:
+                hint=when.addAction('Add an M→c measurement first');hint.setEnabled(False)
+            for k in bits:
+                for value in (1,0):
+                    action=when.addAction(f'c{k} = {value}');action.setCheckable(True)
+                    action.setChecked(current==(k,value));conditions[action]=(k,value)
+            if len(bits)>=2:
+                several=when.addAction('Several bits…');several.setCheckable(True)
+                several.setChecked(bool(current) and isinstance(current[0],tuple))
+                conditions[several]=('several',bits)
         delete=menu.addAction('Remove measurement' if found[0]=='measurement' else 'Remove gate')
-        chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
+        chosen=self._exec_menu(menu,pos)
         if chosen is edit and edit is not None:self.edit_gate_at(row,col)
         elif chosen is delete:self.remove_at(pos)
+        elif chosen in conditions:
+            choice=conditions[chosen]
+            if choice and choice[0]=='several':
+                choice=self._several_bits_dialog(choice[1],self.model.conditions.get(found[1]))
+                if choice is None:return
+            try:
+                changed=(self.model.clear_condition(row,col) if choice is None
+                         else self.model.set_condition(row,col,*choice))
+            except EditorError as exc:self._rejected(exc);return
+            if changed:self._changed()
 
     def try_gate(self,name,angle=math.pi/2,phi=0.0,lam=0.0):
         """Load one gate into a small circuit with starting states that make its effect visible."""
@@ -1061,7 +1507,9 @@ class CircuitWorkspace(QWidget):
             from quantumscope.gui.circuit_pdf import write_circuit_pdf
             write_circuit_pdf(path,self.n,self.gates,self.measurements,
                               include_report=report,initial_states=self.model.initial_states,blocks=self.model.blocks.values(),
-                              noise=self.model.noise)
+                              noise=self.model.noise,
+                              classical={k:v for k,v in self.model.wires.items() if not isinstance(v,noisemod.NoiseElement)},
+                              conditions=self.model.conditions,labels=self.model.roles)
         except Exception as exc:
             QMessageBox.warning(self,'PDF export failed',str(exc))
 
@@ -1082,12 +1530,29 @@ class CircuitWorkspace(QWidget):
             # One state per occupied *column*, including simultaneous disjoint gates.
             sim=self.model.simulate()
             self.occupied_columns,self.column_states,self.states=sim.occupied_columns,sim.column_states,sim.states
-            self.noisy_view=self.model.simulate_noisy() if self.model.noisy else None
+            self.branch_view=None
+            if self.model.dynamic:                   # one branch simulation feeds both views
+                from quantumscope.physics.dynamic import averaged
+                occupied,history=self.model.simulate_branches()
+                self.branch_view=(occupied,history)
+                self.noisy_view=(occupied,[averaged(b) for b in history])
+            else:
+                self.noisy_view=self.model.simulate_noisy() if self.model.noisy else None
         except Exception as exc:self.status.setText(str(exc));return
         last=max(self.occupied_columns+(self.noisy_view[0] if self.noisy_view else []),default=-1)
         for (r,c),element in self.model.noise.items():
             item=QTableWidgetItem('');item.setToolTip(element.label+' (double-click to edit)');self.grid.setItem(r,c,item)
         self.noise_button.setText(self._noise_summary())
+        self.grid.setVerticalHeaderLabels(self._qubit_labels())   # roles appear and disappear with the example
+        self._update_example_bar()
+        if hasattr(self,'_param_widgets') and set(self._param_widgets)!=set(self.model.parameters):
+            self._refresh_parameter_panel()
+        elif hasattr(self,'expectation_label'):
+            self._sync_parameter_values();self._update_expectation()
+            if self.observable_examples.count()-1!=len(self._observable_choices()) or \
+                    (self.n>=2 and 'Z0 Z1' not in [self.observable_examples.itemData(i) for i in range(self.observable_examples.count())]):
+                self._fill_observable_examples()                 # examples depend on the number of qubits
+            self._update_parameter_visibility()
         self.step.setRange(0,last+1)
         self.step.setValue(last+1)
         self.show_step(self.step.value())
@@ -1097,7 +1562,8 @@ class CircuitWorkspace(QWidget):
         self.status.setText(f'{self.n} qubits • {len(self.model.ordered())} gates'
                             +(f' ({blocks} block{"s" if blocks!=1 else ""}: double-click to expand, right-click for options)' if blocks else '')
                             +f' • {len(self.noisy_view[0]) if self.noisy_view else len(self.occupied_columns)} occupied columns • '
-                            +('noisy density-matrix simulation' if self.noisy_view else 'exact ideal simulation'))
+                            +('dynamic circuit: exact branches for every measurement outcome' if self.branch_view else
+                              'noisy density-matrix simulation' if self.noisy_view else 'exact ideal simulation'))
         if has_specification(self.active_example) and hasattr(self,'verify_table'):self.verify_circuit()
     def _sync_timeline(self):
         self.inline_blochs.update()
@@ -1129,8 +1595,15 @@ class CircuitWorkspace(QWidget):
             self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
             self.bars.set_probabilities(probs,self.n)
             self.bars.title='Noisy probabilities (density matrix, before measurement) · cyan: theory'
-            ideal=self.column_states[completed]
-            extra=f'   •   purity {noisemod.purity(rho):.4f}, fidelity with ideal {noisemod.fidelity_with_pure(rho,ideal):.4f}'
+            branches=self._branches_at(k)
+            if branches is not None:
+                # Dynamic circuit: the ideal statevector ignores measurements, so report branches instead.
+                records=sorted(branches,key=lambda b:-b.probability)
+                shown='  '.join(f'c={"".join(map(str,b.bits)) or "–"} {b.probability*100:.1f}%' for b in records[:4])
+                extra=f'   •   {len(branches)} branch{"es" if len(branches)!=1 else ""}: {shown}'+(' …' if len(records)>4 else '')
+            else:
+                ideal=self.column_states[completed]
+                extra=f'   •   purity {noisemod.purity(rho):.4f}, fidelity with ideal {noisemod.fidelity_with_pure(rho,ideal):.4f}'
         else:
             vectors=[bloch(state,self.n,q) for q in range(self.n)]
             self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
@@ -1154,6 +1627,18 @@ class CircuitWorkspace(QWidget):
         probs=noisemod.apply_readout(probs,self.n,measured,self.model.noise_model.readout if self.model.noise_model.enabled else 0.0)
         return probs/probs.sum()
     def measure(self):
+        if self.branch_view and not self.measurements:
+            from quantumscope.physics.dynamic import record_distribution
+            record=record_distribution(self.branch_view[1][-1])
+            nbits=len(next(iter(record)))
+            probs=np.zeros(2**nbits)
+            for record_bits,p in record.items():probs[int(record_bits,2)]=p
+            counts=np.random.default_rng().multinomial(self.shots.value(),probs/probs.sum())
+            self.bars.set_probabilities(probs,nbits,counts)
+            self.bars.title='Classical bits '+''.join(f'c{k}' for k in range(nbits))+' (mid-circuit results) · cyan: theory · orange: shots'
+            self.result.setPlainText('Classical record (c0 first):  '+'   '.join(
+                f'{format(i,f"0{nbits}b")} {int(counts[i])}' for i in range(2**nbits) if counts[i]))
+            return
         probs=self._final_distribution()
         counts=np.random.default_rng().multinomial(self.shots.value(),probs)
         measured=sorted(self.measurements)
@@ -1193,7 +1678,7 @@ class CircuitWorkspace(QWidget):
         menu.addSeparator()
         ungroup=menu.addAction('Ungroup (make gates editable)')
         remove=menu.addAction('Remove block')
-        chosen=menu.exec(self.grid.viewport().mapToGlobal(pos))
+        chosen=self._exec_menu(menu,pos)
         if chosen is toggle:(self.collapse_block if pl.expanded else self.expand_block)(bid)
         elif edit is not None and chosen is edit:self.edit_block_dialog(bid)
         elif chosen is contents:self.show_block_contents(bid)
@@ -1245,10 +1730,10 @@ class CircuitWorkspace(QWidget):
         self.status.setText('Loaded '+choice+' • illustrative reversible circuit; input bits and work registers shown as gates.'
             +(' Edits are checked against this example’s specification.' if has_specification(choice) else ''))
         self.examples.blockSignals(True);self.examples.setCurrentIndex(0);self.examples.blockSignals(False)
-    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None,initial_states=None,blocks=(),noise=(),noise_model=None):
+    def set_circuit(self,n,ops,columns=None,measured=(),measurement_column=None,total_columns=None,initial_states=None,blocks=(),noise=(),noise_model=None,classical=(),conditions=()):
         """Load a circuit. Without stored columns, gates are packed so that
         simultaneous gates share a column (simulation order is unchanged)."""
-        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns,initial_states,blocks,noise,noise_model)
+        self.model.set_circuit(n,ops,columns,measured,measurement_column,total_columns,initial_states,blocks,noise,noise_model,classical,conditions)
         self._sync_view();self.grid.horizontalScrollBar().setValue(0);self.refresh()
     def _layout(self):
         """Gates in simulation order with their columns, for saving."""
@@ -1267,7 +1752,17 @@ class CircuitWorkspace(QWidget):
         if self._inspector is not None:self._inspector.apply_theme()
     def _show_notes(self,title,notes):
         if notes:QMessageBox.information(self,title,'\n\n'.join(notes))
+    def show_maxcut_graph(self):
+        from quantumscope.gui.maxcut_view import MaxCutDialog
+        dialog=MaxCutDialog(self);dialog.show()
+        return dialog
+    def plot_logical_error_rate(self):
+        from quantumscope.gui.qec_chart import plot_circuit
+        plot_circuit(self).exec()
     def verify_circuit(self):
+        entry=self.model.active_entry
+        self.qec_button.setVisible(bool(entry) and entry[0] in ('bit_flip_code','phase_flip_code'))
+        self.graph_button.setVisible(bool(entry) and entry[0]=='qaoa')
         rows,note=self.model.verification()
         noisy=self.model.noisy_verification()
         if noisy:   # the PASS/FAIL judges the ideal circuit; report what noise does to it
@@ -1296,13 +1791,21 @@ class CircuitWorkspace(QWidget):
         """Load a .qscope document (raises ValueError if it is invalid)."""
         n,ops,ms,layout=from_native_layout(text)
         self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],layout['total_columns'],layout['initial_states'],layout['blocks'],
-                         layout.get('noise',()),layout.get('noise_model'))
+                         layout.get('noise',()),layout.get('noise_model'),layout.get('classical',()),layout.get('conditions',()))
+        self.model.restore_labels(layout.get('labels'))
+        self.model.restore_variational(layout.get('variational'))
+        if self.model.restore_example(layout.get('example')):   # a saved example keeps its title, roles and check
+            self.verify_circuit()
+        self._sync_view();self.refresh()
     def serialize(self):
         """The current circuit as a .qscope document."""
         gates,columns,mcol,total=self.model.layout()
         layout={'columns':columns,'measurement_column':mcol,'total_columns':total,'initial_states':self.model.initial_states,
                 'blocks':[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()],
-                'noise':self.model.noise_layout(),'noise_model':self.model.noise_model}
+                'noise':self.model.noise_layout(),'noise_model':self.model.noise_model,
+                'example':self.model.example_meta(),'labels':self.model.labels_meta(),
+                'variational':self.model.variational_meta()}
+        layout['classical'],layout['conditions']=self.model.classical_layout()
         return to_native_measured(self.n,gates,sorted(self.measurements),layout=layout)
     def _suggest(self,name):
         """A file-dialog starting path in the preferred folder."""
@@ -1321,16 +1824,38 @@ class CircuitWorkspace(QWidget):
         if not path:return
         try:
             with open(path,encoding='utf-8') as f:n,ops,ms,layout,notes=from_qasm_layout(f.read())
-            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'])
+            self.set_circuit(n,ops,layout['columns'],ms,layout['measurement_column'],
+                             classical=layout.get('classical',()),conditions=layout.get('conditions',()))
             self._show_notes('QASM import notes',notes)
         except (OSError,ValueError) as exc:QMessageBox.warning(self,'QASM import rejected',str(exc))
     def export_qasm(self):
         path,_=QFileDialog.getSaveFileName(self,'Export OpenQASM 2',self._suggest('untitled.qasm'),'OpenQASM 2 (*.qasm *.qasm2)')
         if not path:return
         if not path.lower().endswith(('.qasm','.qasm2')):path+='.qasm'
-        gates,comments=self.model.qasm_items()
-        lines=to_qasm_measured(self.n,gates,sorted(self.measurements),self.model.initial_states,comments)
-        if self.model.noisy:   # OpenQASM 2 cannot describe noise: say so in the file and the status line
+        if self.model.dynamic:   # mid-circuit measurement, conditions and reset: one-bit registers m<k>
+            from quantumscope.physics.circuit_files import dynamic_sequence,to_qasm_dynamic
+            gates,columns,_,_=self.model.layout()
+            classical,conditions=self.model.classical_layout()
+            blocks=[(pl.block,pl.col,pl.expanded) for pl in self.model.blocks.values()]
+            lines=to_qasm_dynamic(self.n,dynamic_sequence(self.n,gates,columns,blocks,classical,conditions),
+                                  sorted(self.measurements),self.model.initial_states)
+        else:
+            gates,comments=self.model.qasm_items()
+            lines=to_qasm_measured(self.n,gates,sorted(self.measurements),self.model.initial_states,comments)
+        if self.model.parameters or self.model.observable:   # OpenQASM 2 has no symbols: record them as comments
+            notes=[f'// parameter {n} = {v:.10g} rad' for n,v in self.model.parameters.items()]
+            notes+=[f'// q{r} column {c} {f} = {self.model.binding_text((r,c),f).replace("·","*").replace("−","-")}'
+                    for (r,c,f) in sorted(self.model.bindings)]
+            if self.model.observable:notes.append(f'// observable: {self.model.observable}')
+            head,marker,rest=lines.partition('qreg q[')
+            first,_,tail=rest.partition('\n')
+            lines=head+marker+first+'\n'+'\n'.join(notes)+'\n'+tail
+        if self.model.roles:                     # qubit labels as comments after the register declaration
+            from quantumscope.physics.circuit_files import label_comments
+            head,marker,rest=lines.partition('qreg q[')
+            first,_,tail=rest.partition('\n')
+            lines=head+marker+first+'\n'+'\n'.join(label_comments(self.model.roles))+'\n'+tail
+        if self.model.noise_model.active or self.model.noise:   # OpenQASM 2 cannot describe noise: say so
             head,_,rest=lines.partition('\n')
             lines=head+'\n// Note: QuantumScope noise settings are not part of OpenQASM 2 and were not exported.\n'+rest
             self.status.setText('Exported the ideal circuit: noise cannot be written in OpenQASM 2')

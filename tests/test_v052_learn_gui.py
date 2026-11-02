@@ -91,3 +91,33 @@ def test_try_it_links_set_and_clear_noise(setup):
     assert workspace.model.noise_model == PRESETS['Moderate'] and len(workspace.model.noise) == 1
     window._link(QUrl('qs:circuit?n=1&gates=H:0'))
     assert not workspace.model.noisy                          # a link without noise= starts ideal
+
+
+def test_lab_steps_update_live_in_the_real_app_wiring(app, tmp_path, monkeypatch):
+    """Regression: the main window creates Learn with host=self (no workspace argument);
+    lab steps must still tick off as the circuit changes, without any other click."""
+    monkeypatch.setenv('QUANTUMSCOPE_SETTINGS_FILE', str(tmp_path / 's.ini'))
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    from quantumscope.gui.learn_window import LearnWindow
+
+    class Host:
+        circuit_widget = CircuitWorkspace()
+        launch_view = staticmethod(lambda view: None)
+    window = LearnWindow(host=Host())
+    window.show()
+    window.open_lesson('circuits/90-lab-bell-pair')
+    window._link(QUrl('qs:circuit?n=2'))
+    assert window.lab_status.text() == 'Lab progress: 0/3 steps'
+    Host.circuit_widget.place('H', 0, 0)                          # no other action in the Learn window
+    assert window.lab_status.text() == 'Lab progress: 1/3 steps' and '✓ Done' in window.reader.toPlainText()
+
+
+def test_quiz_answers_are_checked_immediately(setup):
+    window, _ = setup
+    window.open_lesson('circuits/01-qubits')            # quiz 1: the correct answer is option C (index 2)
+    window._link(QUrl('qsquiz:0:0'))
+    text = window.reader.toPlainText()
+    assert '✗ Not quite' in text and '✓ Correct!' not in text
+    window._link(QUrl('qsquiz:0:2'))
+    text = window.reader.toPlainText()
+    assert '✓ Correct!' in text and 'squared magnitude' in text

@@ -40,6 +40,12 @@ class AboutDialog(QDialog):
         title.setStyleSheet('font-size:25px;font-weight:800;');layout.addWidget(title)
         subtitle=QLabel(f'Quantum Visualization Studio  •  v{__version__}')
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter);subtitle.setObjectName('muted');layout.addWidget(subtitle)
+        # Check for updates, beside the version (asks permission before any connection).
+        self.update_button=QPushButton('Check for updates…')
+        self.update_button.setToolTip('Asks first, then looks on github.com for a newer full release')
+        self.update_button.clicked.connect(self._check_for_updates)
+        update_row=QHBoxLayout();update_row.addStretch();update_row.addWidget(self.update_button);update_row.addStretch()
+        layout.addLayout(update_row)
         tagline=QLabel('Explore  •  Visualize  •  Simulate');tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline.setStyleSheet('color:#5ad1e9;font-size:12px;');layout.addWidget(tagline)
         divider=QFrame();divider.setObjectName('divider');layout.addWidget(divider)
@@ -94,6 +100,10 @@ class AboutDialog(QDialog):
                 except OSError:pass
         self._reply.deleteLater()
 
+    def _check_for_updates(self):
+        from quantumscope.gui.update_dialog import check_for_updates
+        check_for_updates(self)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -127,10 +137,12 @@ class MainWindow(QMainWindow):
             menu.addAction("Double-Slit Experiment", self._launch_double_slit)
             menu.addAction("Quantum Superposition (spin-½)", self._launch_superposition)
             menu.addAction("Quantum Entanglement (electron spins)", self._launch_entanglement)
+            menu.addAction("Quantum Teleportation", self._launch_teleportation)
         if category in (None,"circuits"):
             menu.addSection("QUANTUM CIRCUITS")
             menu.addAction("Gate Circuit Simulator", self._launch_circuits)
             menu.addAction("QASM Converter", self._launch_converter)
+            menu.addAction("Error-correction explorer", self._launch_qec_explorer)
         return menu
 
     def _show_settings(self):
@@ -161,7 +173,8 @@ class MainWindow(QMainWindow):
         {"circuits": self._launch_circuits, "converter": self._launch_converter,
          "orbital": self._show_hydrogen, "dynamics2d": self.show_dynamics, "dynamics3d": self.show_dynamics_3d,
          "doubleslit": self._launch_double_slit, "superposition": self._launch_superposition,
-         "entanglement": self._launch_entanglement}[view]()
+         "entanglement": self._launch_entanglement, "teleportation": self._launch_teleportation,
+         "qec": self._launch_qec_explorer}[view]()
 
     def apply_preferences(self):
         from quantumscope.gui import preferences as prefs
@@ -192,6 +205,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Restart failed", str(exc))
             return
         self.close()
+
+    def check_for_updates(self):
+        """Only on request: asks permission, then one request to GitHub (see gui/update_dialog.py)."""
+        from quantumscope.gui.update_dialog import check_for_updates
+        check_for_updates(self)
 
     def _follow_system_theme(self, *_):
         from quantumscope.gui import preferences as prefs
@@ -244,7 +262,7 @@ class MainWindow(QMainWindow):
         new_button.setMenu(self._experiment_menu(new_button))
         row.addWidget(new_button)
         row.addWidget(self._header_button("⚙", "Settings", self._show_settings))
-        row.addWidget(self._header_button("ⓘ", "About QuantumScope", self.show_about))
+        row.addWidget(self._header_button("ⓘ", "About QuantumScope (and check for updates)", self.show_about))
         outer.addWidget(header)
         self.categories = QTabWidget()
         self.categories.setObjectName("categoryWorkspace")
@@ -357,7 +375,7 @@ class MainWindow(QMainWindow):
         layout=layout or {}
         self.circuit_widget.set_circuit(n,gates,layout.get('columns'),measured,
             layout.get('measurement_column'),layout.get('total_columns'),layout.get('initial_states'),layout.get('blocks') or (),
-            layout.get('noise') or (),layout.get('noise_model'))
+            layout.get('noise') or (),layout.get('noise_model'),layout.get('classical') or (),layout.get('conditions') or ())
         self._launch_circuits()
 
     def _show_hydrogen(self):
@@ -371,6 +389,14 @@ class MainWindow(QMainWindow):
     def _launch_superposition(self):
         from quantumscope.gui.quantum_principles import SuperpositionDialog
         self._open_experiment("superposition", "Quantum Superposition", SuperpositionDialog)
+
+    def _launch_qec_explorer(self):
+        from quantumscope.gui.qec_chart import ErrorCorrectionExplorer
+        self._open_experiment("qec_explorer", "Error-correction explorer", ErrorCorrectionExplorer)
+
+    def _launch_teleportation(self):
+        from quantumscope.gui.teleportation_experiment import TeleportationDialog
+        self._open_experiment("teleportation", "Quantum Teleportation", TeleportationDialog)
 
     def _launch_entanglement(self):
         from quantumscope.gui.quantum_principles import EntanglementDialog
@@ -471,7 +497,7 @@ class MainWindow(QMainWindow):
         self.renderer.setCurrentText(prefs.get("graphics/volume_method"))
         self.renderer.hide()
 
-        camera_box = QGroupBox("Camera & scientific display")
+        camera_box = QGroupBox("Camera && scientific display")
         cf = QFormLayout(camera_box)
         cf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.camera_view = QComboBox()
