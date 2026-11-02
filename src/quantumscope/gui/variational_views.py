@@ -55,13 +55,23 @@ class ConvergenceChart(QWidget):
             e = lo + (hi - lo) * k / 4
             p.drawText(QRectF(2, y(e) - 7, left - 8, 14), Qt.AlignmentFlag.AlignRight, f'{e:.{digits}f}')
         p.drawText(QRectF(left, bottom + 6, right - left, 14), Qt.AlignmentFlag.AlignCenter,
-                   f'step (0 … {len(self.energies) - 1})')
+                   'no steps taken' if len(self.energies) == 1 else f'step (0 … {len(self.energies) - 1})')
         if self.exact is not None:
             p.setPen(QPen(canvas_color('chart_sampled'), 1.6, Qt.PenStyle.DashLine))
             p.drawLine(QPointF(left, y(self.exact)), QPointF(right, y(self.exact)))
             p.setPen(text)
             p.drawText(QPointF(right - 190, y(self.exact) - 5), f'exact minimum {self.exact:.6f}')
         p.setPen(QPen(canvas_color('bloch_vector'), 2.4))
+        if len(self.energies) == 1:                              # no step: a level line, not a lone dot
+            level = y(self.energies[0])
+            p.drawLine(QPointF(left, level), QPointF(right, level))
+            p.setBrush(canvas_color('bloch_vector'))
+            p.drawEllipse(QPointF(left, level), 4, 4)
+            p.setPen(text)
+            p.drawText(QRectF(left + 10, level - 22, right - left - 20, 16), Qt.AlignmentFlag.AlignLeft,
+                       f'no step lowered ⟨H⟩ below {self.energies[0]:.6f}')
+            p.end()
+            return
         points = [QPointF(x(i), y(e)) for i, e in enumerate(self.energies)]
         for a, b in zip(points, points[1:]):
             p.drawLine(a, b)
@@ -129,8 +139,16 @@ class OptimizeDialog(QDialog):
         gap = energy - exact if exact is not None else None
         start = self.history[0][1]
         steps = len(self.history) - 1
+        evaluations = getattr(self.history, 'evaluations', 0)
         if exact is not None and start - exact < 1e-6:
             self.summary.setText(f'⟨H⟩ = {start:.6f} was already at the exact minimum: nothing to improve.')
+        elif steps == 0 and not self.stopped:
+            self.summary.setText(
+                f'No step lowered ⟨H⟩ = {start:.6f} ({evaluations} circuit evaluations): these parameters are '
+                f'already at a minimum of what this circuit can do. The exact minimum over all states is '
+                f'{exact:.6f}' + ('; this circuit may not be able to reach it (its layers or its structure, such '
+                                  'as a symmetry, limit which states it makes), or this is a local minimum: try '
+                                  'other starting values.' if exact is not None else '.'))
         else:
             verdict = ('' if gap is None else
                        ' — the ground state is reached.' if gap < 1e-6 else

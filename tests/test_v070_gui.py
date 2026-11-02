@@ -281,3 +281,17 @@ def test_optimizer_results_land_inside_the_slider_range(app):
     slider, _ = w._param_widgets['γ0']
     assert slider.minimum() < slider.value() < slider.maximum()   # not pinned at an end
     assert w.observable_edit.width() > w.observable_examples.width()
+
+
+def test_zero_step_optimization_is_explained(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('qaoa', {'graph': 'ring5', 'layers': 1})
+    w.observable_edit.setText('Z0 Z1')
+    w._observable_edited()
+    w.optimize_parameters().close()                               # reach the circuit's best (−0.6)
+    dialog = w.optimize_parameters()                              # nothing left to improve
+    text = dialog.summary.text()
+    assert text.startswith('No step lowered') and 'circuit evaluations' in text and 'symmetry' in text
+    assert len(dialog.chart.energies) == 1
+    dialog.chart.grab()                                           # paints a level line, not a lone dot
