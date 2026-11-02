@@ -570,8 +570,22 @@ class CircuitModel:
     BINDABLE = {'RX': ('angle',), 'RY': ('angle',), 'RZ': ('angle',), 'P': ('angle',), 'CP': ('angle',),
                 'U': ('angle', 'phi', 'lam')}
 
+    GREEK = {'alpha': 'α', 'beta': 'β', 'gamma': 'γ', 'delta': 'δ', 'epsilon': 'ε', 'zeta': 'ζ', 'eta': 'η',
+             'theta': 'θ', 'iota': 'ι', 'kappa': 'κ', 'lambda': 'λ', 'mu': 'μ', 'nu': 'ν', 'xi': 'ξ', 'rho': 'ρ',
+             'sigma': 'σ', 'tau': 'τ', 'upsilon': 'υ', 'phi': 'φ', 'chi': 'χ', 'psi': 'ψ', 'omega': 'ω'}
+
+    @classmethod
+    def greek_name(cls, name):
+        """LaTeX-style Greek letters, which are hard to type: '\\gamma0' -> 'γ0', '\\theta' -> 'θ'.
+        Without the backslash a name stays exactly as typed ('theta' is the name theta)."""
+        import re
+        match = re.fullmatch(r'\\([A-Za-z]+)(\w*)', str(name).strip())
+        if match and match.group(1) in cls.GREEK:
+            return cls.GREEK[match.group(1)] + match.group(2)
+        return str(name).strip()
+
     def add_parameter(self, name, value=0.0):
-        name = str(name).strip()
+        name = self.greek_name(name)
         if not self.NAME.match(name) or name.lower() == 'pi':
             raise EditorError('A parameter name starts with a letter and has at most 12 letters, digits or _')
         if name in self.parameters:
@@ -591,6 +605,7 @@ class CircuitModel:
 
     def set_parameter(self, name, value, record=True):
         """Change a parameter and every gate angle bound to it (record=False while a slider moves)."""
+        name = name if name in self.parameters else self.greek_name(name)
         if name not in self.parameters:
             raise EditorError(f'No parameter {name}')
         value = float(value)
@@ -611,6 +626,7 @@ class CircuitModel:
         if factor == 0:
             raise EditorError('The factor cannot be 0')
         key, gate = found[1], found[2]
+        name = self.greek_name(name)
         self.snapshot()
         if name not in self.parameters:
             if not self.NAME.match(str(name)) or str(name).lower() == 'pi':

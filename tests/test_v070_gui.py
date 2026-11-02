@@ -295,3 +295,24 @@ def test_zero_step_optimization_is_explained(app):
     assert text.startswith('No step lowered') and 'circuit evaluations' in text and 'symmetry' in text
     assert len(dialog.chart.energies) == 1
     dialog.chart.grab()                                           # paints a level line, not a lone dot
+
+
+def test_gate_editor_and_panel_accept_latex_greek_names(app, monkeypatch):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('qaoa', {'graph': 'ring4', 'layers': 1})
+    rx = next(k for k, g in w.model.gates.items() if g.name == 'RX')
+
+    def type_into(dialog):
+        dialog.findChild(QtWidgets.QLineEdit).setText('2*\\beta0')
+        dialog.findChild(QtWidgets.QDialogButtonBox).accepted.emit()
+        return QtWidgets.QDialog.DialogCode.Accepted
+    monkeypatch.setattr(QtWidgets.QDialog, 'exec', type_into)
+    w.edit_gate_at(*rx)
+    assert w.model.bindings[(*rx, 'angle')] == ('β0', 2.0) and len(w.model.parameters) == 2
+    w.param_name.setText('\\theta')
+    w._add_parameter_clicked()
+    assert 'θ' in w.model.parameters and 'θ' in w._param_widgets
+    w.param_name.setText('theta')                                 # without the backslash: the plain name
+    w._add_parameter_clicked()
+    assert 'theta' in w.model.parameters

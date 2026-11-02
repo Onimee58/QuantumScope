@@ -162,3 +162,29 @@ def test_round_trip_and_older_readers_use_current_angles():
 def test_invalid_variational_metadata_is_ignored(meta):
     m = ansatz()
     assert m.restore_variational(meta) is False and not m.parameters
+
+
+@pytest.mark.parametrize('typed,name', [('\\gamma0', 'γ0'), ('\\theta', 'θ'), ('\\alpha2', 'α2'),
+                                        ('\\beta_1', 'β_1'), ('theta', 'theta'), ('gamma0', 'gamma0'), ('b1', 'b1')])
+def test_latex_greek_names(typed, name):
+    m = CircuitModel(1)
+    m.add_parameter(typed)
+    assert list(m.parameters) == [name]
+
+
+def test_pi_and_unknown_latex_names_are_rejected():
+    m = CircuitModel(1)
+    for bad in ('pi', '\\gammas', '\\'):
+        with pytest.raises(EditorError):
+            m.add_parameter(bad)
+
+
+def test_latex_names_reach_existing_greek_parameters():
+    m = CircuitModel()
+    m.load_library('qaoa', {'graph': 'ring4', 'layers': 1})
+    m.set_parameter('\\gamma0', 0.7)
+    assert m.parameters['γ0'] == pytest.approx(0.7)
+    before = set(m.parameters)
+    key = next(k for k, g in m.gates.items() if g.name == 'RX')
+    m.bind(*key, 'angle', '\\beta0', 2.0)
+    assert set(m.parameters) == before and m.bindings[(*key, 'angle')] == ('β0', 2.0)

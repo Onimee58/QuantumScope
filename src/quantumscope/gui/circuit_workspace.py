@@ -708,10 +708,10 @@ class CircuitWorkspace(QWidget):
         """(name, factor) when an angle field names a parameter ('theta', '2*gamma', '-beta', 'pi/2*θ'), else None."""
         import re
         t=text.strip().replace('·','*').replace('−','-')
-        m=re.fullmatch(r'(?:(.+?)\s*\*\s*)?(-?)\s*([A-Za-z_\u03b1-\u03c9\u0391-\u03a9][A-Za-z0-9_\u03b1-\u03c9\u0391-\u03a9]*)',t)
+        m=re.fullmatch(r'(?:(.+?)\s*\*\s*)?(-?)\s*(\\?[A-Za-z_\u03b1-\u03c9\u0391-\u03a9][A-Za-z0-9_\u03b1-\u03c9\u0391-\u03a9]*)',t)
         if not m or m.group(3).lower()=='pi':return None
         factor=parse_angle(m.group(1)) if m.group(1) else 1.0
-        return m.group(3),(-factor if m.group(2) else factor)
+        return CircuitModel.greek_name(m.group(3)),(-factor if m.group(2) else factor)
     PARAM_ROW=34
     def _fit_parameter_panel(self):
         """Reserve the height the panel's contents need, so the layout cannot squeeze its rows."""
@@ -744,10 +744,13 @@ class CircuitWorkspace(QWidget):
         self.param_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         layout.addWidget(self.param_scroll)
         add=QHBoxLayout()
-        self.param_name=QLineEdit();self.param_name.setPlaceholderText('new parameter, e.g. θ or gamma');add.addWidget(self.param_name,1)
+        self.param_name=QLineEdit();self.param_name.setPlaceholderText('new parameter, e.g. a, angle1, or \\gamma1 for γ1')
+        self.param_name.setToolTip('Type Greek letters as in LaTeX: \\theta → θ, \\gamma0 → γ0, \\beta → β')
+        add.addWidget(self.param_name,1)
         add_button=QPushButton('Add parameter');add_button.clicked.connect(self._add_parameter_clicked);add.addWidget(add_button)
         layout.addLayout(add)
-        hint=QLabel('To use a parameter, double-click a rotation gate (RX, RY, RZ, P, CP, U) and type its name as the angle.')
+        hint=QLabel('To use a parameter, double-click a rotation gate (RX, RY, RZ, P, CP, U) and type its name as the angle. '
+                    'Type Greek letters as in LaTeX: \\theta → θ, \\gamma0 → γ0, 2*\\beta → 2·β.')
         hint.setWordWrap(True);layout.addWidget(hint)
         obs=QHBoxLayout();obs.addWidget(QLabel('Observable'))
         self.observable_edit=QLineEdit();self.observable_edit.setPlaceholderText('e.g. Z0 Z1 + 0.5 X0')
@@ -1357,7 +1360,8 @@ class CircuitWorkspace(QWidget):
         for attr,label in params:
             bound=self.model.binding_text(key,attr)
             field=QLineEdit(bound.replace('·','*').replace('−','-') if bound else self._format_user_angle(getattr(gate,attr)))
-            field.setToolTip('A number, an expression such as pi/2, or a parameter: theta, 2*gamma, -beta')
+            field.setToolTip('A number, an expression such as pi/2, or a parameter: a, 2*\\gamma0, -\\beta '
+                             '(LaTeX names become Greek: \\gamma0 → γ0)')
             layout.addRow(f'{label} ({"degrees" if self._angle_units=="degrees" else "radians"})',field)
             edits[attr]=field
         layout.addRow(QLabel('Numbers are in '+('degrees' if self._angle_units=='degrees' else 'radians')
