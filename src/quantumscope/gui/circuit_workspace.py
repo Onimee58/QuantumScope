@@ -510,6 +510,9 @@ class CircuitWorkspace(QWidget):
         tools.addAction('Simplify circuit…',self.simplify_dialog)
         tools.addAction('Check equivalence with a saved circuit…',self.check_equivalence)
         self.tools_button.setMenu(tools);edits.addWidget(self.tools_button)
+        self.param_toggle=QPushButton('Parameters');self.param_toggle.setCheckable(True)
+        self.param_toggle.setToolTip('Show the panel for parameters (sliders for gate angles) and an observable to measure')
+        self.param_toggle.toggled.connect(lambda on:self._update_parameter_visibility());edits.addWidget(self.param_toggle)
         self.inspector_button=QPushButton('State Inspector…')
         self.inspector_button.setToolTip('Open amplitudes, statevector, reduced density matrices and circuit statistics')
         self.inspector_button.clicked.connect(self.open_state_inspector);edits.addWidget(self.inspector_button)
@@ -582,6 +585,7 @@ class CircuitWorkspace(QWidget):
         self.inline_blochs=InlineBlochs(self.grid);wires.addWidget(self.inline_blochs)
         self.show_blochs.toggled.connect(self.inline_blochs.setVisible)
         self.grid.verticalScrollBar().valueChanged.connect(lambda _:self.inline_blochs.update())
+        self._build_parameter_panel(v)          # right under the circuit, shown when in use
         helptext=QLabel('Drag a multi-qubit gate to its first operand, then click remaining qubits in the same column. Right-click to remove a gate. Up to 10 qubits; ideal statevector.')
         helptext.setWordWrap(True);v.addWidget(helptext)
         self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -623,7 +627,6 @@ class CircuitWorkspace(QWidget):
         self.verify_table.horizontalHeader().setStretchLastSection(True)
         verify_layout.addWidget(self.verify_table)
         v.addWidget(self.verify_panel)
-        self._build_parameter_panel(v)
         shots=QHBoxLayout();v.addLayout(shots);shots.addWidget(QLabel('Shots'))
         self.shots=QSpinBox();self.shots.setRange(1,100000);self.shots.setValue(prefs.get('circuits/default_shots'));shots.addWidget(self.shots)
         run=QPushButton('Run measurement shots');run.clicked.connect(self.measure);shots.addWidget(run)
@@ -720,10 +723,41 @@ class CircuitWorkspace(QWidget):
         obs=QHBoxLayout();obs.addWidget(QLabel('Observable'))
         self.observable_edit=QLineEdit();self.observable_edit.setPlaceholderText('e.g. Z0 Z1 + 0.5 X0')
         self.observable_edit.editingFinished.connect(self._observable_edited);obs.addWidget(self.observable_edit,1)
+        self.observable_examples=QComboBox();self.observable_examples.setToolTip('Ready-made observables, explained')
+        self.observable_examples.activated.connect(self._observable_example_chosen);obs.addWidget(self.observable_examples)
         layout.addLayout(obs)
+        explain=QLabel('An observable is a quantity you could measure. Zk is +1 if qubit k is 0 and −1 if it is 1; '
+                       'Z0 Z1 is +1 when q0 and q1 agree; Xk measures along x (+1 for |+⟩). Numbers weight the terms. '
+                       '⟨O⟩ is its average over many measurements of the current state.')
+        explain.setWordWrap(True);explain.setObjectName('muted');layout.addWidget(explain)
         self.expectation_label=QLabel('');self.expectation_label.setWordWrap(True);layout.addWidget(self.expectation_label)
         v.addWidget(self.param_panel)
         self._refresh_parameter_panel()
+    def _observable_choices(self):
+        """Example observables for this many qubits: (text, plain-words description)."""
+        n=self.n
+        choices=[('Z0','is q0 0 (+1) or 1 (−1)?'),('X0','q0 along x: +1 for |+⟩, −1 for |−⟩')]
+        if n>=2:
+            choices.insert(1,('Z0 Z1','do q0 and q1 agree (+1) or differ (−1)?'))
+            choices.append((' + '.join(f'Z{q}' for q in range(n)),'total "magnetization": how many qubits are 0 minus how many are 1'))
+            ising=' + '.join(f'Z{q} Z{q+1}' for q in range(n-1))+' + '+' + '.join(f'0.5 X{q}' for q in range(n))
+            choices.append((ising,'energy of an Ising chain: neighbours agreeing, plus a transverse field'))
+        return choices
+    def _fill_observable_examples(self):
+        self.observable_examples.blockSignals(True);self.observable_examples.clear()
+        self.observable_examples.addItem('Examples…',None)
+        for text,meaning in self._observable_choices():
+            self.observable_examples.addItem(f'{text}  —  {meaning}',text)
+        self.observable_examples.setCurrentIndex(0);self.observable_examples.blockSignals(False)
+    def _observable_example_chosen(self,index):
+        text=self.observable_examples.itemData(index)
+        self.observable_examples.setCurrentIndex(0)
+        if text:
+            self.observable_edit.setText(text);self._observable_edited()
+    def _update_parameter_visibility(self):
+        if hasattr(self,'param_panel'):
+            in_use=bool(self.model.parameters or self.model.observable)
+            self.param_panel.setVisible(in_use or self.param_toggle.isChecked())
     def _add_parameter_clicked(self):
         try:self.model.add_parameter(self.param_name.text())
         except EditorError as exc:self._rejected(exc);return
@@ -752,6 +786,8 @@ class CircuitWorkspace(QWidget):
             box.editingFinished.connect(lambda n=name,b=box:self._parameter_typed(n,b.value()))
             self.param_rows.addWidget(row);self._param_widgets[name]=(slider,box)
         self.observable_edit.setText(self.model.observable)
+        self._fill_observable_examples()
+        self._update_parameter_visibility()
         self._update_expectation()
     def _parameter_moved(self,name,value,box):
         box.blockSignals(True);box.setValue(value);box.blockSignals(False)
@@ -1418,6 +1454,10 @@ class CircuitWorkspace(QWidget):
             self._refresh_parameter_panel()
         elif hasattr(self,'expectation_label'):
             self._sync_parameter_values();self._update_expectation()
+            if self.observable_examples.count()-1!=len(self._observable_choices()) or \
+                    (self.n>=2 and 'Z0 Z1' not in [self.observable_examples.itemData(i) for i in range(self.observable_examples.count())]):
+                self._fill_observable_examples()                 # examples depend on the number of qubits
+            self._update_parameter_visibility()
         self.step.setRange(0,last+1)
         self.step.setValue(last+1)
         self.show_step(self.step.value())

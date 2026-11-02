@@ -152,3 +152,28 @@ def test_observable_panel_and_exports(ansatz, tmp_path, monkeypatch):
     monkeypatch.setattr(QtWidgets.QFileDialog, 'getOpenFileName', staticmethod(lambda *a, **k: (str(tmp_path / 'v.qscope'), '')))
     ansatz.load_native()
     assert 'θ' in ansatz._param_widgets and ansatz.observable_edit.text() == 'Z0 Z1 + 0.5 X0'
+
+
+def test_parameter_panel_shows_when_in_use_and_explains_observables(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.show()
+    w.set_circuit(1, [])
+    assert not w.param_panel.isVisible()                          # nothing in use: out of the way
+    w.param_toggle.setChecked(True)
+    assert w.param_panel.isVisible()
+    w.param_toggle.setChecked(False)
+    w.place('RY', 0, 0)
+    w.model.bind(0, 0, 'angle', 'θ')
+    w._changed()
+    assert w.param_panel.isVisible()                              # a parameter brings it up
+    examples = [w.observable_examples.itemData(i) for i in range(w.observable_examples.count())]
+    assert examples[0] is None and 'Z0' in examples and 'Z0 Z1' not in examples   # one qubit
+    w.qubits.setValue(3)
+    examples = [w.observable_examples.itemData(i) for i in range(w.observable_examples.count())]
+    assert 'Z0 Z1' in examples and any(e and e.startswith('Z0 Z1 + Z1 Z2') for e in examples)
+    w.observable_examples.activated.emit(examples.index('Z0 Z1'))
+    assert w.model.observable == 'Z0 Z1' and 'observable is a quantity' in w.param_panel.findChildren(
+        QtWidgets.QLabel)[-2].text() + ''.join(l.text() for l in w.param_panel.findChildren(QtWidgets.QLabel))
+    w.clear()
+    assert not w.param_panel.isVisible()
