@@ -138,3 +138,31 @@ def test_wrapping_keeps_the_results_and_respects_factors():
     half.place('RY', 0, 0)
     half.bind(0, 0, 'angle', 'a', 0.5)                            # not a whole factor: never wrapped
     assert V.wrap_safely(half, [7.0]) == [7.0]
+
+
+@pytest.mark.parametrize('method', ['Nelder-Mead', 'COBYLA'])
+def test_gradient_free_history_is_the_path_taken(method):
+    m = vqe('h2', 1)
+    history = V.optimize(m, method, steps=300)
+    energies = [e for _, e in history]
+    assert all(b < a for a, b in zip(energies, energies[1:]))       # only improvements are steps
+    assert history.evaluations > len(history)                       # probes are counted, not plotted
+    assert energies[-1] == pytest.approx(-1.137306, abs=1e-3)
+
+
+def test_every_method_reports_evaluations():
+    m = vqe('ising-2', 1)
+    for method in ('BFGS', 'gradient', 'COBYLA', 'Nelder-Mead'):
+        history = V.optimize(m, method, steps=50)
+        assert history.evaluations >= len(history)
+
+
+def test_qaoa_symmetry_bounds_a_single_edge():
+    # QAOA treats every edge of the pentagon alike, so ⟨Z0 Z1⟩ equals the edge average, which is at
+    # least (1 uncut − 4 cut) / 5 = −0.6 — not the −1 that asymmetric states could reach.
+    m = CircuitModel()
+    m.load_library('qaoa', {'graph': 'ring5', 'layers': 2})
+    m.set_observable('Z0 Z1')
+    for method in ('BFGS', 'Nelder-Mead'):
+        best = V.optimize(m, method, steps=300)[-1][1]
+        assert best == pytest.approx(-0.6, abs=1e-4) and V.Evaluator(m).exact_minimum() == pytest.approx(-1)

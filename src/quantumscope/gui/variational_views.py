@@ -55,7 +55,7 @@ class ConvergenceChart(QWidget):
             e = lo + (hi - lo) * k / 4
             p.drawText(QRectF(2, y(e) - 7, left - 8, 14), Qt.AlignmentFlag.AlignRight, f'{e:.{digits}f}')
         p.drawText(QRectF(left, bottom + 6, right - left, 14), Qt.AlignmentFlag.AlignCenter,
-                   f'iteration (0 … {len(self.energies) - 1})')
+                   f'step (0 … {len(self.energies) - 1})')
         if self.exact is not None:
             p.setPen(QPen(canvas_color('chart_sampled'), 1.6, Qt.PenStyle.DashLine))
             p.drawLine(QPointF(left, y(self.exact)), QPointF(right, y(self.exact)))
@@ -106,6 +106,9 @@ class OptimizeDialog(QDialog):
         energies = []
 
         def progress(iteration, values, energy):
+            if energies and iteration == len(energies) - 1:        # a heartbeat, not a new step
+                QApplication.processEvents()
+                return not self.stopped
             energies.append(energy)
             if len(energies) % 2 == 1 or iteration < 5:
                 self.chart.set_data(energies, exact)
@@ -131,9 +134,13 @@ class OptimizeDialog(QDialog):
         else:
             verdict = ('' if gap is None else
                        ' — the ground state is reached.' if gap < 1e-6 else
-                       f' — {gap:.4g} above the exact minimum. More layers (or another method) may help.')
+                       f' — {gap:.4g} above the exact minimum over all states. This may be the best this circuit '
+                       'can reach (its layers or its structure, such as a symmetry, limit which states it makes), '
+                       'or a local minimum: try another method or other starting values.')
+            evaluations = getattr(self.history, 'evaluations', 0)
             self.summary.setText(f'{"Stopped" if self.stopped else "Finished"} after {steps} '
-                                 f'iteration{"" if steps == 1 else "s"}: ⟨H⟩ went from {start:.6f} to {energy:.6f}'
+                                 f'step{"" if steps == 1 else "s"} ({evaluations} circuit evaluations): '
+                                 f'⟨H⟩ went from {start:.6f} to {energy:.6f}'
                                  + (f' (exact minimum {exact:.6f})' if exact is not None else '') + verdict)
         self.stop_button.setEnabled(False)
         return self.history

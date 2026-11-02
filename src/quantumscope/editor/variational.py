@@ -58,6 +58,11 @@ class Evaluator:
         return ground_energy(self.model.n, self.terms) if self.model.n <= 10 else None
 
 
+class History(list):
+    """[(values, energy), …] of the steps taken, with the number of circuit evaluations used."""
+    evaluations = 0
+
+
 def optimize(model, method='BFGS', steps=100, rate=0.2, callback=None, tolerance=1e-7):
     """Minimize ⟨observable⟩ over the model's parameters.
 
@@ -68,7 +73,14 @@ def optimize(model, method='BFGS', steps=100, rate=0.2, callback=None, tolerance
     """
     ev = Evaluator(model)
     values = np.array([model.parameters[n] for n in ev.names], float)
-    history = [(values.copy(), ev.energy(values))]
+    history = History([(values.copy(), ev.energy(values))])
+    try:
+        return _optimize(ev, values, history, method, steps, rate, callback, tolerance)
+    finally:
+        history.evaluations = ev.calls
+
+
+def _optimize(ev, values, history, method, steps, rate, callback, tolerance):
     if callback is not None and callback(0, values, history[0][1]) is False:
         return history
     if method == 'gradient':
@@ -103,9 +115,14 @@ def optimize(model, method='BFGS', steps=100, rate=0.2, callback=None, tolerance
         pass
 
     def tracked(x):
+        # Gradient-free methods try many probe points; only improvements are steps actually taken,
+        # so the path and the curve show the trajectory (evaluations are counted separately).
         energy = ev.energy(x)
-        history.append((np.array(x, float), energy))
-        if callback is not None and callback(len(history) - 1, x, energy) is False:
+        if energy < history[-1][1] - 1e-15:
+            history.append((np.array(x, float), energy))
+            if callback is not None and callback(len(history) - 1, x, energy) is False:
+                raise Stop
+        elif callback is not None and ev.calls % 25 == 0 and callback(len(history) - 1, history[-1][0], history[-1][1]) is False:
             raise Stop
         return energy
     try:
@@ -123,8 +140,6 @@ def optimize(model, method='BFGS', steps=100, rate=0.2, callback=None, tolerance
             minimize(tracked, values, method=method, options=options)
     except Stop:
         pass
-    best = min(range(len(history)), key=lambda i: history[i][1])
-    history.append(history[best])                              # end at the best point found
     return history
 
 

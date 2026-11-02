@@ -242,8 +242,9 @@ def test_convergence_summary_and_chart_range(app):
     dialog = w.optimize_parameters()
     import re
     text = dialog.summary.text()
-    steps = int(re.search(r'after (\d+) iteration', text).group(1))
-    assert 'went from' in text and (f'{steps} iteration:' if steps == 1 else f'{steps} iterations:') in text
+    steps = int(re.search(r'after (\d+) step', text).group(1))
+    assert 'went from' in text and (f'{steps} step ' if steps == 1 else f'{steps} steps ') in text
+    assert 'circuit evaluations' in text
     chart = ConvergenceChart()
     chart.resize(600, 320)
     chart.set_data([-1.0000000001, -1.0], -1.0)
