@@ -751,9 +751,11 @@ class CircuitWorkspace(QWidget):
         hint.setWordWrap(True);layout.addWidget(hint)
         obs=QHBoxLayout();obs.addWidget(QLabel('Observable'))
         self.observable_edit=QLineEdit();self.observable_edit.setPlaceholderText('e.g. Z0 Z1 + 0.5 X0')
-        self.observable_edit.editingFinished.connect(self._observable_edited);obs.addWidget(self.observable_edit,1)
+        self.observable_edit.editingFinished.connect(self._observable_edited);obs.addWidget(self.observable_edit,4)
         self.observable_examples=QComboBox();self.observable_examples.setToolTip('Ready-made observables, explained')
-        self.observable_examples.activated.connect(self._observable_example_chosen);obs.addWidget(self.observable_examples)
+        self.observable_examples.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.observable_examples.setMinimumContentsLength(12)       # the text box gets the room, not the menu
+        self.observable_examples.activated.connect(self._observable_example_chosen);obs.addWidget(self.observable_examples,1)
         layout.addLayout(obs)
         explain=QLabel('An observable is a quantity you could measure. Zk is +1 if qubit k is 0 and −1 if it is 1; '
                        'Z0 Z1 is +1 when q0 and q1 agree; Xk measures along x (+1 for |+⟩). Numbers weight the terms. '

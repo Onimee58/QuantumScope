@@ -72,14 +72,29 @@ def optimize(model, method='BFGS', steps=100, rate=0.2, callback=None, tolerance
     if callback is not None and callback(0, values, history[0][1]) is False:
         return history
     if method == 'gradient':
+        # Gradient descent with a backtracking line search: a step that would raise ⟨H⟩ is
+        # rejected and the step size halved; after a success it grows a little. A fixed step
+        # overshoots when gradients are large (e.g. QAOA on bigger graphs) and oscillates.
+        energy = history[0][1]
         for it in range(1, steps + 1):
             grad = ev.gradient(values)
-            values = values - rate * grad
-            energy = ev.energy(values)
+            if np.linalg.norm(grad) < tolerance:
+                break
+            for _ in range(30):
+                trial = values - rate * grad
+                trial_energy = ev.energy(trial)
+                if trial_energy <= energy:
+                    break
+                rate *= 0.5
+            else:
+                break                                              # no downhill step exists at this scale
+            improvement = energy - trial_energy
+            values, energy = trial, trial_energy
+            rate = min(rate * 1.2, 2.0)
             history.append((values.copy(), energy))
             if callback is not None and callback(it, values, energy) is False:
                 break
-            if np.linalg.norm(grad) < tolerance or abs(history[-2][1] - energy) < tolerance * 1e-2:
+            if improvement < tolerance * 1e-2:
                 break
         return history
     from scipy.optimize import minimize
@@ -136,3 +151,19 @@ def landscape(model, first, second=None, points=41, span=math.pi):
             v[i1], v[i2] = x, y
             grid[i, j] = ev.energy(v)
     return xs, xs.copy(), grid
+
+
+def wrap_safely(model, values):
+    """Map parameters into [−π, π) where that cannot change the circuit's results: every gate a
+    parameter drives has a whole-number factor, so shifting it by 2π changes each angle by a
+    multiple of 2π (at most a global sign). Other parameters are returned unchanged."""
+    names = list(model.parameters)
+    factors = {name: [] for name in names}
+    for _, (name, factor) in model.bindings.items():
+        if name in factors:
+            factors[name].append(factor)
+    out = []
+    for name, value in zip(names, values):
+        whole = all(abs(f - round(f)) < 1e-12 for f in factors[name])
+        out.append(float((value + math.pi) % (2 * math.pi) - math.pi) if whole else float(value))
+    return out

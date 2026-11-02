@@ -104,3 +104,37 @@ def test_landscape_curve_and_grid():
     v[0], v[1] = xs[3], ys[5]
     assert grid[5, 3] == pytest.approx(ev.energy(v))
     assert grid.min() >= V.Evaluator(m).exact_minimum() - 1e-9    # no state beats the ground energy
+
+
+@pytest.mark.parametrize('graph,layers', [('ring6', 1), ('prism', 1), ('ring4', 2)])
+def test_gradient_descent_never_goes_uphill(graph, layers):
+    m = CircuitModel()
+    m.load_library('qaoa', {'graph': graph, 'layers': layers})
+    energies = [e for _, e in V.optimize(m, 'gradient', steps=120, rate=0.2)]
+    assert all(b <= a + 1e-12 for a, b in zip(energies, energies[1:]))     # backtracking: never uphill
+    assert energies[-1] < energies[0]
+
+
+def test_gradient_descent_copes_with_a_too_large_step():
+    m = CircuitModel()
+    m.load_library('qaoa', {'graph': 'ring6', 'layers': 1})
+    energies = [e for _, e in V.optimize(m, 'gradient', steps=60, rate=5.0)]   # far too big at first
+    assert all(b <= a + 1e-12 for a, b in zip(energies, energies[1:])) and energies[-1] == pytest.approx(-4.5, abs=1e-3)
+
+
+def test_wrapping_keeps_the_results_and_respects_factors():
+    m = CircuitModel()
+    m.load_library('qaoa', {'graph': 'ring4', 'layers': 1})
+    raw = [5.3, -7.9]                                             # γ0 (factor −1), β0 (factor 2)
+    wrapped = V.wrap_safely(m, raw)
+    assert all(-math.pi <= w < math.pi for w in wrapped)
+    energies = []
+    for values in (raw, wrapped):
+        for name, v in zip(list(m.parameters), values):
+            m.set_parameter(name, v)
+        energies.append(m.expectation())
+    assert energies[0] == pytest.approx(energies[1])
+    half = CircuitModel(1)
+    half.place('RY', 0, 0)
+    half.bind(0, 0, 'angle', 'a', 0.5)                            # not a whole factor: never wrapped
+    assert V.wrap_safely(half, [7.0]) == [7.0]

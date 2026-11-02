@@ -81,6 +81,8 @@ class OptimizeDialog(QDialog):
         layout = QVBoxLayout(self)
         self.summary = QLabel()
         self.summary.setWordWrap(True)
+        self.summary.setMinimumHeight(3 * self.summary.fontMetrics().lineSpacing() + 4)   # wrapped text never clipped
+        self.summary.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.summary)
         self.chart = ConvergenceChart()
         layout.addWidget(self.chart, 1)
@@ -114,6 +116,7 @@ class OptimizeDialog(QDialog):
         self.history = V.optimize(model, self.method, self.steps, callback=progress)
         values, energy = self.history[-1]
         model.snapshot()                                      # the whole optimization is one undo step
+        values = V.wrap_safely(model, values)                 # back into −π…π where that changes nothing
         for name, value in zip(list(model.parameters), values):
             model.parameters[name] = float(value)
         model._apply_bindings()

@@ -266,3 +266,17 @@ def test_maxcut_graph_window_follows_the_circuit(app):
     w.load_library('teleportation', {'input': '+'})
     w.verify_circuit()
     assert not w.graph_button.isVisibleTo(w)
+
+
+def test_optimizer_results_land_inside_the_slider_range(app):
+    import math
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.load_library('qaoa', {'graph': 'ring4', 'layers': 1})
+    w.model.set_parameter('γ0', 9.0)                              # far outside −π…π
+    w.opt_method.setCurrentIndex(w.opt_method.findData('gradient'))
+    w.optimize_parameters().close()
+    assert all(-math.pi <= v < math.pi for v in w.model.parameters.values())
+    slider, _ = w._param_widgets['γ0']
+    assert slider.minimum() < slider.value() < slider.maximum()   # not pinned at an end
+    assert w.observable_edit.width() > w.observable_examples.width()
