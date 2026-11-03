@@ -141,10 +141,6 @@ class SettingsDialog(QDialog):
         self.default_shots.setValue(prefs.get('circuits/default_shots'))
         self.default_shots.valueChanged.connect(lambda v: self._changed('circuits/default_shots', v))
         form.addRow('Measurement shots', self.default_shots)
-        self.show_blochs = QCheckBox('Show Bloch spheres beside wires')
-        self.show_blochs.setChecked(prefs.get('circuits/show_blochs'))
-        self.show_blochs.toggled.connect(lambda on: self._changed('circuits/show_blochs', on))
-        form.addRow(self.show_blochs)
         self.angle_units = self._combo('circuits/angle_units', (('degrees', 'Degrees'), ('radians', 'Radians')))
         form.addRow('Gate angles', self.angle_units)
         self.bit_order = self._combo('circuits/bit_order', (('q0_left', '|q0 q1 … qn−1⟩  — q0 leftmost (textbook)'),
@@ -282,7 +278,7 @@ class SettingsDialog(QDialog):
             widget.blockSignals(True)
             widget.setValue(prefs.get(key))
             widget.blockSignals(False)
-        for widget, key in ((self.show_blochs, 'circuits/show_blochs'), (self.confirm_clear, 'circuits/confirm_clear'),
+        for widget, key in ((self.confirm_clear, 'circuits/confirm_clear'),
                             (self.autosave, 'files/autosave')):
             widget.blockSignals(True)
             widget.setChecked(prefs.get(key))

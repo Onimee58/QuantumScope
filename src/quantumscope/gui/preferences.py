@@ -29,7 +29,6 @@ PREFS = {p.key: p for p in (
     # Circuits
     Pref('circuits/default_qubits', 3, minimum=1, maximum=10),
     Pref('circuits/default_shots', 1024, minimum=1, maximum=100000),
-    Pref('circuits/show_blochs', True, (True, False)),
     Pref('circuits/confirm_clear', True, (True, False)),
     Pref('circuits/angle_units', 'degrees', ('degrees', 'radians')),
     Pref('circuits/bit_order', 'q0_left', ('q0_left', 'q0_right')),

@@ -13,7 +13,7 @@ You will estimate $\varphi = \frac{1}{3}$, which no finite binary fraction repre
 
 ```step
 title: Three counting qubits
-text: Run measurement shots. The most likely result is 011 = 3/8 = 0.375, the closest 3-bit value to 1/3, but other results appear too.
+text: Press Run shots (in the sidebar). The most likely result is 011 = 3/8 = 0.375, the closest 3-bit value to 1/3, but other results appear too.
 check: qubits 4
 ```
 

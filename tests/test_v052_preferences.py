@@ -19,7 +19,6 @@ def test_tests_never_touch_the_real_settings():
 def test_defaults(store):
     assert prefs.get('appearance/theme', store) == 'dark'
     assert prefs.get('circuits/default_qubits', store) == 3
-    assert prefs.get('circuits/show_blochs', store) is True
     assert prefs.get('files/recent', store) == ()
 
 

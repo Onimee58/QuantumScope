@@ -80,10 +80,9 @@ def test_restore_defaults(app):
 
 def test_workspace_uses_defaults_and_confirms_clear(app, monkeypatch):
     prefs.set('circuits/default_shots', 333)
-    prefs.set('circuits/show_blochs', False)
     from quantumscope.gui.circuit_workspace import CircuitWorkspace
     w = CircuitWorkspace()
-    assert w.shots.value() == 333 and not w.show_blochs.isChecked()
+    assert w.shots.value() == 333
     assert w.model.gates == {} and w.model.blocks == {}       # v0.5.2 starts with an empty circuit
     monkeypatch.setattr(QtWidgets.QMessageBox, 'question',
                         staticmethod(lambda *a, **k: pytest.fail('an empty circuit clears without asking')))
