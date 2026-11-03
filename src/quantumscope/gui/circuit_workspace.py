@@ -564,6 +564,9 @@ class CircuitWorkspace(QWidget):
         self.grid.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.grid.setShowGrid(False)
         self.grid.setAlternatingRowColors(False)
+        # The canvas draws and handles everything itself: never select cells (Ctrl+A or Shift+arrows
+        # used to light up rows of the grid, seen as "background rows" on Windows).
+        self.grid.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.grid.setToolTip('Drag gates onto empty cells; click to select. Middle-drag to pan, Ctrl+wheel to zoom.')
         # Example title bar: what this circuit is, its parameters, and where to learn about it.
         self.example_bar=QWidget();bar=QHBoxLayout(self.example_bar);bar.setContentsMargins(0,0,0,0)
