@@ -5,7 +5,7 @@ import html
 import numpy as np
 from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QDrag, QFont, QBrush, QWheelEvent, QPdfWriter, QPageSize
-from PySide6.QtWidgets import (QFrame, QHeaderView, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHeaderView, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
     QLabel, QPushButton, QListWidget, QTableWidget, QTableWidgetItem, QSpinBox,
     QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton, QSizePolicy, QDialog, QDialogButtonBox, QLineEdit, QTabWidget, QApplication, QDoubleSpinBox)
 from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured, from_native_layout, from_qasm_layout
@@ -567,7 +567,7 @@ class CircuitWorkspace(QWidget):
         self.grid.customContextMenuRequested.connect(self.gate_context_menu)
         self.grid.cellDoubleClicked.connect(self.edit_gate_at)
         self.grid.cellClicked.connect(self.cell_click)
-        self.status=QLabel('Ready');v.addWidget(self.status)
+        self.status=QLabel('Ready');self.status.setWordWrap(True);v.addWidget(self.status)   # long notes wrap, never widen the page
         playback=QHBoxLayout();v.addLayout(playback)
         self.prev_step=QPushButton('◀');self.prev_step.clicked.connect(lambda:self.step.setValue(max(0,self.step.value()-1)));playback.addWidget(self.prev_step)
         self.play_button=QPushButton('▶ Play');self.play_button.clicked.connect(self.toggle_play);playback.addWidget(self.play_button)
@@ -700,6 +700,30 @@ class CircuitWorkspace(QWidget):
         factor=parse_angle(m.group(1)) if m.group(1) else 1.0
         return CircuitModel.greek_name(m.group(3)),(-factor if m.group(2) else factor)
     PARAM_ROW=34
+    TWO_COLUMNS_FROM=980          # panel width (px) from which parameters are shown in two columns
+    def eventFilter(self,watched,event):
+        if watched is getattr(self,'param_panel',None) and event.type()==QEvent.Type.Resize:
+            if self._parameter_columns()!=getattr(self,'_param_columns',1):
+                QTimer.singleShot(0,self._place_parameter_rows)   # after this resize has finished
+        return super().eventFilter(watched,event)
+    def _parameter_columns(self):
+        return 2 if self.param_panel.width()>=self.TWO_COLUMNS_FROM and len(getattr(self,'_param_rows_widgets',[]))>1 else 1
+    def _place_parameter_rows(self):
+        """Lay the rows out in one or two columns (by width); up to four rows show before scrolling."""
+        rows=getattr(self,'_param_rows_widgets',[])
+        columns=self._parameter_columns();self._param_columns=columns
+        for widget in rows:self.param_rows.removeWidget(widget)
+        per_column=-(-len(rows)//columns) if rows else 0
+        for i,widget in enumerate(rows):                          # fill across: γ0 β0 / γ1 β1 … stay paired
+            self.param_rows.addWidget(widget,i//columns,i%columns)
+        for c in range(2):self.param_rows.setColumnStretch(c,1 if c<columns else 0)
+        shown=min(per_column,4)
+        self.param_scroll.setVisible(shown>0)
+        self.param_scroll.setFixedHeight(shown*(self.PARAM_ROW+4)+2 if shown else 0)
+        self._fit_parameter_panel()
+    def _randomize(self,names=None):
+        if self.model.randomize_parameters(names):
+            self._changed();self._sync_parameter_values();self._update_expectation()
     SIDEBAR_WIDTH=400
     ROW_HEIGHT=54
     def _fit_canvas_height(self):
@@ -709,7 +733,7 @@ class CircuitWorkspace(QWidget):
         if hasattr(self,'_center'):self._refit_page()
     def _fit_parameter_panel(self):
         """Reserve the height the panel's contents need, so the layout cannot squeeze its rows."""
-        count=len(self.model.parameters)
+        count=-(-len(self.model.parameters)//getattr(self,'_param_columns',1)) if self.model.parameters else 0
         self.param_list.setMinimumHeight(count*self.PARAM_ROW+max(0,count-1)*4)   # rows scroll, never squash
         self.param_panel.layout().activate()
         self.param_panel.setMinimumHeight(self.param_panel.layout().sizeHint().height()
@@ -727,12 +751,13 @@ class CircuitWorkspace(QWidget):
         self._split.setMinimumHeight(need+8)
     def _build_parameter_panel(self,v):
         self.param_panel=QGroupBox('Parameters && observable')
+        self.param_panel.installEventFilter(self)          # re-flow one/two columns when its width changes
         # Keep the height the contents need: the canvas above must never squeeze these rows.
         self.param_panel.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)
         layout=QVBoxLayout(self.param_panel)
         # Parameter rows keep a fixed height; more than four scroll instead of being squashed.
-        self.param_list=QWidget();self.param_rows=QVBoxLayout(self.param_list)
-        self.param_rows.setContentsMargins(0,0,0,0);self.param_rows.setSpacing(4)
+        self.param_list=QWidget();self.param_rows=QGridLayout(self.param_list)
+        self.param_rows.setContentsMargins(0,0,0,0);self.param_rows.setHorizontalSpacing(18);self.param_rows.setVerticalSpacing(4)
         self.param_scroll=QScrollArea();self.param_scroll.setWidgetResizable(True);self.param_scroll.setWidget(self.param_list)
         self.param_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.param_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -742,6 +767,8 @@ class CircuitWorkspace(QWidget):
         self.param_name.setToolTip('Type Greek letters as in LaTeX: \\theta → θ, \\gamma0 → γ0, \\beta → β')
         add.addWidget(self.param_name,1)
         add_button=QPushButton('Add parameter');add_button.clicked.connect(self._add_parameter_clicked);add.addWidget(add_button)
+        self.randomize_button=QPushButton('Randomize all');self.randomize_button.setToolTip('Set every parameter to a random angle in −π…π (one undo step)')
+        self.randomize_button.clicked.connect(lambda:self._randomize());add.addWidget(self.randomize_button)
         layout.addLayout(add)
         hint=QLabel('To use a parameter, double-click a rotation gate (RX, RY, RZ, P, CP, U) and type its name as the angle. '
                     'Type Greek letters as in LaTeX: \\theta → θ, \\gamma0 → γ0, 2*\\beta → 2·β.')
@@ -767,6 +794,13 @@ class CircuitWorkspace(QWidget):
                                    '(it can crawl across flat regions); COBYLA and Nelder–Mead need no gradients')
         opt.addWidget(self.opt_method,1)
         opt.addWidget(QLabel('max steps'));self.opt_steps=QSpinBox();self.opt_steps.setRange(5,2000);self.opt_steps.setValue(200);opt.addWidget(self.opt_steps)
+        layout.addLayout(opt);opt=QHBoxLayout()                 # second line: starts and the two buttons
+        opt.addSpacing(4)
+        self.opt_multi=QCheckBox('Best of');self.opt_multi.setToolTip('Also start from random parameters and keep the best result '
+                                                                      '(helps against local minima; takes N times longer)')
+        opt.addWidget(self.opt_multi)
+        self.opt_starts=QSpinBox();self.opt_starts.setRange(2,20);self.opt_starts.setValue(5);opt.addWidget(self.opt_starts)
+        opt.addWidget(QLabel('random starts'));opt.addStretch()
         self.opt_button=QPushButton('Optimize');self.opt_button.setToolTip('Lower ⟨O⟩ by changing every parameter')
         self.opt_button.clicked.connect(self.optimize_parameters);opt.addWidget(self.opt_button)
         self.landscape_button=QPushButton('Landscape…');self.landscape_button.clicked.connect(self.show_landscape);opt.addWidget(self.landscape_button)
@@ -781,7 +815,8 @@ class CircuitWorkspace(QWidget):
         dialog=getattr(self,'_optimize_dialog',None)
         if dialog is None:
             dialog=self._optimize_dialog=OptimizeDialog(self,self.opt_method.currentData(),self.opt_steps.value())
-        dialog.configure(self.opt_method.currentData(),self.opt_steps.value())
+        dialog.configure(self.opt_method.currentData(),self.opt_steps.value(),
+                         self.opt_starts.value() if self.opt_multi.isChecked() else 1)
         dialog.show();dialog.raise_();dialog.activateWindow()
         self._last_path=dialog.run()
         self._last_path_for=self._path_key()
@@ -853,25 +888,26 @@ class CircuitWorkspace(QWidget):
             widget=item.widget()
             if widget is not None:                   # hide and detach now: deleteLater alone leaves a ghost row
                 widget.hide();widget.setParent(None);widget.deleteLater()
-        self._param_widgets={}
+        self._param_widgets={};self._param_rows_widgets=[]
         for name,value in self.model.parameters.items():
-            row=QWidget();row.setFixedHeight(self.PARAM_ROW);h=QHBoxLayout(row);h.setContentsMargins(0,0,0,0)
-            label=QLabel(name);label.setMinimumWidth(56);h.addWidget(label)
+            row=QWidget();row.setFixedHeight(self.PARAM_ROW);h=QHBoxLayout(row);h.setContentsMargins(0,0,0,0);h.setSpacing(6)
+            label=QLabel(name);label.setMinimumWidth(40);h.addWidget(label)
             slider=QSlider(Qt.Orientation.Horizontal);slider.setRange(-3600,3600)      # −2π … 2π in 1/1800 π steps
             slider.setValue(round(value/math.pi*1800));h.addWidget(slider,1)
             box=QDoubleSpinBox();box.setDecimals(6);box.setRange(-4*math.pi,4*math.pi);box.setSingleStep(0.05)
             box.setSuffix(' rad');box.setValue(value);h.addWidget(box)
             users=sum(1 for v in self.model.bindings.values() if v[0]==name)
-            count=QLabel(f'{users} gate{"s" if users!=1 else ""}');count.setObjectName('muted');h.addWidget(count)
-            remove=QPushButton('Delete');remove.setToolTip(f'Delete {name} (its gates keep their current angles)')
+            count=QLabel(f'{users}×');count.setObjectName('muted');count.setMinimumWidth(22)
+            count.setToolTip(f'Used by {users} gate{"s" if users!=1 else ""}');h.addWidget(count)
+            dice=QToolButton();dice.setText('🎲');dice.setToolTip(f'A random value for {name} (−π…π)')
+            dice.clicked.connect(lambda _=False,n=name:self._randomize([n]));h.addWidget(dice)
+            remove=QToolButton();remove.setText('✕');remove.setToolTip(f'Delete {name} (its gates keep their current angles)')
             remove.clicked.connect(lambda _=False,n=name:self._remove_parameter(n));h.addWidget(remove)
             slider.sliderPressed.connect(self.model.snapshot)                   # one undo step per drag
             slider.valueChanged.connect(lambda v,n=name,b=box:self._parameter_moved(n,v*math.pi/1800,b))
             box.editingFinished.connect(lambda n=name,b=box:self._parameter_typed(n,b.value()))
-            self.param_rows.addWidget(row);self._param_widgets[name]=(slider,box)
-        shown=min(len(self.model.parameters),4)
-        self.param_scroll.setVisible(shown>0)
-        self.param_scroll.setFixedHeight(shown*(self.PARAM_ROW+4)+2 if shown else 0)
+            self._param_rows_widgets.append(row);self._param_widgets[name]=(slider,box)
+        self._place_parameter_rows()
         self._fit_parameter_panel()
         self.observable_edit.setText(self.model.observable)
         self._fill_observable_examples()

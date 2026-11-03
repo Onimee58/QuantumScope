@@ -166,3 +166,17 @@ def test_qaoa_symmetry_bounds_a_single_edge():
     for method in ('BFGS', 'Nelder-Mead'):
         best = V.optimize(m, method, steps=300)[-1][1]
         assert best == pytest.approx(-0.6, abs=1e-4) and V.Evaluator(m).exact_minimum() == pytest.approx(-1)
+
+
+def test_best_of_keeps_the_best_start_and_leaves_the_model_alone():
+    m = CircuitModel()
+    m.load_library('qaoa', {'graph': 'ring5', 'layers': 1})
+    m.set_observable('Z0 Z1')
+    before = dict(m.parameters)
+    starts = []
+    best, index, finals = V.best_of(m, 4, 'BFGS', steps=150, rng=np.random.default_rng(2),
+                                    on_start=lambda k, total: starts.append(k))
+    assert starts == [0, 1, 2, 3] and len(finals) == 4 and best[-1][1] == pytest.approx(min(finals))
+    assert finals[index] == pytest.approx(min(finals)) and m.parameters == before
+    stopped = V.best_of(m, 5, 'BFGS', callback=lambda i, v, e: False)[2]
+    assert len(stopped) == 1                                                    # Stop ends every start

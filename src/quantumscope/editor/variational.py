@@ -63,7 +63,7 @@ class History(list):
     evaluations = 0
 
 
-def optimize(model, method='BFGS', steps=100, rate=0.2, callback=None, tolerance=1e-7):
+def optimize(model, method='BFGS', steps=100, rate=0.2, callback=None, tolerance=1e-7, start=None):
     """Minimize ⟨observable⟩ over the model's parameters.
 
     method: 'BFGS' (quasi-Newton with exact parameter-shift gradients), 'gradient' (plain descent
@@ -72,7 +72,7 @@ def optimize(model, method='BFGS', steps=100, rate=0.2, callback=None, tolerance
     [(values, energy), …], starting with the current parameters.
     """
     ev = Evaluator(model)
-    values = np.array([model.parameters[n] for n in ev.names], float)
+    values = np.array([model.parameters[n] for n in ev.names] if start is None else start, float)
     history = History([(values.copy(), ev.energy(values))])
     try:
         return _optimize(ev, values, history, method, steps, rate, callback, tolerance)
@@ -182,3 +182,32 @@ def wrap_safely(model, values):
         whole = all(abs(f - round(f)) < 1e-12 for f in factors[name])
         out.append(float((value + math.pi) % (2 * math.pi) - math.pi) if whole else float(value))
     return out
+
+
+def best_of(model, starts, method='BFGS', steps=100, rng=None, callback=None, on_start=None):
+    """Optimize from the current parameters and from starts − 1 random ones in [−π, π); keep the best.
+
+    on_start(k, starts) is told when start k (0-based) begins; callback is passed through to each
+    run and may return False to stop everything. Returns (best history, its start index,
+    final energy of every start). The model itself is never changed.
+    """
+    rng = rng or np.random.default_rng()
+    names = list(model.parameters)
+    finals, best, best_index, stopped = [], None, 0, [False]
+
+    def relay(iteration, values, energy):
+        if callback is not None and callback(iteration, values, energy) is False:
+            stopped[0] = True
+            return False
+        return True
+    for k in range(max(1, int(starts))):
+        if on_start is not None:
+            on_start(k, starts)
+        start = None if k == 0 else rng.uniform(-math.pi, math.pi, len(names))
+        history = optimize(model, method, steps, callback=relay, start=start)
+        finals.append(history[-1][1])
+        if best is None or history[-1][1] < best[-1][1] - 1e-12:
+            best, best_index = history, k
+        if stopped[0]:
+            break
+    return best, best_index, finals

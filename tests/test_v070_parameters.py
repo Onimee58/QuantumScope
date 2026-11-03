@@ -188,3 +188,19 @@ def test_latex_names_reach_existing_greek_parameters():
     key = next(k for k, g in m.gates.items() if g.name == 'RX')
     m.bind(*key, 'angle', '\\beta0', 2.0)
     assert set(m.parameters) == before and m.bindings[(*key, 'angle')] == ('β0', 2.0)
+
+
+def test_randomize_parameters_range_undo_and_one_name():
+    import numpy as np
+    m = CircuitModel()
+    m.load_library('qaoa', {'graph': 'ring4', 'layers': 2})
+    before = dict(m.parameters)
+    chosen = m.randomize_parameters(rng=np.random.default_rng(5))
+    assert set(chosen) == set(before) and all(-math.pi <= v < math.pi for v in chosen.values())
+    key = next(k for k, v in m.bindings.items() if v[0] == 'β0')
+    assert m.gates[key[:2]].angle == pytest.approx(2 * m.parameters['β0'])     # gates follow
+    m.undo()
+    assert m.parameters == before
+    m.randomize_parameters(['γ1'], rng=np.random.default_rng(6))
+    assert all(m.parameters[n] == before[n] for n in before if n != 'γ1') and m.parameters['γ1'] != before['γ1']
+    assert m.randomize_parameters(['nope']) == {}
