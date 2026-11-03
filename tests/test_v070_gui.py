@@ -342,3 +342,40 @@ def test_optimize_and_landscape_windows_are_reused_and_follow_the_path(app):
     again = w.show_landscape()
     assert again is landscape and again.view.path is None          # a stale path is never drawn
     assert [again.first.itemText(i) for i in range(again.first.count())] == ['θ0', 'θ1', 'θ2', 'θ3']
+
+
+class FakeInstaller:
+    """Stands in for pkexec/apt-get: runs for a few polls, then exits with `code`."""
+
+    def __init__(self, code, polls=3):
+        self.code, self.left, self.returncode = code, polls, None
+
+    def poll(self):
+        if self.left:
+            self.left -= 1
+            return None
+        self.returncode = self.code
+        return self.code
+
+
+@pytest.mark.parametrize('code,outcome,message', [(0, 'restarting', None), (126, 'install cancelled', 'cancelled'),
+                                                  (1, 'install failed', 'sudo apt install')])
+def test_ubuntu_install_waits_and_reports(app, answers, tmp_path, code, outcome, message):
+    from quantumscope.gui.update_dialog import check_for_updates
+    installer, restarted = FakeInstaller(code), []
+    result = check_for_updates(None, opener=github(), platform='linux', frozen=True, folder=str(tmp_path),
+                               run=lambda command: installer, relaunch=lambda: restarted.append(True))
+    assert result == outcome and installer.returncode == code                  # it waited for the installer
+    assert restarted == ([True] if code == 0 else [])
+    if message:
+        assert message in (answers['info'] + answers['warn'])[-1]
+
+
+def test_ubuntu_install_can_be_left_for_later(app, answers, tmp_path, monkeypatch):
+    from quantumscope.gui.update_dialog import check_for_updates
+    replies = iter([QtWidgets.QMessageBox.StandardButton.Yes, QtWidgets.QMessageBox.StandardButton.Yes,
+                    QtWidgets.QMessageBox.StandardButton.No])                   # allow, install, then not now
+    monkeypatch.setattr(QtWidgets.QMessageBox, 'question', staticmethod(lambda *a, **k: next(replies)))
+    result = check_for_updates(None, opener=github(), platform='linux', frozen=True, folder=str(tmp_path),
+                               run=lambda command: FakeInstaller(0), relaunch=lambda: pytest.fail('restarted'))
+    assert result == 'installed' and 'next time' in answers['info'][-1]

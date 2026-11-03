@@ -2,6 +2,7 @@
 import os
 import subprocess
 import tempfile
+import time
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
@@ -42,7 +43,7 @@ def _release_dialog(parent, release):
     return dialog
 
 
-def check_for_updates(parent, opener=None, platform=None, frozen=None, folder=None, run=None):
+def check_for_updates(parent, opener=None, platform=None, frozen=None, folder=None, run=None, relaunch=None):
     """The whole flow. Returns a short outcome string (also used by tests)."""
     if QMessageBox.question(parent, 'Check for updates', PERMISSION,
                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -89,11 +90,60 @@ def check_for_updates(parent, opener=None, platform=None, frozen=None, folder=No
                             QMessageBox.StandardButton.Yes) != QMessageBox.StandardButton.Yes:
         return 'downloaded'
     try:
-        (run or subprocess.Popen)(command)
+        process = (run or subprocess.Popen)(command)
     except OSError as exc:
         QMessageBox.warning(parent, 'Update QuantumScope', f'The installer could not be started ({exc}). '
                             f'It is saved at:\n{path}\n\nOn a managed computer you may need an administrator.')
         return 'install failed'
-    if kind == 'run' and updater.platform_key(platform) == 'windows':
+    key = updater.platform_key(platform)
+    if kind == 'run' and key == 'windows':
         QApplication.instance().quit()                     # the installer replaces the running app
+        return 'installing'
+    if kind == 'run' and key == 'linux' and hasattr(process, 'poll'):
+        return _wait_for_linux_install(parent, process, release, path, relaunch)
     return 'installing'
+
+
+def _wait_for_linux_install(parent, process, release, path, relaunch=None):
+    """Wait for pkexec/apt-get (collecting its result: no 'defunct' process is left behind),
+    then offer to restart into the new version or explain what went wrong."""
+    waiting = QProgressDialog(f'Installing QuantumScope {release.label}…\n'
+                              'Enter your password if Ubuntu asks for it.', None, 0, 0, parent)
+    waiting.setWindowTitle('Update QuantumScope')
+    waiting.setMinimumDuration(0)
+    waiting.show()
+    while process.poll() is None:
+        QApplication.processEvents()
+        time.sleep(0.05)
+    waiting.close()
+    code = process.returncode
+    if code == 0:
+        if QMessageBox.question(parent, 'Update QuantumScope',
+                                f'QuantumScope {release.label} is installed.\n\nRestart now to use it?',
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.Yes) == QMessageBox.StandardButton.Yes:
+            (relaunch or _relaunch)()
+            return 'restarting'
+        QMessageBox.information(parent, 'Update QuantumScope',
+                                f'QuantumScope {release.label} will be used the next time you start it.')
+        return 'installed'
+    if code in (126, 127):                                 # pkexec: password dialog dismissed or not allowed
+        QMessageBox.information(parent, 'Update QuantumScope',
+                                'The installation was cancelled (no password was given), so nothing changed.\n\n'
+                                f'The verified download is saved at:\n{path}')
+        return 'install cancelled'
+    QMessageBox.warning(parent, 'Update QuantumScope',
+                        f'The installer stopped with an error (code {code}), so nothing changed.\n\n'
+                        f'You can install the verified download yourself:\n    sudo apt install {path}')
+    return 'install failed'
+
+
+def _relaunch():
+    """Start the newly installed QuantumScope and close this one (as Settings' restart does)."""
+    import sys
+    from pathlib import Path
+    from quantumscope.gui import preferences as prefs
+    command = [sys.executable] if getattr(sys, 'frozen', False) else [sys.executable, '-m', 'quantumscope']
+    subprocess.Popen(command, env=prefs.restart_environment(), start_new_session=True, cwd=str(Path.home()),
+                     close_fds=True)
+    QApplication.instance().quit()
