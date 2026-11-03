@@ -294,6 +294,7 @@ class LearnWindow(QWidget):
 
     # ---- export -----------------------------------------------------------------------------------
     def export_pdf(self, path=None):
+        """Save the lesson as a PDF handout (sizes in points, so it prints at its intended size)."""
         if self.lesson is None:
             return None
         if not path:
@@ -309,10 +310,13 @@ class LearnWindow(QWidget):
         printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
         printer.setOutputFileName(path)
         document = QTextDocument()
+        font = document.defaultFont()
+        font.setPointSizeF(11)                         # headings scale from this: keep them above the text
+        document.setDefaultFont(font)
         document.setBaseUrl(QUrl.fromLocalFile(self.lesson.folder + os.sep))
         # Handouts print on white paper: always use the light theme's colors.
-        document.setHtml(to_html(self.lesson, 'light', os.path.join(content_folder(), 'eq'),
-                                 self.revealed.get(self.lesson.key, set()), self._lab_steps(), 12))
+        document.setHtml(print_html(to_html(self.lesson, 'light', os.path.join(content_folder(), 'eq'),
+                                            self.revealed.get(self.lesson.key, set()), self._lab_steps(), 11)))
         try:
             document.print_(printer)
         except Exception as exc:                       # noqa: BLE001 - report any printing problem
@@ -320,3 +324,15 @@ class LearnWindow(QWidget):
             return None
         self.status.setText(f'Saved {path}')
         return path
+
+
+def print_html(markup, font_points=11):
+    """The lesson HTML with physical sizes for printing.
+
+    On screen the HTML sizes text and boxes in pixels; a high-resolution printer has 1200 of
+    them per inch, so pixel sizes printed microscopically (headings and equations were fine).
+    The body text becomes font_points, and every other CSS pixel size the same length in
+    points (1 px = 0.75 pt). Image width/height attributes are not CSS and are left alone."""
+    import re
+    markup = re.sub(r'(<body[^>]*font-size:)\s*[\d.]+px', lambda m: f'{m.group(1)}{font_points}pt', markup, count=1)
+    return re.sub(r'(?<=[:\s])(\d+(?:\.\d+)?)px', lambda m: f'{float(m.group(1)) * 0.75:g}pt', markup)

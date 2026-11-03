@@ -121,3 +121,31 @@ def test_quiz_answers_are_checked_immediately(setup):
     window._link(QUrl('qsquiz:0:2'))
     text = window.reader.toPlainText()
     assert '✓ Correct!' in text and 'squared magnitude' in text
+
+
+def test_pdf_handout_uses_physical_sizes():
+    from quantumscope.gui.learn_window import print_html
+    html = ('<html><body style="color:#000; font-size:11px"><div style="border-left:3px solid #ccc; padding:8px">'
+            '<img src="e.png" width="40" height="12"></div></body></html>')
+    out = print_html(html)
+    assert 'font-size:11pt' in out and 'border-left:2.25pt' in out and 'padding:6pt' in out
+    assert 'width="40" height="12"' in out and 'px' not in out           # images keep their own sizes
+
+
+def test_exported_pdf_has_readable_text(app, tmp_path):
+    fitz = pytest.importorskip('fitz')                                    # only to read the PDF back
+    from quantumscope.gui.learn_window import LearnWindow
+    from quantumscope.learn.lessons import builtin_lessons
+    w = LearnWindow()
+    w.open_lesson(next(l.key for l in builtin_lessons() if 'leaves out' in l.title.lower()))
+    path = w.export_pdf(str(tmp_path / 'handout.pdf'))
+    sizes = {}
+    for page in fitz.open(path):
+        for block in page.get_text('dict')['blocks']:
+            for line in block.get('lines', []):
+                for span in line['spans']:
+                    if span['text'].strip():
+                        sizes[span['text'].strip()] = span['size']
+    body = sizes['In this lecture, you will:']
+    assert 10.5 <= body <= 11.5                                           # was 0.7 pt
+    assert sizes['Electron spin'] > body and sizes['What the model leaves out'] > sizes['Electron spin']
