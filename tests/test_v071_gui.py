@@ -103,3 +103,21 @@ def test_no_sideways_scrolling_at_common_widths(app):
             app.processEvents()
         assert w.page_scroll.horizontalScrollBar().maximum() == 0, width
     assert w.status.wordWrap()
+
+
+def test_tall_sidebar_keeps_classical_and_noise_at_the_top(app):
+    # A tall page (many parameters) used to give the Classical/Noise row spare height:
+    # the Noise buttons drifted down towards Measurement shots (seen on Windows).
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.resize(1900, 1030)
+    w.show()
+    for setup in (lambda: w.set_circuit(3, []), lambda: w.load_library('vqe', {'problem': 'ising-3', 'layers': 2})):
+        setup()
+        for _ in range(3):
+            app.processEvents()
+        side = w._split.widget(0)
+        y = lambda widget: widget.mapTo(side, widget.rect().topLeft()).y()
+        assert y(w.classical_palette) == y(w.noise_palette)                     # side by side, both at the top
+        gap = y(w.shots.parentWidget()) - (y(w.noise_palette) + w.noise_palette.height())
+        assert 0 <= gap < 40                                                    # Shots follows right below

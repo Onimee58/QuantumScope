@@ -513,14 +513,19 @@ class CircuitWorkspace(QWidget):
         self.palette.setToolTip('Drag to place a gate; double-click for the Gate Explorer')
         self.palette.itemDoubleClicked.connect(lambda item:self.show_gate_explorer(item.text()))
         sv.addWidget(self.palette)
-        small=QHBoxLayout();small.setSpacing(8);sv.addLayout(small)
-        classical_box=QVBoxLayout();small.addLayout(classical_box);classical_box.addWidget(QLabel('Classical'))
+        # Classical and Noise side by side, in a row of fixed height aligned to the top: a tall
+        # sidebar must give its spare height to the bottom spacer, never to this row.
+        small_row=QWidget();small_row.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)
+        small=QHBoxLayout(small_row);small.setContentsMargins(0,0,0,0);small.setSpacing(8);sv.addWidget(small_row)
+        classical_box=QVBoxLayout();classical_box.setAlignment(Qt.AlignmentFlag.AlignTop)
+        small.addLayout(classical_box);classical_box.addWidget(QLabel('Classical'))
         self.classical_palette=Palette();self.classical_palette.addItems(list(CLASSICAL_PALETTE));self._grid_palette(self.classical_palette,2,92)
         self.classical_palette.item(0).setToolTip('Mid-circuit measurement: measures the qubit here and stores the result '
                                                    'in a classical bit (c0 by default for q0, c1 for q1 …); later gates can be conditioned on it')
         self.classical_palette.item(1).setToolTip('Reset: returns the qubit to |0⟩ at this point')
-        classical_box.addWidget(self.classical_palette);classical_box.addStretch()
-        noise_box=QVBoxLayout();small.addLayout(noise_box);noise_box.addWidget(QLabel('Noise'))
+        classical_box.addWidget(self.classical_palette);classical_box.addStretch()   # fixed row: safe
+        noise_box=QVBoxLayout();noise_box.setAlignment(Qt.AlignmentFlag.AlignTop)
+        small.addLayout(noise_box,0);noise_box.addWidget(QLabel('Noise'))
         self.noise_palette=Palette();self.noise_palette.addItems(list(NOISE_PALETTE));self._grid_palette(self.noise_palette,2,92)
         self.noise_palette.setToolTip('Drag a noise channel onto a wire; double-click here to learn what it does')
         self.noise_palette.itemDoubleClicked.connect(lambda item:self.show_noise_explorer(NOISE_PALETTE[item.text()]))
