@@ -8,7 +8,7 @@ Open **Quantum Circuits → Gate Circuit Simulator** and select an arithmetic ci
 
 The examples contain leading X gates to set a *demonstration input*. The verifier removes only those known preparatory gates, then initializes each possible binary input and executes the remaining arithmetic network. An example that has been edited is treated as a general circuit so that its former arithmetic assumptions are not silently reused.
 
-For **Bell, GHZ, imported, and hand-drawn circuits**, **Verify circuit / Show truth table** shows the first 16 computational-basis input states and the most likely output for each. A superposition is reported as nondeterministic, not as a failed classical truth table. The simulation remains ideal; these are not hardware measurements.
+For **Bell, GHZ, imported, and hand-drawn circuits**, **Verify / truth table** (in the sidebar) shows the first 16 computational-basis input states and the most likely output for each. A superposition is reported as nondeterministic, not as a failed classical truth table. The simulation remains ideal; these are not hardware measurements.
 
 ## Gate operands
 

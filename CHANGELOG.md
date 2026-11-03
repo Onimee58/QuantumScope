@@ -1,3 +1,29 @@
+## v0.7.1 — Tester suggestions
+
+### Circuit tab layout
+- **A fixed 400-px sidebar:** the gates, 6 per row; Classical and Noise side by side; **Measurement shots** (with **Run shots**); and **Circuit Verification & Truth Table** (Input · Output · Expected · Result, long cells wrapped). The results and their check now sit side by side.
+- **The canvas height fits the circuit:** one row per qubit plus a spare one, up to ten. It used to be fixed at ten.
+- **Removed: the Bloch spheres beside the wires**, with their setting. Every qubit's Bloch sphere stays in the panel under the chart and in the State Inspector.
+- **No sideways scrolling:** a long status message no longer widens the page (this was latent in every version), and the Optimize options take two lines. The page's minimum width fell from about 1,420 px to about 1,070 px.
+
+### Parameters
+- **Randomize all**, and **🎲** for one parameter: random angles in −π…π, each one undo step.
+- **Best of N random starts** (off by default; N = 5) keeps the best of several optimizations.
+- **Two columns of parameters** on wide panels, filled across (γ0 β0 / γ1 β1 …), with compact usage counts and ✕.
+
+### Tabs
+- **Every tab can close,** including the Hydrogen Explorer and the Gate Circuit Simulator.
+  - **Closing only hides a tab,** so reopening it (from **+**, a placeholder, Learn, or the QASM Converter) brings it back as you left it.
+  - **An empty area shows a placeholder** with its experiments instead of a blank window.
+- **Experiments open in their own area:** the Error-correction explorer used to open in Quantum Principles. Every entry of every **+** menu is now tested.
+
+### Fixes
+- **No more highlighted rows on the circuit canvas:** pressing Ctrl+A or Shift+arrows selected cells, which showed up as highlighted rows.
+- **GUI tests:** test runs that use the 3-D view sometimes crashed at exit after every test had passed, also in v0.7.0. They now exit cleanly, keeping the result.
+
+### Quality
+- Automated tests: 1338 passing, plus 110 opt-in GUI tests (`tools/run_gui_tests.sh`). The 44-step editing replay is unchanged.
+
 ## v0.7.0 — Variational algorithms
 
 ### Updates

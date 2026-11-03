@@ -7,7 +7,7 @@
 
   An open-source, cross-platform quantum visualization and circuit simulation studio built with Python and PySide6.
 
-  [![Version](https://img.shields.io/badge/version-v0.7.0-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
+  [![Version](https://img.shields.io/badge/version-v0.7.1-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
   [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
   [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-555)](https://github.com/Onimee58/QuantumScope/releases)
@@ -29,7 +29,7 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 |---|---|
 | **Hydrogen** | Hydrogen Orbital Explorer; coherent-state Hydrogen Dynamics in 2D and 3D; probability density, amplitude and phase visualization; available image/data exports |
 | **Quantum Principles** | Double-Slit Experiment; interactive quantum superposition and Bloch sphere; quantum entanglement demonstrations |
-| **Quantum Circuits** | Drag-and-drop circuit editor, statevector simulation, simulation stepping, Bloch spheres beside wires, measurements, example circuits, verification, QASM Converter and PDF export |
+| **Quantum Circuits** | Drag-and-drop circuit editor, statevector simulation, simulation stepping, Bloch spheres for every qubit, measurements, example circuits, verification, QASM Converter and PDF export |
 
 ### Quantum circuit studio
 
@@ -44,6 +44,20 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 - **Quantum Gate Explorer**: double-click a gate in the *left palette* for its definition, circuit symbol, matrix/operation and basic state transformations. Double-clicking a placed parameterized gate opens its parameter editor instead.
 
 **Supported operations:** `H`, `X`, `Y`, `Z`, `S`, `T`, `Sdg`, `Tdg`, `SX`, `RX`, `RY`, `RZ`, `U`/`U3`, `P`, `CX`, `CZ`, `SWAP`, `CCX`, `CSWAP`, and terminal `M`.
+
+## What's new in v0.7.1?
+
+Improvements suggested by a tester:
+
+- **A compact circuit tab:**
+  - the sidebar holds the gates (6 per row), **Shots** and the **verification table**, beside the results;
+  - the canvas height fits the qubits;
+  - there's no sideways scrolling.
+- **Parameters:** **Randomize all**, **🎲** per parameter, **Best of N random starts**, and two columns of sliders on wide windows.
+- **Every tab can close.** Closed tabs come back as you left them, and an empty area shows what you can open.
+- **Fixes:**
+  - the Error-correction explorer opens in Quantum Circuits;
+  - keyboard selection no longer highlights rows of the circuit canvas.
 
 ## What's new in v0.7.0?
 
@@ -240,7 +254,7 @@ More setup details: [Windows guide](WINDOWS.md) · [Packaging and builds](PACKAG
 3. Drag **H** from the left palette onto `q0` in the first operation column.
 4. Drag **CX** into the next column, then choose its remaining operand as prompted. To prepare a Bell state, use `q0` as control and `q1` as target.
 5. Step through the circuit or play the simulation to inspect state probabilities and Bloch spheres.
-6. Optionally add terminal **M** gates and run measurement shots, or use **Export PDF** to save the circuit diagram.
+6. Optionally add terminal **M** gates and press **Run shots** (in the sidebar), or use **Export PDF** to save the circuit diagram.
 
 For the Bell state, the ideal output is `(|00⟩ + |11⟩)/√2`, with theoretical probabilities of **50%** for `00` and **50%** for `11` (up to the displayed bit-order convention). Finite-shot measurements will vary statistically.
 
@@ -283,7 +297,7 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-The v0.7.0 source passes **1336 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
+The v0.7.1 source passes **1338 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
 
 Build configuration and workflows live in `.github/workflows/`, and desktop packaging scripts live in `packaging/`. Please report reproducible errors with your OS version, installation method, screenshots or logs, and a short reproduction sequence.
 
