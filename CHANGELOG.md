@@ -1,3 +1,13 @@
+## v0.7.2 — Fixes
+
+- **Learn → Export PDF:** handouts printed their body text at 0.7 pt, because pixel sizes were sent to a 1200-dpi printer. They now use points: 11-pt text, with headings (13.2 pt) and titles (16.5 pt) above it, and box padding and borders in proportion. Equations were already correct.
+- **The circuit sidebar:** on tall pages (for example with many parameters), the Classical/Noise row took the spare height and the Noise buttons drifted down. The row now has a fixed height, with both columns at the top.
+- **Updating on Ubuntu:**
+  - **QuantumScope waits for the installer** after you enter your password, then offers **Restart now**.
+  - **A cancelled password prompt or a failed install** is explained, with the manual `sudo apt install` command.
+  - **No leftover "defunct" installer process.** Before, the app gave no sign when the install had finished.
+- Automated tests: 1338 passing, plus 117 opt-in GUI tests.
+
 ## v0.7.1 — Tester suggestions
 
 ### Circuit tab layout
