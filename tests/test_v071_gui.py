@@ -121,3 +121,17 @@ def test_tall_sidebar_keeps_classical_and_noise_at_the_top(app):
         assert y(w.classical_palette) == y(w.noise_palette)                     # side by side, both at the top
         gap = y(w.shots.parentWidget()) - (y(w.noise_palette) + w.noise_palette.height())
         assert 0 <= gap < 40                                                    # Shots follows right below
+
+
+def test_splash_is_only_the_q_and_shows_before_the_slow_imports(app):
+    from quantumscope.gui.splash import show_splash
+    splash = show_splash(app)
+    assert splash is not None and splash.isVisible() and splash.renderer.isValid()
+    image = splash.grab().toImage()
+    assert image.pixelColor(3, 3).alpha() == 0                              # transparent around the Q
+    assert max(image.pixelColor(x, y).alpha() for x in range(0, 220, 11) for y in range(0, 220, 11)) == 255
+    splash.close()
+    import inspect
+    import quantumscope.__main__ as entry
+    source = inspect.getsource(entry.main)
+    assert source.index('show_splash(app)') < source.index('from quantumscope.gui.main_window import MainWindow')

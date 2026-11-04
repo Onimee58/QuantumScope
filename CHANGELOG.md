@@ -1,3 +1,22 @@
+## v0.7.3 — Glossary and splash
+
+### Glossary
+- **81 terms** in nine groups (quantum basics, measurement, linear algebra, gates and circuits, states, noise, measurement in circuits, error correction, algorithms, and hydrogen), each with aliases, a definition, related terms and the lesson that teaches it.
+- **Automatic links:** the first occurrence of each term in a lesson is linked, longest terms first ("phase flip" before "phase"). Links appear in body text only, never in headings, quizzes, lab steps, code, equations or existing links. Acronyms match exactly. All 265 automatic links in the lectures were checked in context.
+- **Clicking a term** opens a popup with its definition, related terms (themselves links), **Learn more** and **All terms**.
+- **A Glossary page** in the Learn contents.
+- **PDF handouts** print terms as plain text and end with a **Terms used** box.
+- **For authors:** `[[Term]]` or `[[shown text|Term]]` makes an explicit link, and `noglossary: Term, …` in a lesson's header switches terms off there. Teachers' own lessons are linked too.
+
+### Start-up
+- **A splash screen:** only the Q, on a transparent background, shown as soon as Qt starts. It covers loading the 3-D libraries, then closes when the window appears.
+
+### Packaging
+- **The glossary and the splash logo are always packaged:** `learn/content/*.md` is now part of the package data, and the self-test checks both files.
+
+### Quality
+- Automated tests: 1346 passing, plus 119 opt-in GUI tests.
+
 ## v0.7.2 — Fixes
 
 - **Learn → Export PDF:** handouts printed their body text at 0.7 pt, because pixel sizes were sent to a 1200-dpi printer. They now use points: 11-pt text, with headings (13.2 pt) and titles (16.5 pt) above it, and box padding and borders in proportion. Equations were already correct.
