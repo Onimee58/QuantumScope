@@ -36,5 +36,18 @@
   - **The classical mixture** never exceeds 2.
 - The physics (`physics/bell.py`) is exact. The flying particles are a schematic, not trajectories.
 
+## Teleportation (redesigned in v0.7.6)
+- **The state to send:** pick a preset, or **Custom**, then set θ and φ or **drag the arrow on q0** (at step 1).
+- **Step by step** (◀ Back, Next ▶, or **▶ Play**): the mini circuit above highlights the current step.
+  - **The Bell pair forms:** q1 and q2 become random on their own.
+  - **Alice entangles,** then **measures:** her two spheres collapse with a flash, and her two bits appear.
+  - **The bits travel** to Bob over the classical channel, then **Bob corrects** (X if c1 = 1, Z if c0 = 1). His arrow ends exactly on the input.
+- **Measurement result:** choose one of the four results, keep "unknown to Bob" (the average), or **Run once** for a random one. Play always picks a random result, as a real run would.
+- **The experiment:**
+  - **Clean pairs** adds noise to the shared pair: the fidelity becomes (1 + v)/2, so below about 33% clean, teleporting is no better than the classical limit of ⅔.
+  - **Unticking "Bob applies the correction"** shows why the bits matter: only result 00 is right by itself, and on average Bob's qubit is random (fidelity ½).
+- **Teleport many:** the **fidelity meter** shows the average over many runs against ½, ⅔ and 1, with the expected value marked.
+- **Open in the circuit simulator** loads the same protocol as a circuit.
+
 ## Runtime checks
 The app requires PySide6 on the test machine. Run `PYTHONPATH=src pytest -q` for the computational suite and use Ubuntu/Windows to check the GUI interactions.

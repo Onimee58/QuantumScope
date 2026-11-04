@@ -305,6 +305,9 @@ class EntanglementDialog(QWidget):
         root.addLayout(right, 1)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._stream)
+        self._bob_timer = QTimer(self)
+        self._bob_timer.setSingleShot(True)
+        self._bob_timer.timeout.connect(lambda: self._bob_measures(*self._bob_next))
         self._pending, self._bell = 0, None
         self.points = {}                    # (alice axis, bob axis) -> [sum of A·B, pairs]
         self.state.currentIndexChanged.connect(self._new_pair)
@@ -425,7 +428,8 @@ class EntanglementDialog(QWidget):
         self.explain.setText(f'Alice measured {alice:+d}. Bob\'s qubit is now definite as well (his sphere), '
                              'but Bob cannot tell: on his own his results stay 50/50 until they compare notes. '
                              'No signal travels.')
-        QTimer.singleShot(900, lambda: self._bob_measures(alice, bob))
+        self._bob_next = (alice, bob)
+        self._bob_timer.start(900)        # owned by the dialog: never fires into a deleted dialog
 
     def _bob_measures(self, alice, bob):
         self.bob.set_state(*_axis_state(self.b if bob == 1 else self.b + 180), animate=True, flash=True)

@@ -1,3 +1,25 @@
+## v0.7.6 — Teleportation redesigned
+
+### Physics (`physics/teleport_story.py`, the circuit engine)
+- **A noisy shared pair:** *v*·(Bell pair) + (1 − *v*)·(completely random pair), computed through the same branch engine as the circuit simulator.
+  - **The fidelity is (1 + *v*)/2 for every result,** reaching the classical limit of ⅔ at *v* = ⅓.
+- **Skipping Bob's correction:** result 00 stays right, and on average Bob's qubit is random (fidelity ½).
+- **New functions:** `expected_fidelity()` and `teleport_once()`. Existing calls behave exactly as before.
+
+### The experiment
+- **A mini circuit** with the current step highlighted; skipped corrections are shown as skipped.
+- **Three shaded Bloch spheres** (q0 Alice's input, q1 Alice's half, q2 Bob), animated between steps, with flashes when Alice measures and when Bob corrects. Drag q0 at the start to choose the state.
+- **A classical channel:** Alice's two bits visibly travel to Bob before his correction.
+- **▶ Play,** **Clean pairs,** **"Bob applies the correction",** and **Teleport many** with a fidelity meter (½ random, ⅔ classical limit, 1 perfect, and the expected value).
+- **Open in the circuit simulator** works as before.
+
+### Fixes
+- **Entanglement:** Bob's delayed measurement uses a timer owned by the dialog, so it can never fire into a closed dialog.
+- **GUI tests:** a process that used pyqtgraph charts could crash at the very end, after every test had passed, because a forced deletion of a chart crashes at random. Like the 3-D tests, such processes now exit right after reporting, keeping their result.
+
+### Quality
+- Automated tests: 1367 passing, plus 126 opt-in GUI tests.
+
 ## v0.7.5 — Entanglement redesigned; turning the spheres
 
 ### Turning the spheres

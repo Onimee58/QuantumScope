@@ -260,7 +260,8 @@ class BlochView(QWidget):
         if self.caption:
             p.setPen(text)
             p.setFont(QFont('Sans', 11, QFont.Weight.Bold))
-            p.drawText(QRectF(0, self.height() - 24, self.width(), 22), Qt.AlignmentFlag.AlignCenter, self.caption)
+            y = min(self.height() - 24, cy + r + 20)                     # just under the sphere
+            p.drawText(QRectF(0, y, self.width(), 22), Qt.AlignmentFlag.AlignCenter, self.caption)
         if self.length < 0.04 and self._flash <= 0:                     # no arrow: completely random
             p.setPen(QPen(QColor(90, 230, 255) if dark else QColor(0, 120, 190), 2, Qt.PenStyle.DashLine))
             p.setBrush(Qt.BrushStyle.NoBrush)

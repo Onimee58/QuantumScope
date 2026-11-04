@@ -7,7 +7,7 @@
 
   An open-source, cross-platform quantum visualization and circuit simulation studio built with Python and PySide6.
 
-  [![Version](https://img.shields.io/badge/version-v0.7.5-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
+  [![Version](https://img.shields.io/badge/version-v0.7.6-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
   [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
   [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-555)](https://github.com/Onimee58/QuantumScope/releases)
@@ -44,6 +44,14 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 - **Quantum Gate Explorer**: double-click a gate in the *left palette* for its definition, circuit symbol, matrix/operation and basic state transformations. Double-clicking a placed parameterized gate opens its parameter editor instead.
 
 **Supported operations:** `H`, `X`, `Y`, `Z`, `S`, `T`, `Sdg`, `Tdg`, `SX`, `RX`, `RY`, `RZ`, `U`/`U3`, `P`, `CX`, `CZ`, `SWAP`, `CCX`, `CSWAP`, and terminal `M`.
+
+## What's new in v0.7.6?
+
+**Teleportation, redesigned:**
+
+- **Follow the protocol on three Bloch spheres,** with the circuit above highlighting each step. Play it or step through it.
+- **Watch Alice's two bits travel** to Bob before he corrects his qubit.
+- **Try a noisy pair, or skip Bob's correction,** and measure the average fidelity of many teleports against the classical limit of ⅔.
 
 ## What's new in v0.7.5?
 
@@ -337,7 +345,7 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-The v0.7.5 source passes **1361 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
+The v0.7.6 source passes **1367 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
 
 Build configuration and workflows live in `.github/workflows/`, and desktop packaging scripts live in `packaging/`. Please report reproducible errors with your OS version, installation method, screenshots or logs, and a short reproduction sequence.
 

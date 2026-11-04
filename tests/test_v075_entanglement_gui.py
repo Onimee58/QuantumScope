@@ -97,3 +97,45 @@ def test_entanglement_one_pair_many_pairs_and_bell_test(app):
     assert d.grid.counts.sum() == 1 and d.alice.length == pytest.approx(1) and d.bob.length == pytest.approx(1)
     d.clear_results()
     assert d.grid.counts.sum() == 0 and d.meter.value is None and not d.points
+
+
+def test_teleportation_steps_bits_noise_skip_and_many(app):
+    from quantumscope.gui.teleportation_experiment import TeleportationDialog
+    d = TeleportationDialog()
+    d.resize(1300, 820)
+    d.show()
+    d.preset.setCurrentIndex(d.preset.findData('0'))
+    d.result.setCurrentIndex(d.result.findData('11'))
+    d.go(3)
+    assert d.channel.bits == '11' and d.channel.progress == 0
+    d.go(4)                                                       # the bits travel; Bob waits for them
+    assert d.channel._timer.isActive() and d.scene.view['bob_fidelity'] == pytest.approx(0)   # |0⟩ flipped
+    for _ in range(300):
+        app.processEvents()
+        time.sleep(0.005)
+        if not d.channel._timer.isActive():
+            break
+    assert d.channel.progress == 1 and d.scene.view['bob_fidelity'] == pytest.approx(1)     # corrected
+    d.correct.setChecked(False)
+    d.go(4, animate=False)
+    assert 'skips' in d.step_label.text() and d.scene.view['bob_fidelity'] == pytest.approx(0)
+    assert not d.circuit.correct
+    d.speed.setCurrentIndex(1)
+    d.count.setValue(2000)
+    d.teleport_many()
+    assert np.mean(d.fidelity.values) == pytest.approx(0.5, abs=0.04) and 'random' in d.explain.text()
+    d.correct.setChecked(True)
+    d.visibility.setValue(20)
+    d.teleport_many()
+    assert np.mean(d.fidelity.values) == pytest.approx(0.6, abs=1e-9) and 'classical' in d.explain.text()
+    d.visibility.setValue(100)
+    d.go(0)
+    d.q0.stateChanged.emit(100.0, 30.0)                            # dragging q0 picks a custom state
+    assert d.preset.currentData() == 'custom' and d.theta.value() == pytest.approx(100)
+    d.go(1)
+    assert not d.q0.draggable
+    d.go(0)
+    d._toggle_play()
+    assert d._playing.isActive() and d.result.currentData() is not None
+    d._toggle_play()
+    assert not d._playing.isActive()
