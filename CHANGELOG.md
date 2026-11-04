@@ -1,3 +1,31 @@
+## v0.7.4 — Quantum Principles redesign, part 1
+
+### Shared building blocks (`gui/principles_visuals.py`)
+- **A shaded Bloch sphere:**
+  - a lit surface, with the far half of the grid dimmed;
+  - labelled poles, and a glowing state arrow with its shadow;
+  - an amber measurement axis with its +1 and −1 ends;
+  - **smooth animated changes** and a **flash on collapse**.
+- **Dragging the arrow** sets the state. Grabbing it keeps its side of the sphere, and dragging past the rim carries it round, so every state can be reached. The viewpoint shows every preset and typical state clearly, never end-on.
+- **Live tallies:** outcome bars that grow smoothly as counts arrive, with dashed Born-rule targets.
+
+### Superposition
+- **Prepare** by dragging, with the θ/φ sliders (which follow the drag), or with presets (|0⟩ |1⟩ |+⟩ |−⟩ |+i⟩ |−i⟩).
+- **Measure once:** the animated collapse onto +1 or −1, then counted.
+- **Measure many:** fresh copies streamed into the tally (Slow, Fast or Instant; Stop).
+- **Less text:** one short line explains what just happened.
+- **Changed:** dragging the sphere used to rotate the view; it now sets the state, as students expect.
+
+### Double-Slit
+- **A detector screen:** each particle lands as one glowing dot, and dense places glow brighter, so the fringes emerge from individual detections. Firing runs at Slow, Fast or Instant speed, with Stop.
+- **The wavelength sets the colour** of the dots, the drawn waves and the apparatus hits. Ultraviolet and infrared are shown in a labelled false colour.
+- **Dragging the slits** changes their separation: the exact inverse of the drawing rule.
+- **The physics is unchanged:** the Fraunhofer model, its sampling and the chart are as before.
+
+### Testing
+- **A CI fix:** a test module that needs Qt's graphics libraries now skips cleanly where they are missing. Before, `importorskip` let a missing system library stop the whole test run.
+- Automated tests: 1349 passing, plus 121 opt-in GUI tests.
+
 ## v0.7.3 — Glossary and splash
 
 ### Glossary

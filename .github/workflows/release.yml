@@ -80,7 +80,7 @@ jobs:
       - name: Build Debian installer
         if: runner.os == 'Linux'
         shell: bash
-        run: bash packaging/build_deb.sh 0.7.3
+        run: bash packaging/build_deb.sh 0.7.4
       - name: Install Inno Setup
         if: runner.os == 'Windows'
         shell: pwsh
@@ -91,7 +91,7 @@ jobs:
         run: |
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (!(Test-Path $compiler)) { throw "Inno Setup compiler missing: $compiler" }
-          & $compiler /DMyAppVersion=0.7.3 packaging\QuantumScope.iss
+          & $compiler /DMyAppVersion=0.7.4 packaging\QuantumScope.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build macOS DMG
         if: runner.os == 'macOS'
@@ -101,7 +101,7 @@ jobs:
           test -d dist/QuantumScope.app
           cp -R dist/QuantumScope.app dist/dmg-root/
           ln -s /Applications dist/dmg-root/Applications
-          hdiutil create -volname 'QuantumScope 0.7.3' -srcfolder dist/dmg-root -ov -format UDZO dist/installers/QuantumScope-0.7.3-macOS.dmg
+          hdiutil create -volname 'QuantumScope 0.7.4' -srcfolder dist/dmg-root -ov -format UDZO dist/installers/QuantumScope-0.7.4-macOS.dmg
       - name: Write SHA-256 checksums next to the installers
         shell: bash
         run: |
@@ -117,7 +117,7 @@ jobs:
       - name: Upload installers as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: QuantumScope-0.7.3-${{ matrix.platform }}-installer
+          name: QuantumScope-0.7.4-${{ matrix.platform }}-installer
           path: dist/installers/*
           if-no-files-found: error
       - name: Publish installers with tagged release
