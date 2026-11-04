@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QWidget
 
 
 class DoubleSlitApparatus(QWidget):
+    separationDragged = Signal(float)              # µm, while the slits are dragged (v0.7.4)
     """Responsive source -> slit barrier -> screen diagram with sample hits."""
 
     def __init__(self, parent=None):
@@ -23,6 +24,9 @@ class DoubleSlitApparatus(QWidget):
         self._screen_halfwidth_mm = 40.0
         self._separation_um = 100.0
         self._width_um = 20.0
+        self._colour = QColor(74, 180, 238)
+        self.setMouseTracking(True)
+        self.setToolTip('Drag the slits up or down to change their separation')
         self._animated = True
         self._which_path = False
         self._timer = QTimer(self)
@@ -35,6 +39,36 @@ class DoubleSlitApparatus(QWidget):
         self._separation_um = model.slit_separation_um
         self._width_um = model.slit_width_um
         self._samples = np.asarray(samples, dtype=float).copy()
+        self.update()
+
+    # ---- dragging the slits changes their separation ------------------------------------------
+    BARRIER, CENTRE = 315.0, 152.0
+
+    def _scene(self, point):
+        return point.x() * 700.0 / max(1, self.width()), point.y() * 300.0 / max(1, self.height())
+
+    def mousePressEvent(self, event):
+        x, _ = self._scene(event.position())
+        self._dragging = abs(x - self.BARRIER) < 28
+        if self._dragging:
+            self.mouseMoveEvent(event)
+
+    def mouseMoveEvent(self, event):
+        x, y = self._scene(event.position())
+        if not event.buttons():
+            near = abs(x - self.BARRIER) < 28
+            self.setCursor(Qt.CursorShape.SizeVerCursor if near else Qt.CursorShape.ArrowCursor)
+            return
+        if getattr(self, '_dragging', False):
+            spacing = max(24.0, min(95.0, 2 * abs(y - self.CENTRE)))
+            self.separationDragged.emit(round(spacing / 44.0 * 100.0 / 5) * 5)    # the inverse of the drawing rule
+
+    def mouseReleaseEvent(self, event):
+        self._dragging = False
+
+    def set_colour(self, colour):
+        """The light's colour for the drawn waves (set from the wavelength)."""
+        self._colour = QColor(colour)
         self.update()
 
     def set_which_path(self, enabled):
@@ -78,7 +112,7 @@ class DoubleSlitApparatus(QWidget):
         # A stylized upstream plane wave, converging on the two apertures.
         for n in range(10):
             x = sx + ((n * 32 + self._phase * 32) % (barrier - sx - 15))
-            painter.setPen(QPen(QColor(73, 170, 220, 60 + int(80 * (x - sx) / (barrier - sx))), 1.7))
+            painter.setPen(QPen(QColor(self._colour.red(), self._colour.green(), self._colour.blue(), 60 + int(80 * (x - sx) / (barrier - sx))), 1.7))
             painter.drawLine(QPointF(x, 54), QPointF(x, 249))
         painter.setPen(QPen(QColor('#d7e8f0'), 2))
         painter.setBrush(QColor('#54b8e7'))
@@ -111,7 +145,7 @@ class DoubleSlitApparatus(QWidget):
             for k in range(11):
                 radius = 18 + (k + self._phase) * 35
                 opacity = max(35, int(155 * (1 - radius / 550)))
-                painter.setPen(QPen(QColor(74, 180, 238, opacity), 1.7))
+                painter.setPen(QPen(QColor(self._colour.red(), self._colour.green(), self._colour.blue(), opacity), 1.7))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawEllipse(QPointF(barrier, slit_y), radius, radius)
         painter.restore()
@@ -124,7 +158,7 @@ class DoubleSlitApparatus(QWidget):
                                   min(350, self._samples.size), dtype=int)
             values = self._samples[indices]
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(255, 201, 101, 185))
+            painter.setBrush(QColor(self._colour.red(), self._colour.green(), self._colour.blue(), 185))   # the light's colour
             for idx, value in enumerate(values):
                 y = cy - (float(value) / self._screen_halfwidth_mm) * 113
                 # Horizontal spread only distinguishes overlapping hits visually.

@@ -1,12 +1,22 @@
-# Interactive quantum principles UI (v0.2.0)
+# Interactive quantum principles UI
 
-## Superposition
-- Move the theta, phi, and measurement-axis sliders or type degrees precisely.
-- Drag the 3D Bloch sphere with the mouse to rotate the **view**. This does not alter the physical state.
-- "Prepare / reset state" restores the qubit specified by theta and phi.
-- "Measure one electron" measures a single prepared state and displays the collapsed Bloch vector.
-- "Run shot statistics" samples fresh identically prepared electrons at the current measurement axis.
-- Changing preparation or measurement angles clears old shot counts rather than showing them next to changed theoretical values.
+## Superposition (redesigned in v0.7.4)
+- **Prepare** a spin-½ state by **dragging the arrow** on the Bloch sphere, with the θ and φ sliders (which follow the drag), or with a preset: |0⟩, |1⟩, |+⟩, |−⟩, |+i⟩ or |−i⟩.
+  - **Grabbing the arrow** keeps it on its side of the sphere, front or back.
+  - **Dragging past the rim** carries it round to the other side, so every state can be reached.
+- **The amber dashed axis** is the measurement axis, set with the **Axis** slider. Its ends are the +1 and −1 outcomes.
+- **Measure once:** one measurement. The arrow sweeps to +1 or −1 with a flash (the collapse), and the result is counted. Measuring again along the same axis repeats it; **Reset state** returns to the prepared state.
+- **Measure many:** fresh copies of the prepared state are measured one after another, at **Slow**, **Fast** or **Instant** speed (**Stop** ends early). The bars grow toward the dashed **Born-rule** targets.
+- **Changing** the state or the axis clears the counts, so they always match the targets shown.
+
+## Double-Slit (redesigned in v0.7.4)
+- **Fire particles** sends particles through the slits at **Slow**, **Fast** or **Instant** speed (**Stop** ends early).
+  - **Each particle lands as one glowing dot** on the **detector screen**; the fringes appear as the dots pile up.
+  - **The chart** compares the detections with the exact Fraunhofer pattern.
+- **The wavelength sets the light's colour,** on the screen and in the drawn waves. Ultraviolet and infrared are invisible, so they are shown in a labelled false colour.
+- **Drag the slits** in the apparatus, up or down, to change their separation.
+- **Which-path detectors** at the slits destroy the interference: the screen clears, and new particles show the single-slit pattern.
+- **Changing any setting** clears the screen, so it always shows one experiment.
 
 ## Entanglement
 - "Prepare entangled electron pair" animates the pair separating to Alice and Bob.
