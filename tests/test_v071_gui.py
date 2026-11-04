@@ -135,3 +135,28 @@ def test_splash_is_only_the_q_and_shows_before_the_slow_imports(app):
     import quantumscope.__main__ as entry
     source = inspect.getsource(entry.main)
     assert source.index('show_splash(app)') < source.index('from quantumscope.gui.main_window import MainWindow')
+
+
+def test_spare_height_goes_below_and_clear_resets_the_check(app):
+    # A short circuit in a tall window used to stretch the heading (a blank band above the tools),
+    # and Clear left the last example's check on screen (seen after VQE).
+    from PySide6.QtWidgets import QLabel
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.resize(2400, 1250)
+    w.show()
+    w.load_library('vqe', {'problem': 'h2', 'layers': 1})
+    w.verify_circuit()
+    w.place('H', 0, 5)                                                  # editing keeps the check
+    assert w.verify_table.rowCount() == 1
+    w.clear()
+    for _ in range(3):
+        app.processEvents()
+    heading = next(l for l in w.findChildren(QLabel) if l.text().startswith('QUANTUM CIRCUITS'))
+    assert heading.height() < 40
+    assert w.verify_table.rowCount() == 0 and w.verify_status.text() == w.VERIFY_HINT
+    assert not w.graph_button.isVisible() and not w.qec_button.isVisible()
+    w.load_library('qaoa', {'graph': 'ring4', 'layers': 1})            # a new example checks itself
+    w.verify_circuit()
+    w.qubits.setValue(w.n + 1)                                          # leaving the example clears it
+    assert w.verify_table.rowCount() == 0

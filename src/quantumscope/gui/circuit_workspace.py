@@ -449,6 +449,7 @@ class CircuitWorkspace(QWidget):
         self.page_scroll.setWidget(page)
         outer=QVBoxLayout(page);outer.setSpacing(8)
         heading=QLabel('QUANTUM CIRCUITS  ·  Drag gates from the palette onto empty cells; click a placed gate to select it')
+        heading.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)   # never takes spare height
         outer.addWidget(heading)
         top=QHBoxLayout();outer.addLayout(top)
         top.addWidget(QLabel('Qubits'))
@@ -504,6 +505,7 @@ class CircuitWorkspace(QWidget):
         # A whole-page scroll area, not a shrinking circuit editor, handles
         # limited vertical space on Windows and older Ubuntu releases.
         outer.addWidget(split)
+        outer.addStretch(1)              # spare height (a short circuit in a tall window) goes below everything
         # Palette: gates in a 3-column grid, noise channels in a 2-column grid below.
         # Clicks only select entries; they never place or replace gates.
         side=QWidget();sv=QVBoxLayout(side);sv.setContentsMargins(0,0,0,0);sv.setSpacing(4)
@@ -603,7 +605,7 @@ class CircuitWorkspace(QWidget):
         self.graph_button.clicked.connect(self.show_maxcut_graph);self.graph_button.setVisible(False);controls.addWidget(self.graph_button)
         controls.addStretch()
         verify_layout.addLayout(controls)
-        self.verify_status=QLabel('Select an example to verify arithmetic, or inspect basis-state inputs.');self.verify_status.setWordWrap(True)
+        self.verify_status=QLabel(self.VERIFY_HINT);self.verify_status.setWordWrap(True)
         verify_layout.addWidget(self.verify_status)
         self.verify_table=QTableWidget(0,4);self.verify_table.setHorizontalHeaderLabels(['Input','Output','Expected','Result'])
         self.verify_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -1599,6 +1601,9 @@ class CircuitWorkspace(QWidget):
                             +('dynamic circuit: exact branches for every measurement outcome' if self.branch_view else
                               'noisy density-matrix simulation' if self.noisy_view else 'exact ideal simulation'))
         if has_specification(self.active_example) and hasattr(self,'verify_table'):self.verify_circuit()
+        elif hasattr(self,'verify_table') and getattr(self,'_verified_example',None) is not None \
+                and self._verification_key()!=self._verified_example:
+            self._reset_verification()
     def _sync_timeline(self):
         """Kept for callers; the canvas repaints itself (the Bloch strip it updated is gone)."""
         self.grid.viewport().update()
@@ -1794,7 +1799,19 @@ class CircuitWorkspace(QWidget):
     def plot_logical_error_rate(self):
         from quantumscope.gui.qec_chart import plot_circuit
         plot_circuit(self).exec()
+    VERIFY_HINT='Select an example to verify arithmetic, or inspect basis-state inputs.'
+    def _verification_key(self):
+        """What a check was for: the example's specification, or (VQE, QAOA, codes…) its library entry."""
+        key=(repr(self.active_example),repr(self.model.active_entry))
+        return None if key==('None','None') else key
+    def _reset_verification(self):
+        """Forget a result whose example is gone (e.g. after Clear), instead of showing it for another circuit."""
+        self._verified_example=None
+        self.verify_table.setRowCount(0)
+        self.verify_status.setText(self.VERIFY_HINT)
+        self.qec_button.setVisible(False);self.graph_button.setVisible(False)
     def verify_circuit(self):
+        self._verified_example=self._verification_key()
         entry=self.model.active_entry
         self.qec_button.setVisible(bool(entry) and entry[0] in ('bit_flip_code','phase_flip_code'))
         self.graph_button.setVisible(bool(entry) and entry[0]=='qaoa')

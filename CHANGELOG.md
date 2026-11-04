@@ -22,9 +22,13 @@
 - **Dragging the slits** changes their separation: the exact inverse of the drawing rule.
 - **The physics is unchanged:** the Fraunhofer model, its sampling and the chart are as before.
 
+### Fixes
+- **The circuit tab:** a short circuit in a tall window, for example after **Clear** in a maximized window, stretched the heading into a blank band above the tools. Spare height now goes below everything.
+- **Clear** (or leaving an example) left the last example's check on screen, for example a VQE energy for an empty circuit. The verification panel now resets. Editing the example keeps its check.
+
 ### Testing
 - **A CI fix:** a test module that needs Qt's graphics libraries now skips cleanly where they are missing. Before, `importorskip` let a missing system library stop the whole test run.
-- Automated tests: 1349 passing, plus 121 opt-in GUI tests.
+- Automated tests: 1349 passing, plus 122 opt-in GUI tests.
 
 ## v0.7.3 — Glossary and splash
 
