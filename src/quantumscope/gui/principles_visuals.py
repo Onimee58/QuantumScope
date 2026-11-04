@@ -34,13 +34,12 @@ class BlochView(QWidget):
     """A shaded, interactive Bloch sphere. stateChanged(θ, φ) fires while the arrow is dragged."""
 
     stateChanged = Signal(float, float)
+    axisChanged = Signal(float)                # degrees, while the measurement axis is dragged (axis mode)
 
-    # Camera: looking at the sphere from slightly above, x to the lower left, y to the right.
-    _F = np.array([0.78, -0.32, 0.42])          # chosen so the presets and 45° states all read clearly
-    _F = _F / np.linalg.norm(_F)
-    _U = np.array([0.0, 0.0, 1.0]) - np.dot([0.0, 0.0, 1.0], _F) * _F
-    _U = _U / np.linalg.norm(_U)
-    _R = np.cross(_U, _F)
+    # Default camera: slightly above, x to the lower left, y to the right — chosen so the presets
+    # and 45° states all read clearly. Right-drag (or Shift + left-drag) turns it like a turntable.
+    AZIMUTH, ELEVATION = math.degrees(math.atan2(-0.32, 0.78)), math.degrees(math.asin(0.42 / math.hypot(0.78, 0.32, 0.42)))
+    _F = np.array([0.78, -0.32, 0.42]) / math.hypot(0.78, 0.32, 0.42)       # class default (tests use it)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,6 +48,8 @@ class BlochView(QWidget):
         self.axis = 0.0                    # measurement axis, in the x–z plane, degrees from +z towards +x
         self.show_axis = True
         self.draggable = True
+        self.drag_mode = 'state'           # 'state': left-drag sets the state; 'axis': it turns the measurement axis
+        self.caption = ''                  # a short label under the sphere (e.g. "Alice")
         self.length = 1.0                  # arrow length (shorter than 1 for mixed states)
         self._from = self._to = None
         self._t = 1.0
@@ -57,6 +58,26 @@ class BlochView(QWidget):
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._tick)
         self.setMouseTracking(False)
+        self.setToolTip('Left-drag: set the state  ·  Right-drag or Shift + left-drag: turn the sphere  ·  '
+                        'Double-click: reset the view')
+        self.reset_view()
+
+    # ---- the camera ---------------------------------------------------------------------------
+    def set_view(self, azimuth, elevation):
+        """Look from azimuth (degrees about z) and elevation (kept within ±80°, |0⟩ always on top)."""
+        self.azimuth, self.elevation = azimuth % 360, max(-80.0, min(80.0, elevation))
+        a, e = math.radians(self.azimuth), math.radians(self.elevation)
+        self._F = np.array([math.cos(e) * math.cos(a), math.cos(e) * math.sin(a), math.sin(e)])
+        up = np.array([0.0, 0.0, 1.0]) - math.sin(e) * self._F
+        self._U = up / np.linalg.norm(up)
+        self._R = np.cross(self._U, self._F)
+        self.update()
+
+    def reset_view(self):
+        self.set_view(self.AZIMUTH, self.ELEVATION)
+
+    def mouseDoubleClickEvent(self, event):
+        self.reset_view()
 
     # ---- geometry --------------------------------------------------------------------------
     def _frame(self):
@@ -124,8 +145,20 @@ class BlochView(QWidget):
         self.update()
 
     # ---- dragging -------------------------------------------------------------------------------
+    def _turning(self, event):
+        return event.buttons() & Qt.MouseButton.RightButton or (
+            event.buttons() & Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+
+    def contextMenuEvent(self, event):
+        event.accept()                          # right-drag turns the sphere: no context menu
+
     def mousePressEvent(self, event):
-        """Grabbing the arrow keeps its side of the sphere (front or back); elsewhere, the front."""
+        """Grabbing the arrow keeps its side of the sphere (front or back); elsewhere, the front.
+        Right button (or Shift + left) starts turning the sphere instead."""
+        if self._turning(event):
+            self._turn_from = (event.position(), self.azimuth, self.elevation)
+            return
+        self._turn_from = None
         if self.draggable and event.button() == Qt.MouseButton.LeftButton:
             tip, depth = self.project(self.length * direction(self.theta, self.phi))
             near = math.hypot(event.position().x() - tip.x(), event.position().y() - tip.y()) < 28
@@ -134,8 +167,17 @@ class BlochView(QWidget):
             self._drag(event.position())
 
     def mouseMoveEvent(self, event):
+        start = getattr(self, '_turn_from', None)
+        if start is not None and self._turning(event):
+            point, azimuth, elevation = start
+            dx, dy = event.position().x() - point.x(), event.position().y() - point.y()
+            self.set_view(azimuth - dx * 0.5, elevation + dy * 0.5)       # drag the sphere round
+            return
         if self.draggable and event.buttons() & Qt.MouseButton.LeftButton:
             self._drag(event.position())
+
+    def mouseReleaseEvent(self, event):
+        self._turn_from = None
 
     def _drag(self, point):
         """Follow the pointer; crossing the rim carries the arrow round to the other side."""
@@ -144,6 +186,12 @@ class BlochView(QWidget):
             self._side, self._beyond = -getattr(self, '_side', 1), True
         elif rim < 0.97:
             self._beyond = False
+        if self.drag_mode == 'axis':                                   # turn the detector, in the x–z plane
+            v = self.unproject(point, getattr(self, '_side', 1))
+            self.axis = round(math.degrees(math.atan2(v[0], v[2])))
+            self.update()
+            self.axisChanged.emit(float(self.axis))
+            return
         self._timer.stop()
         self._t, self._flash = 1.0, 0.0
         self.theta, self.phi = angles(self.unproject(point, getattr(self, '_side', 1)))
@@ -209,6 +257,18 @@ class BlochView(QWidget):
         v = self.length * direction(self.theta, self.phi)
         tip, depth = self.project(v)
         centre = QPointF(cx, cy)
+        if self.caption:
+            p.setPen(text)
+            p.setFont(QFont('Sans', 11, QFont.Weight.Bold))
+            p.drawText(QRectF(0, self.height() - 24, self.width(), 22), Qt.AlignmentFlag.AlignCenter, self.caption)
+        if self.length < 0.04 and self._flash <= 0:                     # no arrow: completely random
+            p.setPen(QPen(QColor(90, 230, 255) if dark else QColor(0, 120, 190), 2, Qt.PenStyle.DashLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(centre, 11, 11)
+            p.setFont(QFont('Sans', 9, QFont.Weight.Bold))
+            p.drawText(QRectF(cx - 50, cy + 14, 100, 18), Qt.AlignmentFlag.AlignCenter, 'random')
+            p.end()
+            return
         shadow, _ = self.project(np.array([v[0], v[1], 0.0]))
         p.setPen(QPen(QColor(text.red(), text.green(), text.blue(), 90), 1.2, Qt.PenStyle.DotLine))
         p.drawLine(centre, shadow)

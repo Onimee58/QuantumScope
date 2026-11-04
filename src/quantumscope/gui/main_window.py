@@ -443,7 +443,7 @@ class MainWindow(QMainWindow):
         self._open_experiment("teleportation", "Quantum Teleportation", TeleportationDialog)
 
     def _launch_entanglement(self):
-        from quantumscope.gui.quantum_principles import EntanglementDialog
+        from quantumscope.gui.entanglement_experiment import EntanglementDialog
         self._open_experiment("entanglement", "Quantum Entanglement", EntanglementDialog)
 
     def show_dynamics(self):

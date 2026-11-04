@@ -1,3 +1,24 @@
+## v0.7.5 — Entanglement redesigned; turning the spheres
+
+### Turning the spheres
+- **Every Bloch sphere has its own turntable camera:** **right-drag** or **Shift + left-drag** turns it, and **double-click** resets it. |0⟩ stays on top, and the tilt is limited to ±80°. Left-drag still sets the state (or, in Entanglement, aims a detector), exactly, however the sphere is turned.
+
+### Entanglement
+- **Exact physics** (`physics/bell.py`, no Qt), using density matrices:
+  - the four Bell states, a classically correlated mixture, and noise (a visibility *v*);
+  - joint probabilities for any two axes;
+  - each qubit's own (reduced) state, and Bob's state after Alice's result;
+  - correlations, and CHSH with the best angles for each state.
+- **Tested:** the textbook formulas, agreement with the existing singlet code, no-signalling, Tsirelson's bound 2√2 (scaling as 2√2·*v*, so it crosses 2 at *v* = 1/√2), and the classical mixture never above 2.
+- **Two spheres, Alice's and Bob's,** show each qubit's own state: "random" for an entangled pair. Dragging the amber axis aims each detector.
+- **Send one pair:** it flies out; Alice measures and both spheres jump, then Bob measures. The text explains why no signal travels.
+- **Send many:** Slow, Fast or Instant, filling a **correlation grid** (with predicted shares) and a **correlation curve** (quantum, the simple classical model, and the measured points).
+- **The Bell-test meter:** |S| with its uncertainty, against the classical limit of 2 and the quantum limit of 2√2, with a verdict ("beats", "stays below", "too close to decide").
+- **Removed:** the old Entanglement experiment and its unused drawing classes.
+
+### Quality
+- Automated tests: 1361 passing, plus 125 opt-in GUI tests.
+
 ## v0.7.4 — Quantum Principles redesign, part 1
 
 ### Shared building blocks (`gui/principles_visuals.py`)
