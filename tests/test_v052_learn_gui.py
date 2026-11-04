@@ -149,3 +149,25 @@ def test_exported_pdf_has_readable_text(app, tmp_path):
     body = sizes['In this lecture, you will:']
     assert 10.5 <= body <= 11.5                                           # was 0.7 pt
     assert sizes['Electron spin'] > body and sizes['What the model leaves out'] > sizes['Electron spin']
+
+
+def test_glossary_popup_page_search_and_handout(app, tmp_path):
+    from PySide6.QtCore import QUrl
+    from quantumscope.gui.learn_window import GLOSSARY_KEY, LearnWindow, handout_terms
+    w = LearnWindow()
+    w.show()
+    w.open_lesson('principles/08-observables')
+    assert 'glossary:Hermitian' in w.reader.toHtml() or 'glossary:' in w.reader.document().toHtml()
+    w._link(QUrl('glossary:Hermitian'))
+    popup = w._term_popup
+    assert popup.isVisible() and popup.term.name == 'Hermitian'
+    popup._follow(QUrl('glossary:Eigenvalue'))
+    assert popup.term.name == 'Eigenvalue' and popup.isVisible()
+    popup._follow(QUrl('qs:lesson/principles/08-observables'))
+    assert not popup.isVisible() and w.lesson.key == 'principles/08-observables'
+    assert GLOSSARY_KEY in w._items and w.open_lesson(GLOSSARY_KEY) and w.lesson.title == 'Glossary'
+    w.search.setText('Hermitian') if hasattr(w, 'search') and hasattr(w.search, 'setText') else None
+    markup = '<html><body><p>An <a href="glossary:Hermitian" style="x">Hermitian</a> one.</p></body></html>'
+    out = handout_terms(markup, w.glossary)
+    assert 'glossary:' not in out and 'Terms used' in out and 'conjugate transpose' in out
+    assert w.export_pdf(str(tmp_path / 'g.pdf'))

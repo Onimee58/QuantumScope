@@ -33,6 +33,7 @@ class Lesson:
     body: str
     folder: str               # where relative images resolve
     objectives: tuple = field(default=())
+    noglossary: tuple = field(default=())   # glossary terms not linked automatically in this lesson
 
     @property
     def builtin(self):
@@ -60,8 +61,9 @@ def parse(text, key, folder, default_area=COURSE):
         order = 999.0
     kind = meta.get('kind', 'lecture').lower()
     objectives = tuple(o.strip() for o in meta.get('objectives', '').split('|') if o.strip())
+    noglossary = tuple(t.strip() for t in meta.get('noglossary', '').split(',') if t.strip())
     return Lesson(key, title, meta.get('area', default_area), kind if kind in ('lecture', 'lab') else 'lecture',
-                  order, body, folder, objectives)
+                  order, body, folder, objectives, noglossary)
 
 
 def content_folder():

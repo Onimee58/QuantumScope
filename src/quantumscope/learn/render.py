@@ -14,10 +14,10 @@ from .equations import DISPLAY, INLINE, image_name
 PALETTES = {
     'dark': {'text': '#dce7f7', 'muted': '#9fb4cb', 'link': '#6fd6ee', 'note_bg': '#16283b', 'note_border': '#3c6d93',
              'code_bg': '#0d1520', 'ok': '#77e6a1', 'todo': '#9fb4cb', 'answer': '#77e6a1', 'rule': '#304058',
-             'wrong': '#ff9b9b'},
+             'wrong': '#ff9b9b', 'term': '#a9dcef'},
     'light': {'text': '#1b364e', 'muted': '#4d6a82', 'link': '#0b6f8f', 'note_bg': '#e8f2fa', 'note_border': '#7aa7c7',
               'code_bg': '#eef3f8', 'ok': '#17703a', 'todo': '#4d6a82', 'answer': '#17703a', 'rule': '#c4d6e4',
-              'wrong': '#b3261e'},
+              'wrong': '#b3261e', 'term': '#1d5f80'},
 }
 
 
@@ -30,12 +30,32 @@ def _inline(text, ctx):
         if piece.startswith('`') and piece.endswith('`') and len(piece) > 1:
             out.append(f'<code style="background:{ctx["p"]["code_bg"]}">{piece[1:-1]}</code>')
             continue
+        piece = re.sub(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]', lambda m: _term_link(m, ctx), piece)   # [[Term]]
         piece = re.sub(r'!\[([^\]]*)\]\(([^)\s]+)\)', lambda m: _image(m, ctx), piece)
         piece = re.sub(r'\[([^\]]+)\]\(([^)\s]+)\)', lambda m: _link(m, ctx), piece)
         piece = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', piece)
         piece = re.sub(r'(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])', r'<i>\1</i>', piece)
         out.append(piece)
-    return ''.join(out)
+    text = ''.join(out)
+    glossary = ctx.get('glossary')
+    if glossary is not None and ctx.get('link_terms'):
+        text = glossary.link(text, ctx['terms_used'], ctx['no_terms'], _term_style(ctx))
+    return text
+
+
+def _term_style(ctx):
+    return f'color:{ctx["p"]["term"]}; text-decoration:underline'
+
+
+def _term_link(m, ctx):
+    """[[Term]] or [[shown text|Term]]: an explicit glossary link (plain text if unknown)."""
+    shown, name = m.group(1), m.group(2) or m.group(1)
+    glossary = ctx.get('glossary')
+    term = glossary.resolve(html.unescape(name.strip())) if glossary is not None else None
+    if term is None:
+        return shown
+    ctx['terms_used'].add(term.name)
+    return f'<a href="glossary:{html.escape(term.name)}" style="{_term_style(ctx)}">{shown}</a>'
 
 
 def _image(m, ctx):
@@ -167,12 +187,14 @@ def steps_of(body):
     return [parse_step(m.group(1)) for m in re.finditer(r'```step\n(.*?)```', body, re.S)]
 
 
-def to_html(lesson, theme='dark', eq_folder='', revealed=(), steps=None, font_size=15, answers=None):
+def to_html(lesson, theme='dark', eq_folder='', revealed=(), steps=None, font_size=15, answers=None,
+            glossary=None):
     """HTML for the reader. revealed: quiz numbers whose answers are shown; steps: {number: done?};
     answers: {quiz number: chosen option index} (checked at once, correct or not)."""
     p = PALETTES.get(theme, PALETTES['dark'])
     ctx = {'p': p, 'theme': theme, 'eq_folder': eq_folder, 'folder': lesson.folder,
-           'revealed': set(revealed), 'steps': dict(steps or {}), 'answers': dict(answers or {})}
+           'revealed': set(revealed), 'steps': dict(steps or {}), 'answers': dict(answers or {}),
+           'glossary': glossary, 'terms_used': set(), 'no_terms': set(lesson.noglossary), 'link_terms': False}
     out = [f'<html><body style="color:{p["text"]}; font-size:{font_size}px">']
     pending = {'objectives': ''}
     if lesson.objectives:
@@ -191,12 +213,17 @@ def to_html(lesson, theme='dark', eq_folder='', revealed=(), steps=None, font_si
         if paragraph:
             store = []
             text = _protect_math(' '.join(paragraph), ctx, store)
+            ctx['link_terms'] = True                  # glossary links in body text only
             out.append('<p>' + _restore(_inline(html.escape(text), ctx), store) + '</p>')
+            ctx['link_terms'] = False
             paragraph.clear()
 
-    def render_line(text):
+    def render_line(text, terms=True):
         store = []
-        return _restore(_inline(html.escape(_protect_math(text, ctx, store)), ctx), store)
+        ctx['link_terms'] = terms                     # never in headings
+        result = _restore(_inline(html.escape(_protect_math(text, ctx, store)), ctx), store)
+        ctx['link_terms'] = False
+        return result
 
     while i < len(lines):
         line = lines[i]
@@ -228,11 +255,11 @@ def to_html(lesson, theme='dark', eq_folder='', revealed=(), steps=None, font_si
                     i += 1
                 if i < len(lines):
                     block.append(lines[i].strip())
-            out.append(render_line(' '.join(block)))
+            out.append(render_line(' '.join(block), terms=False))
         elif re.match(r'^#{1,4}\s', stripped):
             flush()
             level = len(stripped) - len(stripped.lstrip('#'))
-            out.append(f'<h{level + 1}>{render_line(stripped[level:].strip())}</h{level + 1}>')
+            out.append(f'<h{level + 1}>{render_line(stripped[level:].strip(), terms=False)}</h{level + 1}>')
             if level == 1 and pending['objectives']:   # objectives right after the lesson's title
                 out.append(pending['objectives'])
                 pending['objectives'] = ''

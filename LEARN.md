@@ -114,3 +114,18 @@ A step is done when all of its `check:` lines pass. Once a later step passes, th
 ## Editing the built-in lessons (contributors)
 
 Built-in lessons live in `src/quantumscope/learn/content/<area>/`. After editing their equations, run `python tools/render_equations.py --prune` (this needs matplotlib). The tests check that every equation has an up-to-date image, that every Try it link works, that every quiz has exactly one correct answer, and that every lab can be completed.
+
+## Glossary links (v0.7.3)
+
+Terms such as *Hermitian* or *Hamiltonian* are linked automatically: in every lesson, including yours in **My course**, the **first** occurrence of each glossary term is underlined. Clicking it opens a short definition, with related terms and **Learn more**, which opens the lesson that teaches it. All the terms are also listed on **Glossary** in the Learn contents.
+
+- **Automatic linking** happens in paragraphs, lists, notes and tables, never in headings, quizzes, lab steps, code, equations or existing links. Longer terms win: "phase flip" links as itself, not as "phase". Acronyms (QFT, VQE) match exactly; other terms match in any case.
+- **An explicit link:** write `[[Hermitian]]`, or `[[shown text|Hermitian]]` to link other words to a term. An unknown term stays plain text.
+- **Turning a term off in one lesson,** where the word means something else, uses the header:
+
+```
+noglossary: Orbital, Circuit depth
+```
+
+- **Adding or editing terms:** edit `learn/content/glossary.md`. Each `### Term` may have `aliases:` (other forms that link), `lesson:` (the lecture key for Learn more) and `see:` (related terms), followed by the definition. `## Group` headings group the Glossary page.
+- **PDF handouts** print the terms as plain text, with a **Terms used** box of their definitions at the end.
