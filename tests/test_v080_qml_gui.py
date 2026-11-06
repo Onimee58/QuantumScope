@@ -76,3 +76,28 @@ def test_variational_classifier_trains_and_stops(app):
     finally:
         v.model.__class__.train = original
     assert 'Stopped after 3 steps' in v.result.text()
+
+
+def test_decision_regions_for_any_number_of_features_and_concentration_hint(app):
+    import pyqtgraph as pg
+    from quantumscope.gui import qml_experiments as Q
+    k = Q.KernelExperiment()
+    k.resize(1200, 800)
+    for name, qubits in (('circles', 2), ('mnist', 4), ('wine', 6), ('iris', 1)):
+        k.data.source.setCurrentIndex(k.data.source.findData(name))
+        k.data.qubits.setValue(qubits)
+        k.train()
+        items = k.regions.getPlotItem().items
+        assert any(isinstance(i, pg.ImageItem) for i in items), name                  # regions always drawn
+        assert any(isinstance(c, pg.IsocurveItem) for i in items for c in i.childItems()), name   # and the boundary
+        title = k.regions.getPlotItem().titleLabel.text
+        assert ('principal components' in title) == (qubits > 2), name
+    k.data.source.setCurrentIndex(k.data.source.findData('wine'))
+    k.data.qubits.setValue(6)
+    k.reps.setValue(1)
+    k.feature_map.setCurrentIndex(k.feature_map.findData('zz'))
+    k.train()
+    assert 'kernel concentration' in k.result.text()
+    k.bandwidth.setValue(0.1)
+    k.train()
+    assert 'kernel concentration' not in k.result.text()                              # a smaller bandwidth helps

@@ -327,28 +327,66 @@ class _DataPicker(QGroupBox):
 
 
 def _regions(plot, decision, X_train, y_train, X_test=None, y_test=None, predicted=None):
-    """Decision regions behind the points (2-D data), or test points only for more features."""
+    """Decision regions for any number of features. With two features the plane is the data's own;
+    with more, it is the plane of the two leading principal components of the training data (a
+    slice through the n-dimensional feature space: each grid point is mapped back into it)."""
     import pyqtgraph as pg
     plot.clear()
-    if X_train.shape[1] == 2 and decision is not None:
-        lo = min(X_train.min(), 0.0) - 0.1
-        hi = max(X_train.max(), math.pi) + 0.1
-        g = np.linspace(lo, hi, 48)
-        grid = np.array([(a, b) for b in g for a in g])
-        values = decision(grid).reshape(48, 48)
-        image = pg.ImageItem(np.clip(values, -1, 1).T)
-        image.setLookupTable(pg.ColorMap([0.0, 0.5, 1.0], [(255, 154, 90, 150), (20, 30, 45, 120),
-                                                           (90, 230, 255, 150)]).getLookupTable(0, 1, 256))
-        image.setLevels((-1, 1))
-        image.setRect(QRectF(lo, lo, hi - lo, hi - lo))
+    n = X_train.shape[1]
+    if n == 1:                                                   # one feature: a line, shown flat
+        to_plane = lambda X: np.c_[X[:, 0], np.zeros(len(X))]       # noqa: E731
+        from_plane = lambda P: P[:, :1]                              # noqa: E731
+        labels = ('feature 1', '')
+    elif n == 2:
+        to_plane = from_plane = lambda X: X                          # noqa: E731
+        labels = ('feature 1', 'feature 2')
+    else:
+        mean = X_train.mean(axis=0)
+        _, _, vt = np.linalg.svd(X_train - mean, full_matrices=False)
+        basis = vt[:2]
+        to_plane = lambda X: (X - mean) @ basis.T                    # noqa: E731
+        from_plane = lambda P: mean + P @ basis                      # noqa: E731
+        labels = ('principal component 1', 'principal component 2')
+    plot.setLabel('bottom', labels[0])
+    plot.setLabel('left', labels[1])
+    plot.setTitle('Decision regions' + ('' if n <= 2 else f' in the plane of the first two principal components '
+                                          f'(a slice through {n}-D)') + ': training ●, test ▲, mistakes ✕')
+    P_train = to_plane(X_train)
+    P_all = P_train if X_test is None or not len(X_test) else np.r_[P_train, to_plane(X_test)]
+    lo, hi = P_all.min(axis=0), P_all.max(axis=0)
+    pad = 0.08 * np.maximum(hi - lo, 1e-6)
+    lo, hi = lo - pad, hi + pad
+    if n == 1:
+        lo[1], hi[1] = -1.0, 1.0
+    if decision is not None:
+        res = 90 if n <= 4 else 70 if n <= 6 else 50             # 2ⁿ amplitudes per grid point
+        gx, gy = np.linspace(lo[0], hi[0], res), np.linspace(lo[1], hi[1], res)
+        grid = np.array([(a, b) for b in gy for a in gx])
+        values = np.concatenate([decision(from_plane(chunk)) for chunk in np.array_split(grid, max(1, len(grid) // 1500))])
+        f = values.reshape(res, res)                             # rows: y, columns: x
+        scale = max(1e-9, float(np.percentile(np.abs(f), 95)))
+        strength = np.clip(np.abs(f) / scale, 0, 1)
+        plus, minus = np.array((90, 230, 255), float), np.array((255, 154, 90), float)
+        base = np.where((f >= 0)[..., None], plus, minus)
+        rgba = np.empty((res, res, 4), np.uint8)
+        rgba[..., :3] = base.astype(np.uint8)
+        rgba[..., 3] = (30 + 110 * strength).astype(np.uint8)     # confidence: deeper colour
+        image = pg.ImageItem(np.transpose(rgba, (1, 0, 2)))       # ImageItem wants (x, y)
+        image.setRect(QRectF(lo[0], lo[1], hi[0] - lo[0], hi[1] - lo[1]))
         plot.addItem(image)
-        _scatter_points(plot, X_train, y_train, size=7)
-    if X_test is not None and len(X_test) and X_test.shape[1] >= 2:
+        boundary = pg.IsocurveItem(f.T, level=0.0, pen=pg.mkPen('#ffffff', width=2))
+        boundary.setParentItem(image)                             # follows the image's placement
+        image.setZValue(-10)
+    _scatter_points(plot, P_train, y_train, size=7)
+    if X_test is not None and len(X_test):
+        P_test = to_plane(X_test)
         wrong = predicted != y_test
-        _scatter_points(plot, X_test[~wrong][:, :2], y_test[~wrong], size=10, symbol='t', outline='#ffffff')
+        _scatter_points(plot, P_test[~wrong], y_test[~wrong], size=11, symbol='t', outline='#ffffff')
         if wrong.any():
-            plot.addItem(pg.ScatterPlotItem(X_test[wrong, 0], X_test[wrong, 1], size=13, symbol='x',
+            plot.addItem(pg.ScatterPlotItem(P_test[wrong, 0], P_test[wrong, 1], size=14, symbol='x',
                                             brush=pg.mkBrush('#ff4d4d'), pen=pg.mkPen('#ff4d4d', width=2)))
+    plot.disableAutoRange()
+    plot.setRange(xRange=(lo[0], hi[0]), yRange=(lo[1], hi[1]), padding=0)
 
 
 # ============================================================================================
@@ -408,9 +446,9 @@ class KernelExperiment(QWidget):
         form.addStretch()
         root.addWidget(left)
         right = QVBoxLayout()
-        self.regions = _plot('Decision regions: training points (●), test points (▲), mistakes (✕)')
+        self.regions = _plot('Decision regions')
         right.addWidget(self.regions, 3)
-        self.heatmap = _plot('Training kernel K(x, x′), sorted by class')
+        self.heatmap = _plot('Training kernel K(x, x′), sorted by class (dashed: where the classes meet)')
         right.addWidget(self.heatmap, 2)
         root.addLayout(right, 1)
         self.train_button.clicked.connect(self.train)
@@ -439,11 +477,14 @@ class KernelExperiment(QWidget):
         test_acc = K.accuracy(p.y_test, predicted)
         noise = '' if not self.shots.value() else f' Kernel estimated from {self.shots.value()} shots per entry ' \
             f'(typical error {float(np.abs(Ktr - exact_train).mean()):.3f}).'
-        self.result.setText(f'Training accuracy {train_acc:.0%}, test accuracy {test_acc:.0%}{extra}.{noise}')
-        decision = None
-        if p.X_train.shape[1] == 2:
-            def decision(grid):
-                return model.decision(K.kernel(grid, p.X_train, kind=kind, reps=reps, bandwidth=bandwidth))
+        off = float((exact_train.sum() - len(exact_train)) / max(1, len(exact_train) * (len(exact_train) - 1)))
+        hint = '' if off >= 0.05 else (f' The kernel is close to 0 for different points (average {off:.3f}): '
+                                       f'kernel concentration, common for entangling maps on many qubits. '
+                                       f'Try a smaller bandwidth.')
+        self.result.setText(f'Training accuracy {train_acc:.0%}, test accuracy {test_acc:.0%}{extra}.{noise}{hint}')
+
+        def decision(points):
+            return model.decision(K.kernel(points, p.X_train, kind=kind, reps=reps, bandwidth=bandwidth))
         _regions(self.regions, decision, p.X_train, p.y_train, p.X_test, p.y_test, predicted)
         order = np.argsort(-p.y_train, kind='stable')
         self.heatmap.clear()
@@ -451,6 +492,15 @@ class KernelExperiment(QWidget):
         image.setLookupTable(pg.colormap.get('viridis').getLookupTable(0, 1, 256))
         image.setLevels((0, 1))
         self.heatmap.addItem(image)
+        size = len(order)
+        self.heatmap.setAspectLocked(False)                      # fill the panel
+        self.heatmap.disableAutoRange()
+        self.heatmap.setRange(xRange=(0, size), yRange=(0, size), padding=0)
+        split = int((p.y_train == 1).sum())                      # the class border, as thin lines
+        for line in (pg.InfiniteLine(split, angle=90, pen=pg.mkPen('#ffffff', width=1, style=Qt.PenStyle.DashLine)),
+                     pg.InfiniteLine(split, angle=0, pen=pg.mkPen('#ffffff', width=1, style=Qt.PenStyle.DashLine))):
+            line.setZValue(10)                                   # above the image
+            self.heatmap.addItem(line)
         self.last = dict(train=train_acc, test=test_acc, model=model, prepared=p)
         return self.last
 
@@ -509,7 +559,7 @@ class VariationalExperiment(QWidget):
         form.addStretch()
         root.addWidget(left)
         right = QVBoxLayout()
-        self.regions = _plot('Decision regions: training points (●), test points (▲), mistakes (✕)')
+        self.regions = _plot('Decision regions')
         right.addWidget(self.regions, 3)
         self.curve = _plot('Training', 'step', 'loss / accuracy')
         self.curve.addLegend(offset=(8, 4))
@@ -564,8 +614,7 @@ class VariationalExperiment(QWidget):
 
     def _draw(self):
         p, model = self.prepared, self.model
-        decision = model.decision if p.X_train.shape[1] == 2 else None
-        _regions(self.regions, decision, p.X_train, p.y_train, p.X_test, p.y_test, model.predict(p.X_test))
+        _regions(self.regions, model.decision, p.X_train, p.y_train, p.X_test, p.y_test, model.predict(p.X_test))
 
     def open_in_circuit(self):
         """Load the trained circuit for the first test point into the circuit simulator."""
