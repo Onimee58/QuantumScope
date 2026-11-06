@@ -33,7 +33,7 @@ One of the states |0⟩ and |1⟩ (|00⟩, |01⟩, … for several qubits) that 
 
 ### Dirac notation
 aliases: ket, kets, bra-ket notation
-lesson: circuits/01-qubits
+lesson: math/02-vectors-and-dirac-notation
 see: State vector
 Notation for states: |ψ⟩ ("ket") is a column vector, ⟨ψ| ("bra") its conjugate transpose, and ⟨φ|ψ⟩ the inner product of two states.
 
@@ -112,31 +112,31 @@ For every state, ⟨H⟩ is at least the ground-state energy, so lowering ⟨H�
 
 ### Hermitian
 aliases: Hermitian operator, Hermitian matrix, Hermitian operators, Hermitian matrices, self-adjoint
-lesson: principles/08-observables
+lesson: math/04-hermitian-and-unitary
 see: Observable, Eigenvalue
 Equal to its own conjugate transpose, H = H†. Hermitian operators have real eigenvalues and represent observables.
 
 ### Unitary
 aliases: unitary operator, unitary matrix, unitaries
-lesson: circuits/02-single-qubit-gates
+lesson: math/04-hermitian-and-unitary
 see: Quantum gate
 Satisfying U†U = I, so it preserves lengths and therefore probabilities. Every quantum gate is unitary.
 
 ### Eigenvalue
 aliases: eigenvalues, eigenvector, eigenvectors, eigenstate, eigenstates
-lesson: principles/08-observables
+lesson: math/05-eigenvalues
 see: Hermitian, Observable
 For an operator A, a vector v with Av = λv is an eigenvector, and λ its eigenvalue. An eigenstate of an observable has a definite measurement result.
 
 ### Tensor product
 aliases: tensor products, Kronecker product
-lesson: circuits/03-multi-qubit-gates
+lesson: math/07-tensor-products
 see: Product state
 The way states and operators of separate systems combine into one. Two qubits give 2 × 2 = 4 amplitudes, n qubits 2ⁿ.
 
 ### Pauli matrices
 aliases: Pauli matrix, Pauli operators, Pauli operator
-lesson: circuits/02-single-qubit-gates
+lesson: math/10-pauli-algebra
 see: Observable
 The 2×2 matrices X, Y and Z (with the identity I). As gates they flip the bit (X), the phase (Z) or both (Y); every one-qubit observable is a sum of them.
 
@@ -498,3 +498,64 @@ aliases: spectral lines
 lesson: hydrogen/04-energy-levels-and-spectra
 see: Energy level
 Light emitted or absorbed when the electron moves between energy levels. The photon's energy equals the difference between the levels.
+
+## Mathematics
+
+### Complex number
+aliases: complex numbers, imaginary unit, complex conjugate
+lesson: math/01-complex-numbers
+see: Amplitude, Phase
+A number a + bi, with i² = −1. Its modulus |z| = √(a² + b²) is its distance from 0; the conjugate a − bi mirrors it. Amplitudes are complex numbers.
+
+### Conjugate transpose
+aliases: dagger, Hermitian conjugate, adjoint
+lesson: math/04-hermitian-and-unitary
+see: Hermitian, Unitary
+A matrix flipped over its diagonal with every entry conjugated, written A†. It turns a ket into its bra, and (AB)† = B†A†.
+
+### Inner product
+aliases: inner products
+lesson: math/02-vectors-and-dirac-notation
+see: Dirac notation, Fidelity
+The number ⟨φ|ψ⟩ measuring how two states overlap: 1 for the same normalized state, 0 for orthogonal ones. |⟨φ|ψ⟩|² is a probability.
+
+### Outer product
+aliases: outer products
+lesson: math/08-density-matrices-and-projectors
+see: Projector, Density matrix
+The matrix |ψ⟩⟨φ|, a column times a row. For a normalized state, |ψ⟩⟨ψ| is a projector and the state's density matrix.
+
+### Projector
+aliases: projectors, projection operator
+lesson: math/08-density-matrices-and-projectors
+see: Measurement, Outer product
+A matrix P with P² = P that keeps the part of a state along some direction. Measurements are described by projectors.
+
+### Trace
+lesson: math/08-density-matrices-and-projectors
+see: Density matrix, Partial trace
+The sum of a matrix's diagonal entries. A density matrix has trace 1, and Tr(ρA) is the expectation value of A.
+
+### Partial trace
+aliases: partial traces, reduced state, reduced density matrix
+lesson: math/08-density-matrices-and-projectors
+see: Density matrix, Entanglement
+The operation that gives one part of a system its own state. For a Bell pair, each qubit's reduced state is completely random.
+
+### Matrix exponential
+aliases: matrix exponentials
+lesson: math/09-matrix-exponentials
+see: Rotation gate, Hamiltonian
+e^A, defined by the series I + A + A²/2! + … . Rotation gates are e^{−iθP/2} for a Pauli P, and time evolution is e^{−iHt/ħ}.
+
+### Commutator
+aliases: commutators, anticommutator, anticommutators
+lesson: math/10-pauli-algebra
+see: Pauli matrices, Observable
+[A, B] = AB − BA, zero when the order does not matter. Observables that do not commute, like X and Z, cannot both have definite values.
+
+### Gradient
+aliases: gradients, gradient descent
+lesson: math/12-gradients-and-optimization
+see: Parameter-shift rule, Local minimum
+The vector of partial derivatives, pointing uphill. Gradient descent steps against it to minimize a cost, as the variational optimizers do.

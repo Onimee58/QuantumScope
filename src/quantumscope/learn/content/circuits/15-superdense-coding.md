@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 15
 objectives: Send two classical bits by transmitting one qubit | Decode with a Bell measurement | Compare superdense coding with teleportation
+math: 07-tensor-products, 10-pauli-algebra
 ---
 # Superdense coding
 

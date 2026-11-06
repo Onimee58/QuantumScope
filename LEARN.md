@@ -129,3 +129,15 @@ noglossary: Orbital, Circuit depth
 
 - **Adding or editing terms:** edit `learn/content/glossary.md`. Each `### Term` may have `aliases:` (other forms that link), `lesson:` (the lecture key for Learn more) and `see:` (related terms), followed by the definition. `## Group` headings group the Glossary page.
 - **PDF handouts** print the terms as plain text, with a **Terms used** box of their definitions at the end.
+
+## Mathematics and "Math you need" (v0.7.7)
+
+**Learn → Mathematics** has 12 lessons on the mathematics the other lessons use: complex numbers; vectors and Dirac notation; matrices acting on states; conjugate transpose, Hermitian and unitary; eigenvalues and eigenvectors; probability; tensor products; outer products, projectors and density matrices; matrix exponentials; Pauli algebra; the discrete Fourier transform; and gradients and optimization. They assume high-school algebra and trigonometry.
+
+**Every physics lecture shows a "Math you need" box** under its objectives, with links to the lessons it builds on. Authors list them in the lesson's header, by file name, without the `math/` folder:
+
+```
+math: 07-tensor-products, 08-density-matrices-and-projectors
+```
+
+Your own lessons in **My course** can use the field too. The glossary's linear-algebra terms (Hermitian, unitary, eigenvalue, tensor product, Pauli matrices, Dirac notation), and ten new terms in its **Mathematics** group, open these lessons from **Learn more**.

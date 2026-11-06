@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 24
 objectives: Explain how VQE finds a ground-state energy | Run VQE for the H₂ molecule | Recognize when a circuit cannot express the ground state
+math: 05-eigenvalues, 10-pauli-algebra, 12-gradients-and-optimization
 ---
 # The variational quantum eigensolver
 

@@ -201,6 +201,13 @@ def to_html(lesson, theme='dark', eq_folder='', revealed=(), steps=None, font_si
         pending['objectives'] = (f'<div style="background:{p["note_bg"]}; padding:8px"><b>In this {lesson.kind}, '
                                  f'you will:</b><ul>' + ''.join(f'<li>{html.escape(o)}</li>' for o in lesson.objectives)
                                  + '</ul></div>')
+    if lesson.math:                               # "Math you need": links to the Mathematics lessons
+        from .lessons import math_titles
+        titles = math_titles()
+        links = ', '.join(f'<a href="qs:lesson/{key}">{html.escape(titles.get(key, key))}</a>' for key in lesson.math)
+        pending['objectives'] = (pending['objectives'] or '') + (
+            f'<div style="background:{p["note_bg"]}; padding:6px 8px; margin-top:4px">'
+            f'<b>Math you need:</b> {links}</div>')
     if pending['objectives'] and not re.match(r'\s*#\s', lesson.body):
         out.append(pending['objectives'])         # no title heading: objectives come first
         pending['objectives'] = ''

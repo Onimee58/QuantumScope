@@ -171,3 +171,16 @@ def test_glossary_popup_page_search_and_handout(app, tmp_path):
     out = handout_terms(markup, w.glossary)
     assert 'glossary:' not in out and 'Terms used' in out and 'conjugate transpose' in out
     assert w.export_pdf(str(tmp_path / 'g.pdf'))
+
+
+def test_mathematics_area_and_math_you_need_links(app):
+    from PySide6.QtCore import QUrl
+    from quantumscope.gui.learn_window import LearnWindow
+    w = LearnWindow()
+    w.show()
+    top = [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
+    assert 'Mathematics' in top
+    w.open_lesson('principles/04-entanglement-and-bell-states')
+    assert 'Math you need' in w.reader.toPlainText()
+    w._link(QUrl('qs:lesson/math/07-tensor-products'))
+    assert w.lesson.key == 'math/07-tensor-products'

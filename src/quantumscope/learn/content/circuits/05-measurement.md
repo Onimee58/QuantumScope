@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 5
 objectives: Predict measurement probabilities from amplitudes | Compute the outcome distribution of measuring some of the qubits | Explain why finite shots only estimate probabilities
+math: 02-vectors-and-dirac-notation, 06-probability
 ---
 # Measurement in circuits
 

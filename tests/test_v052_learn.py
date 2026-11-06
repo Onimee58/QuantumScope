@@ -18,7 +18,7 @@ def test_builtin_lessons_have_titles_objectives_and_kinds():
     assert len(LESSONS) >= 3
     for lesson in LESSONS:
         assert lesson.title and lesson.objectives and lesson.kind in ('lecture', 'lab')
-        assert lesson.area in ('circuits', 'principles', 'hydrogen')
+        assert lesson.area in ('circuits', 'principles', 'hydrogen', 'math')
 
 
 @pytest.mark.parametrize('lesson', LESSONS, ids=[l.key for l in LESSONS])
@@ -306,8 +306,8 @@ def test_grover_table_matches_the_formula():
 
 def test_every_area_has_lessons():
     areas = {l.area for l in LESSONS}
-    assert areas == {'circuits', 'principles', 'hydrogen'}
-    assert sum(l.kind == 'lab' for l in LESSONS) == 19 and len(LESSONS) == 59
+    assert areas == {'circuits', 'principles', 'hydrogen', 'math'}            # Mathematics since v0.7.7
+    assert sum(l.kind == 'lab' for l in LESSONS) == 19 and len(LESSONS) == 71
 
 
 def test_png_size_matches_the_image_and_needs_no_qt():

@@ -1,3 +1,26 @@
+## v0.7.7 — Learn → Mathematics
+
+### Mathematics lessons
+- **A fourth area in Learn, Mathematics,** with 12 lectures, each with worked examples, quizzes, a **Try it** link into the app, and a summary:
+  - complex numbers; vectors and Dirac notation; matrices acting on states;
+  - conjugate transpose, Hermitian and unitary; eigenvalues and eigenvectors;
+  - probability for quantum experiments; tensor products;
+  - outer products, projectors and density matrices; matrix exponentials and rotations;
+  - Pauli algebra; the discrete Fourier transform; gradients and optimization.
+- **Every formula, worked example and quiz answer was checked numerically** (23 checks), and every Try it link is checked by the link parser.
+
+### "Math you need"
+- **A box under the objectives of all 40 physics lectures** links to the math lessons each one builds on.
+- **Authors** list them with a new `math:` header field (see LEARN.md).
+
+### Glossary
+- **91 terms (+10):** a new **Mathematics** group (complex number, conjugate transpose, inner product, outer product, projector, trace, partial trace, matrix exponential, commutator, gradient). All their links in the lessons were checked in context.
+- **Hermitian, Unitary, Eigenvalue, Tensor product, Pauli matrices and Dirac notation** now open the matching math lesson from **Learn more**.
+
+### Quality
+- 400 new equation images; no existing image changed.
+- Automated tests: 1431 passing, plus 127 opt-in GUI tests.
+
 ## v0.7.6 — Teleportation redesigned
 
 ### Physics (`physics/teleport_story.py`, the circuit engine)

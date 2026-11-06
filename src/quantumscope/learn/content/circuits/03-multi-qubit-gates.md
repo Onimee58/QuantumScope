@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 3
 objectives: Apply a single-qubit gate inside a larger register | Read the matrices of CX, CZ, SWAP and CP | Explain why a controlled gate is not a product of two single-qubit gates
+math: 03-matrices-acting-on-states, 07-tensor-products
 ---
 # Multi-qubit gates and tensor products
 

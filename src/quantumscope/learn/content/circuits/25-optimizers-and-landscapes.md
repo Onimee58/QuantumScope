@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 25
 objectives: Compare gradient-based and gradient-free optimizers | Read an energy landscape | Recognize step-size problems, plateaus and local minima
+math: 12-gradients-and-optimization
 ---
 # Optimizers, landscapes and plateaus
 

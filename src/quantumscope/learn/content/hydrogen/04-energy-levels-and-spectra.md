@@ -4,6 +4,7 @@ area: hydrogen
 kind: lecture
 order: 4
 objectives: Compute hydrogen's energy levels | Predict the wavelengths of spectral lines | State the dipole selection rule
+math: 05-eigenvalues
 ---
 # Energy levels and spectra
 

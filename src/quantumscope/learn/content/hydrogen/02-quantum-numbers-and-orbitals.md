@@ -5,6 +5,7 @@ kind: lecture
 order: 2
 objectives: List the allowed values of n, ℓ and m | Count states per energy level | Predict the number of radial and angular nodes
 noglossary: Orbital
+math: 05-eigenvalues
 ---
 # Quantum numbers and orbitals
 

@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 18
 objectives: Protect a qubit against phase flips by changing basis | Explain why the bit-flip code fails against phase errors
+math: 10-pauli-algebra
 ---
 # Error correction: the phase-flip code
 

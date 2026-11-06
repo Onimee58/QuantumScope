@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 2
 objectives: Describe a gate as a unitary matrix | Use the Pauli, Hadamard and phase gates | Picture single-qubit gates as rotations of the Bloch sphere | Distinguish global from relative phase in practice
+math: 03-matrices-acting-on-states, 04-hermitian-and-unitary, 09-matrix-exponentials
 ---
 # Single-qubit gates
 

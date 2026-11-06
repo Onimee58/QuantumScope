@@ -4,6 +4,7 @@ area: principles
 kind: lecture
 order: 8
 objectives: Read an observable written as a sum of Pauli terms | Compute an expectation value for simple states | State the variational principle
+math: 04-hermitian-and-unitary, 05-eigenvalues, 10-pauli-algebra
 ---
 # Observables and expectation values
 

@@ -4,6 +4,7 @@ area: principles
 kind: lecture
 order: 6
 objectives: Write the density matrix of a pure state and of a mixture | Read probabilities and coherences from ρ | Use purity and the Bloch ball to tell pure from mixed states
+math: 08-density-matrices-and-projectors
 ---
 # Density matrices and mixed states
 

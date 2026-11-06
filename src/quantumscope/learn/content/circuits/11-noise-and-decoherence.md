@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 11
 objectives: Describe noise as a quantum channel | Relate amplitude and phase damping to T₁ and T₂ | Predict how noise lowers fidelity and algorithm success
+math: 06-probability, 08-density-matrices-and-projectors
 ---
 # Noise and decoherence
 

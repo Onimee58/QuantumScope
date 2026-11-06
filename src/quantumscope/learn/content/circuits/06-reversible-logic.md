@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 6
 objectives: Explain why quantum gates must be reversible | Compute AND, XOR and copies with Toffoli and CX gates | Use work qubits and uncompute them
+math: 03-matrices-acting-on-states, 07-tensor-products
 ---
 # Reversible logic
 

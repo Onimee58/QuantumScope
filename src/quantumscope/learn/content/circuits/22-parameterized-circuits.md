@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 22
 objectives: Build a circuit whose gate angles are parameters | Share one parameter among several gates | Explore how an expectation value depends on the parameters
+math: 09-matrix-exponentials
 ---
 # Parameterized circuits
 

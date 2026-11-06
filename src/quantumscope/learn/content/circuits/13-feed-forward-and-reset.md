@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 13
 objectives: Condition a gate on a classical bit | Reset a qubit with measurement and feed-forward | Explain when the order of operations in a column matters
+math: 06-probability
 ---
 # Classical control, feed-forward and reset
 

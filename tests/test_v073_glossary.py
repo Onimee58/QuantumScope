@@ -17,7 +17,7 @@ def links(markup):
 
 def test_the_glossary_is_complete_and_consistent():
     terms = GLOSSARY.terms
-    assert len(terms) == 81
+    assert len(terms) == 91                                                    # 81 + 10 Mathematics terms (v0.7.7)
     for term in terms.values():
         assert term.definition and term.group, term.name
         assert term.lesson in LESSONS, (term.name, term.lesson)               # Learn more opens a real lesson
@@ -69,5 +69,5 @@ def test_without_a_glossary_lessons_render_as_before():
 
 def test_glossary_page_markdown():
     page = GLOSSARY.page_markdown()
-    assert page.startswith('# Glossary') and page.count('**') == 2 * 81 and '[[Eigenvalue]]' in page
-    assert '(qs:lesson/principles/08-observables)' in page
+    assert page.startswith('# Glossary') and page.count('**') == 2 * 91 and '[[Eigenvalue]]' in page
+    assert '(qs:lesson/math/04-hermitian-and-unitary)' in page

@@ -4,6 +4,7 @@ area: principles
 kind: lecture
 order: 2
 objectives: Compute measurement probabilities along any axis | Describe the state after a measurement | Explain why repeated measurements are needed to learn a state
+math: 02-vectors-and-dirac-notation, 06-probability
 ---
 # Measurement and the Born rule
 

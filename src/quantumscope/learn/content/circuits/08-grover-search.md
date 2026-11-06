@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 8
 objectives: Describe the oracle and diffusion steps | Use the geometric picture of Grover rotations | Choose the number of iterations and recognize overshooting
+math: 02-vectors-and-dirac-notation, 03-matrices-acting-on-states
 ---
 # Grover search
 
