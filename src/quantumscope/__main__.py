@@ -60,6 +60,10 @@ def _self_test():
         if len(terms) < 50 or not files("quantumscope").joinpath("assets/quantumscope-mark.svg").is_file():
             raise RuntimeError(f"Glossary or splash logo missing ({len(terms)} terms)")
         lines.append(f"Glossary: {len(terms)} terms; splash logo present")
+        guide = files("quantumscope").joinpath("assets/QuantumScope-User-Guide.pdf")
+        if not guide.is_file() or guide.read_bytes()[:5] != b"%PDF-":
+            raise RuntimeError("User guide (assets/QuantumScope-User-Guide.pdf) missing")
+        lines.append("User guide: present")
         lines.append("RESULT: PASS")
         status = 0
     except Exception:

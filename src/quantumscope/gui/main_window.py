@@ -23,6 +23,22 @@ from quantumscope.physics.hydrogen import A_MU_METERS, captured_probability, Rea
 from quantumscope.visualization.orbitals import draw_orbital, set_camera_view, probability_radius
 
 
+
+USER_GUIDE_URL = 'https://github.com/Onimee58/QuantumScope/releases/latest'
+
+
+def user_guide_path():
+    """The user guide shipped with QuantumScope (assets/QuantumScope-User-Guide.pdf)."""
+    return Path(str(files('quantumscope').joinpath('assets/QuantumScope-User-Guide.pdf')))
+
+
+def open_user_guide():
+    """Open the user guide in the system's PDF viewer (or, if it is missing, the releases page)."""
+    path = user_guide_path()
+    if path.is_file():
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+    return QDesktopServices.openUrl(QUrl(USER_GUIDE_URL))
+
 class AboutDialog(QDialog):
     """Branded, accessible project credits; GitHub avatar is cached offline."""
     AVATAR_URL = 'https://avatars.githubusercontent.com/u/50075168?s=256&v=4'
@@ -44,7 +60,11 @@ class AboutDialog(QDialog):
         self.update_button=QPushButton('Check for updates…')
         self.update_button.setToolTip('Asks first, then looks on github.com for a newer full release')
         self.update_button.clicked.connect(self._check_for_updates)
-        update_row=QHBoxLayout();update_row.addStretch();update_row.addWidget(self.update_button);update_row.addStretch()
+        self.guide_button=QPushButton('User guide')
+        self.guide_button.setToolTip('Open the QuantumScope User Guide (PDF)')
+        self.guide_button.clicked.connect(open_user_guide)
+        update_row=QHBoxLayout();update_row.addStretch();update_row.addWidget(self.update_button)
+        update_row.addWidget(self.guide_button);update_row.addStretch()
         layout.addLayout(update_row)
         tagline=QLabel('Explore  •  Visualize  •  Simulate');tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline.setStyleSheet('color:#5ad1e9;font-size:12px;');layout.addWidget(tagline)

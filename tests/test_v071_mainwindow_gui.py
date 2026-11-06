@@ -85,3 +85,16 @@ def test_links_and_loads_reopen_a_closed_circuit_tab(window):
     from quantumscope.physics.circuits import Gate
     window._load_converted_circuit(1, [Gate('X', (0,))])           # the QASM Converter's route
     assert circuits.currentWidget() is window.circuit_widget
+
+
+def test_about_opens_the_user_guide(window, monkeypatch):
+    from PySide6.QtGui import QDesktopServices
+    import quantumscope.gui.main_window as M
+    opened = []
+    monkeypatch.setattr(QDesktopServices, 'openUrl', staticmethod(lambda url: opened.append(url.toString()) or True))
+    assert M.user_guide_path().is_file()
+    M.open_user_guide()
+    assert opened and opened[-1].endswith('QuantumScope-User-Guide.pdf') and opened[-1].startswith('file:')
+    monkeypatch.setattr(M, 'user_guide_path', lambda: M.Path('/nowhere/guide.pdf'))
+    M.open_user_guide()
+    assert opened[-1] == M.USER_GUIDE_URL                                      # missing: the releases page

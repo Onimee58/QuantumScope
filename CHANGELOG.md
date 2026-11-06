@@ -1,3 +1,20 @@
+## v0.7.8 — User guide
+
+### The guide
+- **`QuantumScope-User-Guide.pdf`:** 13 pages with 11 screenshots, written for anyone who uses QuantumScope. It covers installing and updating, a tour of the window, Hydrogen, Quantum Principles, Quantum Circuits, Learn, Settings, troubleshooting, and a mouse and keyboard reference.
+- **Exact names:** every control is named as it appears in the app, taken from a programmatic inventory of the real windows. A test checks that the controls it names still exist in the code.
+- **Delivery:** it ships inside QuantumScope (**ⓘ → User guide** opens it in the system's PDF viewer, or the releases page if it is missing), and the release workflow attaches it to each release. The updater only ever picks installer files, so the PDF can never be mistaken for one.
+
+### Rebuilding it (authors)
+- **The source** is `docs/user-guide.md`.
+- **`python tools/make_user_guide.py`** photographs the real app (`docs/images/`) and lays out the PDF with Qt (`--pdf-only` skips the screenshots).
+  - **On a desktop,** the Hydrogen screenshot includes the live 3-D view.
+  - **Without a display,** it shows the Explorer's controls, since software 3-D rendering is unreliable there.
+- **The self-test** checks that the guide is packaged.
+
+### Quality
+- Automated tests: 1434 passing, plus 128 opt-in GUI tests.
+
 ## v0.7.7 — Learn → Mathematics
 
 ### Mathematics lessons
