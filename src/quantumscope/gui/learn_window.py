@@ -131,6 +131,8 @@ class LearnWindow(QWidget):
         editor = workspace if workspace is not None else getattr(host, 'circuit_widget', None)
         if editor is not None and hasattr(editor, 'state_changed'):
             editor.state_changed.connect(self._circuit_changed)
+        from quantumscope.ml import progress            # Quantum ML labs tick as experiments run
+        progress.listen(self._circuit_changed)
 
     # ---- contents -------------------------------------------------------------------------
     @property

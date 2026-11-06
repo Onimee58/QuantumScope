@@ -26,6 +26,7 @@ current circuit; a step is done when all of its checks pass:
     expectation <= -0.99             ⟨observable⟩ for the final state compared with a value (also >=)
     reaches 0.001                    ⟨observable⟩ is within 0.001 of its exact minimum
     verified                         the example's own check passes
+    qml …                            Quantum ML: see quantumscope.ml.progress.check (dataset, accuracy, …)
 """
 import numpy as np
 
@@ -45,6 +46,9 @@ def check(model, condition):
     if not words:
         return False, 'Empty check'
     kind, rest = words[0].lower(), (words[1] if len(words) > 1 else '').strip()
+    if kind == 'qml':                                # what the student did in the Quantum ML area
+        from quantumscope.ml import progress
+        return progress.check(rest)
     if kind == 'qubits':
         return model.n == int(rest), f'needs {rest} qubits'
     if kind == 'state':

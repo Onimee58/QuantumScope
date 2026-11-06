@@ -559,3 +559,88 @@ aliases: gradients, gradient descent
 lesson: math/12-gradients-and-optimization
 see: Parameter-shift rule, Local minimum
 The vector of partial derivatives, pointing uphill. Gradient descent steps against it to minimize a cost, as the variational optimizers do.
+
+## Quantum machine learning
+
+### Feature map
+aliases: feature maps, angle encoding, ZZ feature map
+lesson: qml/01-data-to-quantum-states
+see: Quantum kernel, Parameterized circuit
+A circuit U(x) whose angles are set by a data point x, turning it into a quantum state |φ(x)⟩ = U(x)|0…0⟩.
+
+### Quantum kernel
+aliases: quantum kernels, kernel matrix, kernel matrices
+lesson: qml/01-data-to-quantum-states
+see: Feature map, Kernel trick
+The similarity of two data points as quantum states: K(x, x′) = |⟨φ(x)|φ(x′)⟩|², 1 for the same point and near 0 for very different ones.
+
+### Kernel trick
+lesson: qml/02-kernel-classifiers
+see: Quantum kernel, Support vector machine
+Learning from the kernel values of all pairs of points alone, without ever writing out the states (or features) they come from.
+
+### Support vector machine
+aliases: support vector machines, SVM, SVMs, support vectors
+lesson: qml/02-kernel-classifiers
+see: Kernel trick, Kernel ridge
+A classifier that finds the boundary with the widest margin between two classes. Only the support vectors, the points on or inside the margin, define it.
+
+### Kernel ridge
+aliases: kernel ridge regression, kernel ridge classification
+lesson: qml/02-kernel-classifiers
+see: Support vector machine
+A kernel classifier with the closed-form weights α = (K + λI)⁻¹ y; the regularization λ makes it smoother.
+
+### Variational classifier
+aliases: variational classifiers, variational quantum classifier
+lesson: qml/03-variational-classifiers
+see: Parameterized circuit, Parameter-shift rule
+A trainable circuit used as a classifier: its output ⟨Z₀⟩ plus a bias decides the class, and training tunes its gates.
+
+### Training set
+aliases: training sets, training data, training split
+lesson: qml/02-kernel-classifiers
+see: Test set, Overfitting
+The data a classifier learns from.
+
+### Test set
+aliases: test sets, test data, test split
+lesson: qml/02-kernel-classifiers
+see: Training set, Data leakage
+Data kept aside to measure how well a classifier does on points it has never seen: the honest score.
+
+### Overfitting
+aliases: overfit, overfits, overfitted
+lesson: qml/04-generalization-and-its-limits
+see: Bandwidth, Test set
+Learning the training points too exactly, noise included: high training accuracy, lower test accuracy, and islands in the decision regions.
+
+### Bandwidth
+aliases: kernel bandwidth
+lesson: qml/04-generalization-and-its-limits
+see: Quantum kernel, Overfitting
+A factor that scales the data before encoding. A small bandwidth makes the kernel vary slowly and the classifier smoother.
+
+### Kernel concentration
+aliases: exponential concentration
+lesson: qml/04-generalization-and-its-limits
+see: Quantum kernel, Bandwidth
+Kernel values close to 0 for almost every pair of different points, common for entangling feature maps on many qubits: the classifier then learns little.
+
+### Principal component analysis
+aliases: PCA, principal components, principal component
+lesson: qml/05-preparing-real-data
+see: Eigenvalue
+A way to reduce data to fewer features by keeping the directions in which it varies most: the leading eigenvectors of its covariance matrix.
+
+### Data leakage
+aliases: leakage
+lesson: qml/05-preparing-real-data
+see: Test set
+Letting information about the test data influence the model, for example by fitting a scaling on all the data; it makes test scores look better than they are.
+
+### Condition number
+aliases: condition numbers
+lesson: circuits/27-vqls
+see: Eigenvalue
+κ = σmax / σmin, the ratio of a matrix's largest to its smallest singular value. A large κ makes A x = b harder to solve.

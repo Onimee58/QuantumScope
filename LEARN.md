@@ -141,3 +141,28 @@ math: 07-tensor-products, 08-density-matrices-and-projectors
 ```
 
 Your own lessons in **My course** can use the field too. The glossary's linear-algebra terms (Hermitian, unitary, eigenvalue, tensor product, Pauli matrices, Dirac notation), and ten new terms in its **Mathematics** group, open these lessons from **Learn more**.
+
+## Quantum ML lessons and lab checks (v0.8.0)
+
+**Learn → Quantum ML** has five lectures:
+1. from data to quantum states;
+2. kernel classifiers and the SVM;
+3. variational classifiers;
+4. generalization, bandwidth and kernel concentration;
+5. preparing real data.
+
+There are also three labs: classify the circles; MNIST, from pixels to qubits; and train a quantum circuit. **Quantum Circuits** gains a VQLS lecture and the lab "solve a linear system".
+
+Lab steps in your own course can check what the student did in the Quantum ML area:
+
+```
+check: qml dataset mnist            the last data prepared or trained on is this dataset
+check: qml features = 4             the prepared data has this many features (also <=, >=)
+check: qml kernel test >= 0.95      the kernel classifier's last test accuracy (also: train)
+check: qml kernel map zz            …trained with this feature map (angle or zz)
+check: qml bandwidth <= 0.5         the kernel classifier's last bandwidth
+check: qml shots >= 100             the kernel was estimated from at least this many shots
+check: qml variational test >= 0.85 the variational classifier's last test accuracy (also: train)
+```
+
+Steps tick as soon as an experiment is run. Link to the experiments with `qs:open/qml_datasets`, `qs:open/qml_kernel` and `qs:open/qml_variational`.

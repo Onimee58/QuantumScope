@@ -204,7 +204,8 @@ class DatasetsExperiment(QWidget):
         self._load_source()
 
     def _load_source(self, *_):
-        self.use(D.load(self.source.currentData()))
+        self.source_key = self.source.currentData()          # a built-in or synthetic key
+        self.use(D.load(self.source_key))
 
     def import_file(self, path=None):
         if not path:
@@ -216,6 +217,7 @@ class DatasetsExperiment(QWidget):
         except (OSError, ValueError, UnicodeDecodeError) as exc:
             QMessageBox.warning(self, 'Import data', f'This file could not be read:\n{exc}')
             return None
+        self.source_key = 'imported'
         self.use(dataset)
         return dataset
 
@@ -273,6 +275,8 @@ class DatasetsExperiment(QWidget):
         else:
             self.steps.setText('Prepared: ' + ' '.join(prepared.steps) + '  Both classifiers can now use it.')
             STORE.publish(self.dataset, recipe, prepared)
+            from quantumscope.ml import progress
+            progress.prepared(self.source_key, prepared.X_train.shape[1], prepared.classes)
         self.plot.clear()
         if prepared.X_train.shape[1] >= 2:
             _scatter_points(self.plot, prepared.X_train[:, :2], prepared.y_train)
@@ -328,6 +332,14 @@ class _DataPicker(QGroupBox):
                 self.summary.setText('Nothing prepared yet: open the Datasets experiment and press Prepare.')
         else:
             self.qubits.setToolTip('One feature per qubit: the data is reduced to this many features')
+
+    def key(self):
+        """The dataset trained on: a built-in or synthetic key, or what the Datasets tab prepared."""
+        key = self.source.currentData()
+        if key == 'store':
+            from quantumscope.ml import progress
+            return progress.STATE.get('dataset')
+        return key
 
     def prepared(self):
         key = self.source.currentData()
@@ -524,6 +536,9 @@ class KernelExperiment(QWidget):
             line.setZValue(10)                                   # above the image
             self.heatmap.addItem(line)
         self.last = dict(train=train_acc, test=test_acc, model=model, prepared=p)
+        from quantumscope.ml import progress
+        progress.trained('kernel', train=train_acc, test=test_acc, map=kind, bandwidth=bandwidth,
+                         shots=self.shots.value(), dataset=self.data.key())
         return self.last
 
 
@@ -632,6 +647,9 @@ class VariationalExperiment(QWidget):
         self._draw()
         self.open_circuit.setEnabled(True)
         self.last = dict(train=accuracies[-1], test=test_acc, history=list(zip(losses, accuracies)))
+        from quantumscope.ml import progress
+        progress.trained('variational', train=accuracies[-1], test=test_acc, map=self.feature_map.currentData(),
+                         layers=self.layers.value(), dataset=self.data.key())
         return self.last
 
     def _draw(self):

@@ -134,3 +134,27 @@ def test_vqls_example_check_and_live_solution_view(app):
     assert np.allclose(dialog.values[0], dialog.values[1], atol=1e-3)            # the bars meet
     w.clear()
     assert not w.solution_button.isVisibleTo(w) and 'no longer a VQLS example' in dialog.summary.text()
+
+
+def test_quantum_ml_lab_steps_tick_as_the_experiments_run(app):
+    from quantumscope.gui import qml_experiments as Q
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    from quantumscope.gui.learn_window import LearnWindow
+    from quantumscope.ml import progress
+    progress.reset()
+    learn = LearnWindow(workspace=CircuitWorkspace())
+    learn.open_lesson('qml/90-lab-classify-the-circles')
+    assert not any(learn._lab_steps().values())
+    k = Q.KernelExperiment()
+    k.data.source.setCurrentIndex(k.data.source.findData('circles'))
+    k.feature_map.setCurrentIndex(k.feature_map.findData('angle'))
+    k.train()
+    assert learn._lab_steps() == {0: True, 1: False}                             # step 1 done, live
+    k.feature_map.setCurrentIndex(k.feature_map.findData('zz'))
+    k.train()
+    assert all(learn._lab_steps().values())
+    learn.open_lesson('qml/91-lab-mnist-pixels-to-qubits')
+    d = Q.DatasetsExperiment()
+    d.source.setCurrentIndex(d.source.findData('mnist'))
+    assert learn._lab_steps()[0]                                                   # prepared with 4 features
+    progress.reset()

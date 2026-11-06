@@ -18,7 +18,7 @@ def test_builtin_lessons_have_titles_objectives_and_kinds():
     assert len(LESSONS) >= 3
     for lesson in LESSONS:
         assert lesson.title and lesson.objectives and lesson.kind in ('lecture', 'lab')
-        assert lesson.area in ('circuits', 'principles', 'hydrogen', 'math')
+        assert lesson.area in ('circuits', 'principles', 'hydrogen', 'math', 'qml')
 
 
 @pytest.mark.parametrize('lesson', LESSONS, ids=[l.key for l in LESSONS])
@@ -206,6 +206,12 @@ LAB_SOLUTIONS = {
     'circuits/106-lab-h2-ground-energy': ('library', 'vqe', {'problem': 'h2', 'layers': 1}, True),
     'circuits/107-lab-not-enough-layers': ('library', 'vqe', {'problem': 'heisenberg-3', 'layers': 2}, True),
     'circuits/108-lab-qaoa-maxcut': ('library', 'qaoa', {'graph': 'ring4', 'layers': 2}, True),
+    'circuits/109-lab-solve-a-linear-system': ('library', 'vqls', {'problem': 'single', 'layers': 1}, True),
+    # Quantum ML labs (v0.8.0): each step done with the real ML code, recorded as the experiments do.
+    'qml/90-lab-classify-the-circles': ('qml', [('kernel', 'circles', 2, 'angle', 1.0), ('kernel', 'circles', 2, 'zz', 1.0)]),
+    'qml/91-lab-mnist-pixels-to-qubits': ('qml', [('prepare', 'mnist', 4), ('kernel', 'store', 4, 'angle', 1.0),
+                                                  ('kernel', 'store', 4, 'angle', 0.5)]),
+    'qml/92-lab-train-a-circuit': ('qml', [('variational', 'moons', 2), ('observable Z0',)]),
 }
 
 
@@ -226,6 +232,39 @@ def test_lab_solution_completes_every_step(key):
         m.set_parameter('θ', math.pi)
         lesson = next(l for l in LESSONS if l.key == key)
         assert all(labs.progress(m, steps_of(lesson.body)).values())
+        return
+    if LAB_SOLUTIONS[key][0] == 'qml':                         # Quantum ML: the real ML code, step by step
+        import numpy as np
+        from quantumscope.ml import datasets as D, kernels as K, progress, variational as V
+        progress.reset()
+        m, prepared = CircuitModel(1), None
+        for action in LAB_SOLUTIONS[key][1]:
+            if action[0] == 'prepare':
+                _, name, qubits = action
+                ds = D.load(name)
+                prepared = D.prepare(ds, D.check(ds, qubits=qubits)[2])
+                progress.prepared(name, prepared.X_train.shape[1], prepared.classes)
+            elif action[0] == 'kernel':
+                _, name, qubits, kind, bandwidth = action
+                p = prepared if name == 'store' else D.prepare(D.load(name), D.check(D.load(name), qubits=qubits)[2])
+                Ktr = K.kernel(p.X_train, kind=kind, bandwidth=bandwidth)
+                Kte = K.kernel(p.X_test, p.X_train, kind=kind, bandwidth=bandwidth)
+                svm = K.SVM().fit(Ktr, p.y_train)
+                progress.trained('kernel', train=K.accuracy(p.y_train, svm.predict(Ktr)),
+                                 test=K.accuracy(p.y_test, svm.predict(Kte)), map=kind, bandwidth=bandwidth, shots=0,
+                                 dataset=progress.STATE['dataset'] if name == 'store' else name)
+            elif action[0] == 'variational':
+                _, name, qubits = action
+                p = D.prepare(D.load(name), D.check(D.load(name), qubits=qubits)[2])
+                model = V.Classifier(qubits, layers=3, seed=0)
+                history = model.train(p.X_train, p.y_train, method='BFGS', steps=80)
+                progress.trained('variational', train=history[-1][2],
+                                 test=float(np.mean(model.predict(p.X_test) == p.y_test)), dataset=name)
+                m = CircuitModel()                               # Open in circuit simulator
+                m.set_circuit(qubits, model.gates(p.X_test[0]))
+                m.set_observable('Z0')
+        assert all(labs.progress(m, steps_of(lesson.body)).values()), progress.STATE
+        progress.reset()
         return
     if LAB_SOLUTIONS[key][0] == 'library':                     # labs that start from an example
         _, entry, params, *optimize_it = LAB_SOLUTIONS[key]
@@ -306,8 +345,8 @@ def test_grover_table_matches_the_formula():
 
 def test_every_area_has_lessons():
     areas = {l.area for l in LESSONS}
-    assert areas == {'circuits', 'principles', 'hydrogen', 'math'}            # Mathematics since v0.7.7
-    assert sum(l.kind == 'lab' for l in LESSONS) == 19 and len(LESSONS) == 71
+    assert areas == {'circuits', 'principles', 'hydrogen', 'math', 'qml'}     # Mathematics 0.7.7, Quantum ML 0.8.0
+    assert sum(l.kind == 'lab' for l in LESSONS) == 23 and len(LESSONS) == 81
 
 
 def test_png_size_matches_the_image_and_needs_no_qt():
