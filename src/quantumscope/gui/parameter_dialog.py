@@ -34,6 +34,9 @@ class ParameterDialog(QDialog):
                 for label, v in p.choices:
                     field.addItem(label, v)
                 field.setCurrentIndex(max(0, [c[1] for c in p.choices].index(value) if value in [c[1] for c in p.choices] else 0))
+            elif p.kind == 'text':
+                field = QLineEdit(str(value))
+                field.setMinimumWidth(260)
             else:
                 field = QLineEdit(str(value))
                 field.setValidator(QRegularExpressionValidator(QRegularExpression('[01]{0,10}'), field))

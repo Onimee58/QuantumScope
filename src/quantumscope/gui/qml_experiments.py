@@ -131,8 +131,9 @@ class DatasetsExperiment(QWidget):
         self.qubits = QSpinBox()
         self.qubits.setRange(1, D.MAX_QUBITS)
         self.qubits.setValue(4)
-        self.qubits.setToolTip('One feature per qubit')
-        sv.addRow('Qubits', self.qubits)
+        self.qubits.setToolTip('One feature per qubit: the checker suggests reducing the data to this many '
+                               'features, and the prepared data has that many')
+        sv.addRow('Qubits (= features)', self.qubits)
         form.addWidget(source)
         self.verdict = QLabel()
         self.verdict.setWordWrap(True)
@@ -301,11 +302,32 @@ class _DataPicker(QGroupBox):
         self.qubits = QSpinBox()
         self.qubits.setRange(1, D.MAX_QUBITS)
         self.qubits.setValue(2)
-        form.addRow('Qubits', self.qubits)
+        self.qubits.setToolTip('One feature per qubit: the data is reduced to this many features')
+        form.addRow('Qubits (= features)', self.qubits)
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         self.summary.setObjectName('muted')
         form.addRow(self.summary)
+        self.source.currentIndexChanged.connect(self._sync)
+        STORE.changed.connect(self._sync)
+        self._sync()
+
+    def _sync(self, *_):
+        """From the Datasets tab, the qubit count is the prepared data's: shown, not editable here."""
+        from_store = self.source.currentData() == 'store'
+        self.qubits.setEnabled(not from_store)
+        if from_store:
+            if STORE.prepared is not None:
+                self.qubits.blockSignals(True)
+                self.qubits.setValue(STORE.prepared.X_train.shape[1])
+                self.qubits.blockSignals(False)
+                self.qubits.setToolTip('Set in the Datasets tab (one feature per qubit)')
+                self.summary.setText(f'Prepared in the Datasets tab: {STORE.prepared.X_train.shape[1]} features '
+                                     f'on as many qubits.')
+            else:
+                self.summary.setText('Nothing prepared yet: open the Datasets experiment and press Prepare.')
+        else:
+            self.qubits.setToolTip('One feature per qubit: the data is reduced to this many features')
 
     def prepared(self):
         key = self.source.currentData()

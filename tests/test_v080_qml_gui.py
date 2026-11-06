@@ -101,3 +101,36 @@ def test_decision_regions_for_any_number_of_features_and_concentration_hint(app)
     k.bandwidth.setValue(0.1)
     k.train()
     assert 'kernel concentration' not in k.result.text()                              # a smaller bandwidth helps
+
+
+def test_classifier_qubits_follow_the_datasets_tab(app):
+    from quantumscope.gui import qml_experiments as Q
+    d = Q.DatasetsExperiment()
+    d.source.setCurrentIndex(d.source.findData('wine'))
+    d.qubits.setValue(3)
+    for experiment in (Q.KernelExperiment(), Q.VariationalExperiment()):
+        picker = experiment.data
+        picker.source.setCurrentIndex(picker.source.findData('store'))
+        assert not picker.qubits.isEnabled() and picker.qubits.value() == 3 and 'Datasets tab' in picker.summary.text()
+        d.qubits.setValue(2)                                                      # follows a new preparation
+        assert picker.qubits.value() == 2
+        d.qubits.setValue(3)
+        picker.source.setCurrentIndex(picker.source.findData('moons'))
+        assert picker.qubits.isEnabled()
+
+
+def test_vqls_example_check_and_live_solution_view(app):
+    from quantumscope.gui.circuit_workspace import CircuitWorkspace
+    w = CircuitWorkspace()
+    w.show()
+    w.load_library('vqls', {'problem': 'single', 'layers': 1})
+    w.verify_circuit()
+    assert w.solution_button.isVisibleTo(w) and 'Optimize' in w.verify_status.text()
+    dialog = w.show_vqls_solution()
+    before = dialog.values[2]
+    w.optimize_parameters()
+    w.verify_circuit()
+    assert dialog.values[2] > 0.999 > before and 'prepares the solution' in w.verify_status.text()
+    assert np.allclose(dialog.values[0], dialog.values[1], atol=1e-3)            # the bars meet
+    w.clear()
+    assert not w.solution_button.isVisibleTo(w) and 'no longer a VQLS example' in dialog.summary.text()

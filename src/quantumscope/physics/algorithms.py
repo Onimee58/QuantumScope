@@ -26,13 +26,14 @@ TOL = 1e-9
 class Param:
     key: str
     label: str
-    kind: str                     # 'int', 'choice' or 'bits'
+    kind: str                     # 'int', 'choice', 'bits' or 'text'
     default: object
     minimum: int = 0
     maximum: int = 0
     choices: tuple = ()           # ((label, value), ...) for 'choice'
     length_of: str = ''           # for 'bits': the int parameter giving the length
     help: str = ''
+    check: object = None          # optional check(value, earlier values), raising ValueError
 
 
 def validate_params(params_spec, values):
@@ -50,6 +51,11 @@ def validate_params(params_spec, values):
             length = out.get(p.length_of)
             if not isinstance(v, str) or any(ch not in '01' for ch in v) or (length is not None and len(v) != length):
                 raise ValueError(f'{p.label} must be {length} bits of 0 and 1')
+        elif p.kind == 'text':
+            if not isinstance(v, str) or not v.strip():
+                raise ValueError(f'{p.label} must not be empty')
+        if p.check is not None:
+            p.check(v, out)
         out[p.key] = v
     return out
 
@@ -649,6 +655,58 @@ def spec_vqe(p, view):
                                      'entangling layers (Change parameters…).')
 
 
+# ---- VQLS: the variational quantum linear solver (v0.8.0) -------------------------------------
+
+VQLS_PROBLEMS = (('Standard system, 3 qubits (condition number 2.3)', 'standard'),
+                 ('Worse-conditioned system, 3 qubits (condition number 19)', 'harder'),
+                 ('One qubit (condition number 3)', 'single'), ('Your own system (below)', 'custom'))
+
+
+def _check_vqls_matrix(value, earlier):
+    """A custom A must be readable and invertible (checked only for 'Your own system')."""
+    if earlier.get('problem') == 'custom':
+        from .vqls import a_matrix
+        a_matrix(value, earlier.get('qubits', 2))
+
+
+def build_vqls(p):
+    """The same hardware-efficient ansatz as VQE (layers of RY with a CX chain); the observable is
+    the VQLS cost H = A†(I − |b⟩⟨b|)A, whose minimum 0 is reached exactly at the solution."""
+    from . import vqls
+    n, A, b, text, about = vqls.system(p)
+    items, bindings, parameters = [], [], []
+    k = 0
+    for layer in range(p['layers'] + 1):
+        for q in range(n):
+            items.append(Gate('RY', (q,), 0.0))
+            name = f'θ{k}'
+            parameters.append((name, 0.1 * (k + 1)))
+            bindings.append((len(items) - 1, 'angle', name, 1.0))
+            k += 1
+        if layer < p['layers'] and n > 1:
+            items += [Gate('CX', (q, q + 1)) for q in range(n - 1)]
+    cost = vqls.pauli_text(vqls.cost_operator(A, b), n)
+    return Built(n, items, defaults(n), parameters=tuple(parameters), bindings=tuple(bindings), observable=cost,
+                 note=f'VQLS for {about} (condition number {vqls.condition_number(A):.1f}): press Optimize to '
+                      f'lower the cost ⟨H⟩ to 0; then the state is A⁻¹b, normalized.')
+
+
+def spec_vqls(p, view):
+    """Passes when the circuit's state matches the classical solution A⁻¹b with fidelity ≥ 0.99."""
+    from . import vqls
+    n, A, b, text, about = vqls.system(p)
+    if view.n != n:
+        return [], f'This system needs {n} qubits.'
+    state = np.asarray(view.final_state)
+    fid, cost = vqls.fidelity(A, b, state), vqls.normalized_cost(A, b, state)
+    rows = [_row('|x(θ)⟩', f'fidelity {fid:.6f}', 'fidelity ≥ 0.99 with A⁻¹b (normalized)', fid, fid >= 0.99),
+            _row('cost', f'{cost:.6f}', '0 at the solution', max(0.0, 1 - cost), cost < 1e-2)]
+    return rows, ('The circuit prepares the solution of A x = b (fidelity ≥ 0.99).' if fid >= 0.99 else
+                  f'Fidelity {fid:.4f} with the solution A⁻¹b. Press Optimize in the Parameters panel to lower the '
+                  'cost; if it stops above 0, try more layers (Change parameters…). Show the solution compares the '
+                  'amplitudes.')
+
+
 # ---- QAOA for MaxCut (v0.7.0) --------------------------------------------------------------
 
 def build_qaoa(p):
@@ -826,6 +884,15 @@ LIBRARY = (
           (Param('problem', 'Problem', 'choice', 'h2', choices=VQE_PROBLEMS),
            Param('layers', 'Entangling layers', 'int', 1, 1, 3)),
           build_vqe, spec_vqe, 'Finds a ground-state energy by minimising ⟨H⟩ over circuit parameters'),
+    Entry('vqls', 'Algorithms', 'Variational quantum linear solver (VQLS)',
+          (Param('problem', 'System', 'choice', 'standard', choices=VQLS_PROBLEMS),
+           Param('layers', 'Entangling layers', 'int', 2, 1, 4),
+           Param('qubits', 'Qubits (your own system)', 'int', 2, 1, 3, help='Only used for "Your own system"'),
+           Param('matrix', 'A (your own system)', 'text', '1 + 0.3 Z0 Z1 + 0.2 X0',
+                 help='A Pauli sum such as 1 + 0.3 Z0 Z1 + 0.2 X0; it must be invertible', check=_check_vqls_matrix),
+           Param('b', 'b (your own system)', 'choice', 'plus', choices=(('|0…0⟩', 'zeros'), ('|+…+⟩', 'plus'),
+                                                                     ('|1…1⟩', 'ones')))),
+          build_vqls, spec_vqls, 'Solves A x = b by preparing |x⟩ ∝ A⁻¹|b⟩ with a variational circuit'),
     Entry('qaoa', 'Algorithms', 'QAOA for MaxCut',
           (Param('graph', 'Graph', 'choice', 'ring4', choices=QAOA_GRAPHS),
            Param('layers', 'Layers (p)', 'int', 1, 1, 3)),

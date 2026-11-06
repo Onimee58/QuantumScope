@@ -603,6 +603,8 @@ class CircuitWorkspace(QWidget):
         self.qec_button.clicked.connect(self.plot_logical_error_rate);self.qec_button.setVisible(False);controls.addWidget(self.qec_button)
         self.graph_button=QPushButton('Show the graph');self.graph_button.setToolTip('The MaxCut graph with the likeliest cut, updated live')
         self.graph_button.clicked.connect(self.show_maxcut_graph);self.graph_button.setVisible(False);controls.addWidget(self.graph_button)
+        self.solution_button=QPushButton('Show the solution');self.solution_button.setToolTip('The circuit\'s state against the classical solution A⁻¹b, updated live')
+        self.solution_button.clicked.connect(self.show_vqls_solution);self.solution_button.setVisible(False);controls.addWidget(self.solution_button)
         controls.addStretch()
         verify_layout.addLayout(controls)
         self.verify_status=QLabel(self.VERIFY_HINT);self.verify_status.setWordWrap(True)
@@ -1792,6 +1794,10 @@ class CircuitWorkspace(QWidget):
         if self._inspector is not None:self._inspector.apply_theme()
     def _show_notes(self,title,notes):
         if notes:QMessageBox.information(self,title,'\n\n'.join(notes))
+    def show_vqls_solution(self):
+        from quantumscope.gui.vqls_view import VqlsSolutionDialog
+        dialog=VqlsSolutionDialog(self);dialog.show()
+        return dialog
     def show_maxcut_graph(self):
         from quantumscope.gui.maxcut_view import MaxCutDialog
         dialog=MaxCutDialog(self);dialog.show()
@@ -1809,12 +1815,13 @@ class CircuitWorkspace(QWidget):
         self._verified_example=None
         self.verify_table.setRowCount(0)
         self.verify_status.setText(self.VERIFY_HINT)
-        self.qec_button.setVisible(False);self.graph_button.setVisible(False)
+        self.qec_button.setVisible(False);self.graph_button.setVisible(False);self.solution_button.setVisible(False)
     def verify_circuit(self):
         self._verified_example=self._verification_key()
         entry=self.model.active_entry
         self.qec_button.setVisible(bool(entry) and entry[0] in ('bit_flip_code','phase_flip_code'))
         self.graph_button.setVisible(bool(entry) and entry[0]=='qaoa')
+        self.solution_button.setVisible(bool(entry) and entry[0]=='vqls')
         rows,note=self.model.verification()
         noisy=self.model.noisy_verification()
         if noisy:   # the PASS/FAIL judges the ideal circuit; report what noise does to it
