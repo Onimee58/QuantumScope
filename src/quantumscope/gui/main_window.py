@@ -163,6 +163,11 @@ class MainWindow(QMainWindow):
             menu.addAction("Gate Circuit Simulator", self._launch_circuits)
             menu.addAction("QASM Converter", self._launch_converter)
             menu.addAction("Error-correction explorer", self._launch_qec_explorer)
+        if category in (None,"qml"):
+            menu.addSection("QUANTUM ML")
+            menu.addAction("Datasets", self._launch_qml_datasets)
+            menu.addAction("Quantum Kernel Classifier", self._launch_qml_kernel)
+            menu.addAction("Variational Classifier", self._launch_qml_variational)
         return menu
 
     def _show_settings(self):
@@ -194,7 +199,8 @@ class MainWindow(QMainWindow):
          "orbital": self._show_hydrogen, "dynamics2d": self.show_dynamics, "dynamics3d": self.show_dynamics_3d,
          "doubleslit": self._launch_double_slit, "superposition": self._launch_superposition,
          "entanglement": self._launch_entanglement, "teleportation": self._launch_teleportation,
-         "qec": self._launch_qec_explorer}[view]()
+         "qec": self._launch_qec_explorer, "qml_datasets": self._launch_qml_datasets,
+         "qml_kernel": self._launch_qml_kernel, "qml_variational": self._launch_qml_variational}[view]()
 
     def apply_preferences(self):
         from quantumscope.gui import preferences as prefs
@@ -290,7 +296,8 @@ class MainWindow(QMainWindow):
         self.workspaces = {}
         for category, title in (("hydrogen", "⚛  Hydrogen"),
                                 ("principles", "◈  Quantum Principles"),
-                                ("circuits", "▦  Quantum Circuits")):
+                                ("circuits", "▦  Quantum Circuits"),
+                                ("qml", "◇  Quantum ML")):
             tabs = QTabWidget()
             tabs.setObjectName("experimentWorkspace")
             tabs.setTabsClosable(True)
@@ -333,6 +340,7 @@ class MainWindow(QMainWindow):
         self._open_experiments = {}
         self._experiment_labels, self._experiment_icons, self._placeholders = {}, {}, {}
         self._launch_double_slit()
+        self._show_placeholder("qml")                    # Quantum ML opens on its Start page
         self._select_category("hydrogen")
         self.statusBar().showMessage("Ready  ·  Choose an experiment or explore hydrogen orbitals")
 
@@ -344,7 +352,8 @@ class MainWindow(QMainWindow):
     # The area each experiment belongs to (the + menu it is listed in).
     EXPERIMENT_AREAS={"dynamics_2d":"hydrogen","dynamics_3d":"hydrogen","qec_explorer":"circuits",
                       "double_slit":"principles","superposition":"principles","entanglement":"principles",
-                      "teleportation":"principles"}
+                      "teleportation":"principles","qml_datasets":"qml","qml_kernel":"qml",
+                      "qml_variational":"qml"}
 
     def _open_experiment(self, key, label, constructor):
         """One persistent experiment tab in its own area. A closed tab was only hidden, so it
@@ -453,6 +462,18 @@ class MainWindow(QMainWindow):
     def _launch_superposition(self):
         from quantumscope.gui.quantum_principles import SuperpositionDialog
         self._open_experiment("superposition", "Quantum Superposition", SuperpositionDialog)
+
+    def _launch_qml_datasets(self):
+        from quantumscope.gui.qml_experiments import DatasetsExperiment
+        self._open_experiment("qml_datasets", "Datasets", DatasetsExperiment)
+
+    def _launch_qml_kernel(self):
+        from quantumscope.gui.qml_experiments import KernelExperiment
+        self._open_experiment("qml_kernel", "Quantum Kernel Classifier", KernelExperiment)
+
+    def _launch_qml_variational(self):
+        from quantumscope.gui.qml_experiments import VariationalExperiment
+        self._open_experiment("qml_variational", "Variational Classifier", VariationalExperiment)
 
     def _launch_qec_explorer(self):
         from quantumscope.gui.qec_chart import ErrorCorrectionExplorer

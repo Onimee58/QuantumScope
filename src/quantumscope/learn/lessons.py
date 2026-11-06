@@ -20,7 +20,7 @@ import os
 import re
 
 AREAS = {'circuits': 'Quantum Circuits', 'principles': 'Quantum Principles', 'hydrogen': 'Hydrogen',
-         'math': 'Mathematics'}
+         'math': 'Mathematics', 'qml': 'Quantum ML'}
 COURSE = 'course'
 MAX_LESSON_BYTES = 2_000_000
 
