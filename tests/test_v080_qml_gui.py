@@ -158,3 +158,25 @@ def test_quantum_ml_lab_steps_tick_as_the_experiments_run(app):
     d.source.setCurrentIndex(d.source.findData('mnist'))
     assert learn._lab_steps()[0]                                                   # prepared with 4 features
     progress.reset()
+
+
+def test_classifiers_choose_the_classes_of_a_many_class_dataset(app):
+    from quantumscope.gui import qml_experiments as Q
+    k = Q.KernelExperiment()
+    k.show()
+    picker = k.data
+    picker.source.setCurrentIndex(picker.source.findData('mnist'))
+    picker.qubits.setValue(4)
+    assert picker.class_row.isVisibleTo(k) and picker.class_a.count() == 10
+    assert (picker.class_a.currentText(), picker.class_b.currentText()) == ('0', '1')     # the suggestion
+    picker.class_a.setCurrentIndex(picker.class_a.findText('3'))
+    picker.class_b.setCurrentIndex(picker.class_b.findText('8'))
+    p = picker.prepared()
+    assert p.classes == ('3', '8') and '3 (+1) vs 8 (−1)' in picker.summary.text()
+    picker.class_b.setCurrentIndex(picker.class_b.findText('3'))
+    assert picker.prepared() is None and 'two different classes' in picker.summary.text()
+    picker.source.setCurrentIndex(picker.source.findData('iris'))
+    assert picker.class_row.isVisibleTo(k) and picker.class_a.count() == 3
+    for key in ('circles', 'breast_cancer', 'store'):                                       # two classes, or prepared
+        picker.source.setCurrentIndex(picker.source.findData(key))
+        assert not picker.class_row.isVisibleTo(k), key

@@ -11,8 +11,9 @@ GUIDE = os.path.join(ROOT, 'docs', 'user-guide.md')
 def test_the_guide_source_and_its_screenshots():
     text = open(GUIDE, encoding='utf-8').read()
     for chapter in ('Installing and updating', 'A tour of the window', 'Hydrogen', 'Quantum Principles',
-                    'Quantum Circuits', 'Learn', 'Settings', 'Troubleshooting', 'Mouse and keyboard reference'):
-        assert re.search(rf'^## \d\. {re.escape(chapter)}$', text, re.M), chapter
+                    'Quantum Circuits', 'Quantum ML', 'Learn', 'Settings', 'Troubleshooting',
+                    'Mouse and keyboard reference'):
+        assert re.search(rf'^## \d+\. {re.escape(chapter)}$', text, re.M), chapter
     images = re.findall(r'!\[[^\]]*\]\(([^)]+)\)', text)
     assert len(images) >= 10
     for image in images:
@@ -33,9 +34,14 @@ def test_the_guide_names_controls_that_exist():
         for name in names:
             if name.endswith('.py'):
                 source += open(os.path.join(folder, name), encoding='utf-8').read()
+    # Algorithm parameters (such as VQLS's "Your own system") are labelled in the physics package.
+    source += open(os.path.join(ROOT, 'src', 'quantumscope', 'physics', 'algorithms.py'), encoding='utf-8').read()
     for control in ('Check for updates…', 'Run shots', 'Verify / truth table', 'Randomize all', 'Landscape…',
                     'Fire particles', 'Measure once', 'Measure many', 'Send one pair', 'Run Bell test',
                     'Teleport many', 'Open in the circuit simulator', 'Export PDF…', 'My course folder…',
-                    'Restore defaults', 'Render state', 'Enable second 3D viewer', 'Simplify circuit…'):
+                    'Restore defaults', 'Render state', 'Enable second 3D viewer', 'Simplify circuit…',
+                    'Import CSV or .npz…', 'Apply suggestions', 'Qubits (= features)', 'Samples per class',
+                    'PCA components', 'Shots per entry', 'Trainable layers', 'Open in circuit simulator',
+                    'Show the solution', 'Your own system'):
         assert control in text, control
         assert control in source, control

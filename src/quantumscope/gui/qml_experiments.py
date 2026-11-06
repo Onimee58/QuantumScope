@@ -308,13 +308,43 @@ class _DataPicker(QGroupBox):
         self.qubits.setValue(2)
         self.qubits.setToolTip('One feature per qubit: the data is reduced to this many features')
         form.addRow('Qubits (= features)', self.qubits)
+        self.class_a, self.class_b = QComboBox(), QComboBox()          # for datasets with more than two classes
+        self.class_row = QWidget()
+        pair = QHBoxLayout(self.class_row)
+        pair.setContentsMargins(0, 0, 0, 0)
+        pair.addWidget(self.class_a)
+        pair.addWidget(QLabel('vs'))
+        pair.addWidget(self.class_b)
+        self.class_label = QLabel('Classes')
+        form.addRow(self.class_label, self.class_row)
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         self.summary.setObjectName('muted')
         form.addRow(self.summary)
+        self.source.currentIndexChanged.connect(self._classes_for_source)
         self.source.currentIndexChanged.connect(self._sync)
         STORE.changed.connect(self._sync)
+        self._classes_for_source()
         self._sync()
+
+    def _classes_for_source(self, *_):
+        """Offer the dataset's classes when it has more than two (MNIST, Iris, …), defaulting to the
+        checker's suggestion; hidden for two-class data and for the Datasets tab's data."""
+        key = self.source.currentData()
+        dataset = None if key in (None, 'store') else D.load(key)
+        many = dataset is not None and len(dataset.classes) > 2
+        self.class_row.setVisible(many)
+        self.class_label.setVisible(many)
+        if not many:
+            return
+        suggested = D.check(dataset, qubits=self.qubits.value(), max_samples=self.max_samples)[2].classes
+        for box, default in ((self.class_a, suggested[0]), (self.class_b, suggested[1])):
+            box.blockSignals(True)
+            box.clear()
+            for k, name in enumerate(dataset.classes):
+                box.addItem(name, k)
+            box.setCurrentIndex(box.findData(default))
+            box.blockSignals(False)
 
     def _sync(self, *_):
         """From the Datasets tab, the qubit count is the prepared data's: shown, not editable here."""
@@ -354,6 +384,13 @@ class _DataPicker(QGroupBox):
             if verdict == 'stop':
                 self.summary.setText('This dataset cannot be used.')
                 return None
+            if self.class_row.isVisible() or len(dataset.classes) > 2:
+                a, b = self.class_a.currentData(), self.class_b.currentData()
+                if a is not None and b is not None:
+                    if a == b:
+                        self.summary.setText('Choose two different classes.')
+                        return None
+                    recipe.classes = (a, b)
             p = D.prepare(dataset, recipe)
         self.summary.setText(f'{p.classes[0]} (+1) vs {p.classes[1]} (−1): {len(p.y_train)} for training, '
                              f'{len(p.y_test)} for testing, {p.X_train.shape[1]} features on {p.X_train.shape[1]} qubits.')

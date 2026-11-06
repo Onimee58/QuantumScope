@@ -7,7 +7,7 @@
 
   An open-source, cross-platform quantum visualization and circuit simulation studio built with Python and PySide6.
 
-  [![Version](https://img.shields.io/badge/version-v0.7.8-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
+  [![Version](https://img.shields.io/badge/version-v0.8.0-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
   [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
   [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-555)](https://github.com/Onimee58/QuantumScope/releases)
@@ -30,6 +30,7 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 | **Hydrogen** | Hydrogen Orbital Explorer; coherent-state Hydrogen Dynamics in 2D and 3D; probability density, amplitude and phase visualization; available image/data exports |
 | **Quantum Principles** | Double-Slit Experiment; interactive quantum superposition and Bloch sphere; quantum entanglement demonstrations |
 | **Quantum Circuits** | Drag-and-drop circuit editor, statevector simulation, simulation stepping, Bloch spheres for every qubit, measurements, example circuits, verification, QASM Converter and PDF export |
+| **Quantum ML** | Datasets (five built-in, offline, plus your own CSV or .npz) with a checker and visible preprocessing; Quantum Kernel Classifier (angle and ZZ feature maps, bandwidth, shot noise, SVM or kernel ridge, decision regions); Variational Classifier (live training, open the trained circuit in the simulator) |
 
 ### Quantum circuit studio
 
@@ -44,6 +45,18 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 - **Quantum Gate Explorer**: double-click a gate in the *left palette* for its definition, circuit symbol, matrix/operation and basic state transformations. Double-clicking a placed parameterized gate opens its parameter editor instead.
 
 **Supported operations:** `H`, `X`, `Y`, `Z`, `S`, `T`, `Sdg`, `Tdg`, `SX`, `RX`, `RY`, `RZ`, `U`/`U3`, `P`, `CX`, `CZ`, `SWAP`, `CCX`, `CSWAP`, and terminal `M`.
+
+## What's new in v0.8.0?
+
+**Quantum machine learning, a linear solver, and an upgraded user guide.**
+
+- **A fourth area, Quantum ML,** with three experiments:
+  - **Datasets:** Iris, Wine, Breast Cancer, Digits and an MNIST subset, all offline, or your own CSV or .npz file. A checker says what stands in the way and suggests each fix, and the preprocessing (classes, PCA, scaling, subsampling, missing values, text columns) stays visible and adjustable.
+  - **Quantum Kernel Classifier:** angle or ZZ feature maps, a bandwidth, kernels estimated from shots, an SVM or kernel ridge, a kernel heatmap, and decision regions for any number of features.
+  - **Variational Classifier:** a trainable circuit, trained live with exact parameter-shift gradients; open the trained circuit in the simulator.
+- **VQLS** in **Algorithms**: solve A x = b with a variational circuit, on preset systems or your own, with a live view of the solution.
+- **Lessons:** five Quantum ML lectures and three labs whose steps tick as you run the experiments, a VQLS lecture and lab, and 14 new glossary terms (105 in total).
+- **The user guide** (21 pages) now has a title page, a table of contents with page numbers, bookmarks, numbered figures with a list of figures, chapters on Quantum ML and VQLS, and 41 references, each checked against its source.
 
 ## What's new in v0.7.8?
 

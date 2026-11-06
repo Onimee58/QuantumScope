@@ -9,7 +9,6 @@ QT_QPA_PLATFORM=offscreen (no display) it shows the Explorer's controls and char
 software 3-D rendering is unreliable there.
 """
 import os
-import re
 import sys
 import time
 
@@ -160,6 +159,38 @@ def screenshots():
     except Exception as exc:                                     # noqa: BLE001
         print('   (state inspector skipped:', exc, ')')
 
+    # Quantum ML (v0.8.0): Datasets, the two classifiers, and the VQLS solution view
+    w._launch_qml_datasets()
+    datasets = w._open_experiments['qml_datasets']
+    datasets.source.setCurrentIndex(datasets.source.findData('mnist'))
+    settle(app, 0.4)
+    save(w, 'qml-datasets.png', scale=0.75)
+    w._launch_qml_kernel()
+    kernel = w._open_experiments['qml_kernel']
+    kernel.data.source.setCurrentIndex(kernel.data.source.findData('mnist'))
+    kernel.data.qubits.setValue(4)
+    kernel.feature_map.setCurrentIndex(kernel.feature_map.findData('angle'))
+    kernel.bandwidth.setValue(0.5)
+    kernel.train()
+    settle(app, 0.4)
+    save(w, 'qml-kernel.png', scale=0.75)
+    w._launch_qml_variational()
+    variational = w._open_experiments['qml_variational']
+    variational.data.source.setCurrentIndex(variational.data.source.findData('breast_cancer'))
+    variational.data.qubits.setValue(4)
+    variational.steps.setValue(60)
+    variational.train()
+    settle(app, 0.4)
+    save(w, 'qml-variational.png', scale=0.75)
+    w._launch_circuits()
+    w.circuit_widget.load_library('vqls', {'problem': 'harder', 'layers': 2})
+    w.circuit_widget.optimize_parameters()
+    solution = w.circuit_widget.show_vqls_solution()
+    solution.resize(760, 460)
+    settle(app, 0.4)
+    save(solution, 'vqls-solution.png', scale=0.9)
+    solution.close()
+
     # Learn, Settings, About
     from PySide6.QtCore import QUrl
     from quantumscope.gui.learn_window import LearnWindow
@@ -192,46 +223,17 @@ def screenshots():
 
 
 def build_pdf():
-    """docs/user-guide.md → PDF, laid out by Qt (no other dependencies)."""
-    from PySide6.QtCore import QMarginsF, QSizeF, QUrl
-    from PySide6.QtGui import QPageLayout, QPageSize, QTextDocument
-    from PySide6.QtWidgets import QApplication
-    from PySide6.QtPrintSupport import QPrinter
-    QApplication.instance() or QApplication([])
-    with open(os.path.join(DOCS, 'user-guide.md'), encoding='utf-8') as handle:
-        markdown = handle.read()
-    document = QTextDocument()
-    font = document.defaultFont()
-    font.setPointSizeF(10.5)
-    document.setDefaultFont(font)
-    document.setBaseUrl(QUrl.fromLocalFile(DOCS + os.sep))
-    document.setMarkdown(markdown)
-    html = document.toHtml()
-    from PySide6.QtGui import QImage
-
-    def fit(match):
-        """Keep an image's own size, shrunk only to fit the page (at most 640 wide, 430 tall)."""
-        src = match.group(1)
-        image = QImage(os.path.join(DOCS, src))
-        if image.isNull():
-            return match.group(0)
-        scale = min(1.0, 640 / image.width(), 430 / image.height())
-        return f'<img src="{src}" width="{int(image.width() * scale)}" height="{int(image.height() * scale)}" />'
-    html = re.sub(r'<img src="([^"]+)"[^>]*/?>', fit, html)
-    document.setHtml(html)
-    printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-    printer.setOutputFileName(PDF)
-    printer.setPageLayout(QPageLayout(QPageSize(QPageSize.PageSizeId.Letter), QPageLayout.Orientation.Portrait,
-                                      QMarginsF(18, 18, 18, 18), QPageLayout.Unit.Millimeter))
-    printer.setDocName('QuantumScope User Guide')
-    # Lay the text out across the whole printable width: in the document's own units (screen
-    # pixels, 96 per inch here), the page is the printable area in inches times 96.
-    area = printer.pageLayout().paintRect(QPageLayout.Unit.Inch)
-    dpi = 96.0
-    document.setPageSize(QSizeF(area.width() * dpi, area.height() * dpi))
-    document.print_(printer)
-    print('PDF:', PDF, os.path.getsize(PDF) // 1024, 'KB')
+    """docs/user-guide.md (+ docs/references.md) → the PDF: see tools/guide_pdf.py."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import guide_pdf
+    report = guide_pdf.build(PDF)
+    print('PDF:', PDF, os.path.getsize(PDF) // 1024, 'KB |', report['pages'], 'pages,', report['headings'], 'headings,',
+          report['figures'], 'figures')
+    print('   figures shrunk to fill gaps:', {k + 1: round(v, 2) for k, v in report['shrunk'].items()} or 'none')
+    print('   headings moved to the next page:', len(report['moved']))
+    print('   figures floated below their text:', {k + 1: v for k, v in report['floated'].items()} or 'none')
+    print('   blank spots left:', [(p, f'{g:.0%}') for p, g in report['gaps']] or 'none')
+    return report
 
 
 if __name__ == '__main__':

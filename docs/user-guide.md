@@ -1,20 +1,8 @@
 # QuantumScope User Guide
 
-Written for **QuantumScope 0.7.8** · Quantum Visualization Studio · MIT licensed
+Written for **QuantumScope 0.8.0** · Quantum Visualization Studio · MIT licensed
 
-QuantumScope is an interactive studio for learning quantum physics: hydrogen orbitals, the experiments behind quantum mechanics, and quantum circuits, with built-in lessons that connect them. This guide shows how to use every part of it. To learn the physics itself, open **📖 Learn** inside the app.
-
-**Contents**
-
-1. Installing and updating
-2. A tour of the window
-3. Hydrogen
-4. Quantum Principles
-5. Quantum Circuits
-6. Learn
-7. Settings
-8. Troubleshooting
-9. Mouse and keyboard reference
+QuantumScope is an interactive studio for learning quantum physics and quantum computing: hydrogen orbitals, the experiments behind quantum mechanics, quantum circuits and quantum machine learning, with built-in lessons that connect them. This guide shows how to use every part of it. To learn the physics itself, open **📖 Learn** inside the app.
 
 ## 1. Installing and updating
 
@@ -43,10 +31,10 @@ Nothing is downloaded or installed without your confirmation, and a download tha
 
 ![The QuantumScope window, here with the Double-Slit experiment](images/main-window.png)
 
-- **Areas:** the three tabs under the title, **Hydrogen**, **Quantum Principles** and **Quantum Circuits**, are the three areas of the app.
+- **Areas:** the four tabs under the title, **Hydrogen**, **Quantum Principles**, **Quantum Circuits** and **Quantum ML**, are the four areas of the app.
 - **Experiment tabs:** each area holds experiment tabs. Open more with **+** on the right of the tab bar, or with **+ New Experiment** at the top. Every tab can be closed with its **×**. A closed tab is only hidden, so opening it again brings it back exactly as you left it. An area with no open tabs shows a **Start** page with its experiments as buttons.
-- **📖 Learn** opens the lessons for the current area (chapter 6).
-- **⚙** opens **Settings** (chapter 7). **ⓘ** shows **About QuantumScope**, including **Check for updates…** and **User guide**, which opens this document.
+- **📖 Learn** opens the lessons for the current area (chapter 7).
+- **⚙** opens **Settings** (chapter 8). **ⓘ** shows **About QuantumScope**, including **Check for updates…** and **User guide**, which opens this document.
 
 When QuantumScope starts, its logo appears for a moment while the 3-D libraries load.
 
@@ -169,9 +157,9 @@ The **Gate Circuit Simulator** builds and simulates circuits of up to 10 qubits,
 ### Examples, algorithms and checking
 
 - **Examples…** loads ready-made circuits: the Bell pair, GHZ, adders and comparators, teleportation, superdense coding, and the bit-flip, phase-flip and Shor codes.
-- **Algorithms…** loads Deutsch, Deutsch–Jozsa, Bernstein–Vazirani, Grover search, the quantum Fourier transform, phase estimation, VQE and QAOA. A bar above the circuit names the example; **Change parameters…** adjusts it, and **Learn more** opens its lesson.
+- **Algorithms…** loads Deutsch, Deutsch–Jozsa, Bernstein–Vazirani, Grover search, the quantum Fourier transform, phase estimation, VQE, VQLS and QAOA. A bar above the circuit names the example; **Change parameters…** adjusts it, and **Learn more** opens its lesson.
 - **Verify / truth table** checks the circuit against its specification: for an example, every required input; for your own circuit, a truth table of basis-state inputs.
-- **Plot logical error rate** appears for error-correction examples, and **Show the graph** for QAOA.
+- **Plot logical error rate** appears for error-correction examples, **Show the graph** for QAOA, and **Show the solution** for VQLS.
 - **Noise: off** opens the noise settings: presets, error rates, idle noise and readout errors. With noise on, the simulation uses density matrices.
 
 ### Parameters and optimization
@@ -187,6 +175,12 @@ Press **Parameters** to show the panel.
 - **Optimize** lowers ⟨O⟩ with the chosen method (**BFGS**, **Gradient descent**, **COBYLA** or **Nelder–Mead**). **Best of N random starts** also tries random starting points and keeps the best.
 - **Landscape…** draws ⟨O⟩ over two parameters, with the optimizer's path.
 
+### Solving linear systems (VQLS)
+
+![The VQLS solution view: the circuit's amplitudes against the classical solution](images/vqls-solution.png)
+
+**Algorithms… → Variational quantum linear solver** prepares a state proportional to the solution of A x = b. Choose the standard 3-qubit system, a worse-conditioned one, a 1-qubit one, or **Your own system**: A as a sum of Pauli terms on 1 to 3 qubits (it must be invertible) and b as |0…0⟩, |+…+⟩ or |1…1⟩. The observable is the VQLS cost, which is 0 exactly at the solution. Press **Optimize**, then **Verify / truth table**: the check passes at a fidelity of at least 0.99 with the classical solution. **Show the solution** compares the amplitudes as you go.
+
 ### Files and tools
 
 - **File:** **Open .qscope…**, **Open recent**, **Save .qscope…**, **Import OpenQASM 2…**, **Export OpenQASM 2…** and **Export PDF…** (the circuit diagram, optionally with a probability report).
@@ -195,24 +189,59 @@ Press **Parameters** to show the panel.
 - **The Error-correction explorer** (open it with **+**) compares how the error-correcting codes perform as noise grows.
 - **Autosave:** QuantumScope saves your circuit as you work and offers to recover it after a crash (see **⚙ → Files**).
 
-## 6. Learn
+## 6. Quantum ML
+
+The **Quantum ML** area turns data into quantum states and learns from them. Its three experiments open from **+**: **Datasets**, **Quantum Kernel Classifier** and **Variational Classifier**. Everything runs offline; the five built-in datasets are part of the app.
+
+### Datasets
+
+![Datasets: MNIST checked, prepared to four features, with example images of the two classes](images/qml-datasets.png)
+
+- **Dataset** picks a built-in dataset (Iris, Wine, Breast Cancer Wisconsin, Digits 8×8 and a 2,000-image MNIST subset) or a synthetic one (moons, circles, XOR, blobs). **Import CSV or .npz…** reads your own data: a CSV with a label column (named label, target, class … or the last column), or a NumPy file with arrays named X and y.
+- **Qubits (= features)** is how many features the prepared data will have: each classifier encodes one feature per qubit.
+- **The checker** gives a verdict (ready, usable after preprocessing, or cannot be used) and lists what stands in the way, each with a suggested fix: too many features, too many samples, more than two classes, text columns, missing values, or features on different scales.
+- **Preprocessing** shows every step and lets you change it: **Classes**, **Missing values**, **Text columns**, **Samples per class**, **PCA components**, scaling to [0, π] and the **Test share**. **Apply suggestions** restores the checker's recipe, and **Prepare** prepares the data and shares it with both classifiers.
+- The data is split into training and test sets first, and every learned step (means, PCA, scaling) is fitted on the training part only, so the test accuracy is honest.
+- The plot shows the prepared training data; for Digits and MNIST, example images of the two chosen classes appear below it.
+
+### Quantum Kernel Classifier
+
+![Quantum Kernel Classifier: decision regions and the training kernel](images/qml-kernel.png)
+
+- **Data:** choose **From the Datasets tab**, or any dataset directly; it is then prepared with the checker's suggested recipe. For a dataset with more than two classes, **Classes** chooses the pair to separate.
+- **Feature map:** **Angle encoding** (RY on each qubit) or the entangling **ZZ feature map**, with its **Repetitions**. **Bandwidth** scales the data before encoding: smaller values make the kernel smoother.
+- **Shots per entry** estimates each kernel value from that many shots, as a quantum computer would; **exact** computes it exactly.
+- **Classifier:** a **Support vector machine** or **Kernel ridge**, with its strength **C or λ**. **Train** builds the kernel and the classifier.
+- **The decision regions** show the predicted class behind the points, deeper where the classifier is more confident, with the boundary as a white line. Training points are dots, test points triangles, and mistakes are marked ✕. With more than two features, the regions are drawn in the plane of the two leading principal components, a slice through the data.
+- **The kernel heatmap** shows the training kernel sorted by class. If the kernel is close to 0 for different points (kernel concentration), the result says so and suggests a smaller bandwidth.
+
+### Variational Classifier
+
+![Variational Classifier: a trained circuit's decision regions and its training curve](images/qml-variational.png)
+
+- The circuit is the feature map followed by **Trainable layers** of RY gates and CNOTs; its output is ⟨Z₀⟩ plus a bias.
+- **Optimizer:** **BFGS**, with exact parameter-shift gradients, or **Adam**. Set the **Steps** and the **Starting point (seed)**.
+- **Train** shows the loss and the training accuracy step by step, and the decision regions as they change; **Stop** ends training early.
+- **Open in circuit simulator** loads the trained circuit for one test point into Quantum Circuits, with the observable Z0.
+
+## 7. Learn
 
 **📖 Learn** opens QuantumScope's course: lectures and labs for every area, plus **Mathematics**.
 
 ![Learn: a lecture with a glossary popup](images/learn.png)
 
-- **Contents:** lessons are grouped by area: **Quantum Circuits**, **Quantum Principles**, **Hydrogen** and **Mathematics**. **Search lessons…** finds any lesson by its words.
+- **Contents:** lessons are grouped by area: **Quantum Circuits**, **Quantum Principles**, **Hydrogen**, **Mathematics** and **Quantum ML**. **Search lessons…** finds any lesson by its words.
 - **Lectures** explain a topic. **Math you need** at the top links to the Mathematics lessons it builds on.
 - **Try it** links open the matching experiment or circuit in the main window.
 - **Quizzes** check your understanding: click an answer to see whether it is right, and why.
-- **Labs** give step-by-step tasks in the circuit simulator and check each step as you complete it.
+- **Labs** give step-by-step tasks in the circuit simulator or the Quantum ML experiments, and check each step as you complete it.
 - **The glossary:** underlined terms, such as *Hermitian*, show a short definition when clicked, with related terms and **Learn more**. **Glossary** in the contents lists all of them.
 - **Reading:** **◀ Back** and **Forward ▶** move through the lessons you have visited, and **A−** and **A+** change the text size.
 - **Export PDF…** saves the lesson as a handout, ending with the terms it uses.
 
 **For teachers: My course.** **My course folder…** adds your own lessons and labs, written in the same simple format. They appear under **My course**, with glossary links and **Math you need** like the built-in ones. The file LEARN.md in the project describes the format.
 
-## 7. Settings
+## 8. Settings
 
 **⚙** opens **Settings**. Changes apply at once, except where noted; **Restart now** restarts when needed, and **Restore defaults** resets everything (your recent files are kept).
 
@@ -232,7 +261,7 @@ Press **Parameters** to show the panel.
   - **Recent circuits**, with **Clear recent list**.
 - **Updates:** the current version and **Check for updates…**.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 **The 3-D view is blank, black or very slow.** Open **⚙ → Graphics**. Try **3D volume rendering: CPU**, which works on any computer. On a laptop with two graphics chips, try the other **Graphics device**, then restart. **Refresh** shows which renderer is actually in use; include it if you report a problem.
 
@@ -246,7 +275,7 @@ Press **Parameters** to show the panel.
 
 **Reporting a problem.** Open an issue on GitHub (github.com/Onimee58/QuantumScope). Describe what you did, what happened, your system, and the version shown in **ⓘ**.
 
-## 9. Mouse and keyboard reference
+## 10. Mouse and keyboard reference
 
 | Where | Action | Result |
 |---|---|---|

@@ -1,3 +1,30 @@
+## v0.8.0 — Quantum machine learning, VQLS, and the guide upgraded
+
+### Quantum ML (a fourth area)
+- **Datasets:** five built-in datasets, shipped with the app and used offline: Iris, Wine, Breast Cancer Wisconsin (Diagnostic), Digits (8×8) and a 2,000-image MNIST subset (the first 200 of each digit from the MNIST test set, verified against the official checksums). Synthetic moons, circles, XOR and blobs.
+  - **Your own data:** **Import CSV or .npz…** (header, label column, text columns, missing values and separators detected).
+  - **The checker:** a verdict (ready, usable after preprocessing, cannot be used) and findings with suggested fixes.
+  - **Preprocessing,** step by step and adjustable: classes, missing values, text columns, constant features, balanced subsampling, PCA and scaling to [0, π]. The split comes first, and every learned step is fitted on the training data only.
+  - **Licences:** `DATASETS.md` lists each dataset's licence (CC BY 4.0; CC BY-SA 3.0 for the MNIST subset) and citation.
+- **Quantum Kernel Classifier:** angle encoding or the ZZ feature map (with repetitions), a bandwidth, exact kernels or kernels estimated from shots, an SVM (SMO, checked against SciPy) or kernel ridge, a kernel heatmap, and decision regions for any number of features (in the plane of the two leading principal components), with a boundary line and confidence shading. A hint appears when the kernel concentrates.
+- **Variational Classifier:** feature map plus trainable RY/CNOT layers, trained with BFGS (exact parameter-shift gradients) or Adam, with a live training curve, **Stop**, and **Open in circuit simulator**.
+- **Classes:** for datasets with more than two classes, the classifiers choose the pair to separate. With data from the Datasets tab, **Qubits (= features)** follows what was prepared.
+
+### VQLS
+- **Algorithms → Variational quantum linear solver:** the standard 3-qubit system, a worse-conditioned one, a 1-qubit one, or your own A (a Pauli sum on 1–3 qubits, checked for invertibility) with b = |0…0⟩, |+…+⟩ or |1…1⟩. The cost A†(I − |b⟩⟨b|)A is the observable, so **Optimize**, **Landscape** and **Best of N** apply. The check passes at a fidelity of at least 0.99 with A⁻¹b, and **Show the solution** compares the amplitudes live.
+
+### Lessons
+- **Learn → Quantum ML:** five lectures (from data to quantum states; kernel classifiers and the SVM; variational classifiers; generalization, bandwidth and kernel concentration; preparing real data) and three labs. New lab checks (`qml …`) tick steps as the experiments run.
+- **A VQLS lecture and lab** in Quantum Circuits, and 14 glossary terms (105 in total).
+
+### The user guide
+- **21 pages:** a title page, a table of contents with page numbers, PDF bookmarks, clickable entries, numbered figures with a list of figures, page numbers, and chapters on Quantum ML and VQLS.
+- **References:** 41 references, each checked against its publisher, the arXiv or a library record (`docs/references.md`).
+- **The builder** (`tools/guide_pdf.py`) repairs blank spots by shrinking figures slightly or letting them float below their text within their section, and checks every page.
+
+### Quality
+- Automated tests: 1545 passing, plus 137 opt-in GUI tests. A golden replay of 19 circuit-editor steps is unchanged.
+
 ## v0.7.8 — User guide
 
 ### The guide
