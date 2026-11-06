@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 20
 objectives: Combine the bit-flip and phase-flip codes into Shor's 9-qubit code | Explain why correcting X and Z corrects every single-qubit error | Describe codes by their stabilizers
+math: 07-tensor-products, 10-pauli-algebra
 ---
 # The Shor code and stabilizers
 

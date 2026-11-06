@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 12
 objectives: Measure a qubit in the middle of a circuit and store the result | Describe the branches a measurement creates | Explain why the averaged state is a density matrix
+math: 06-probability, 08-density-matrices-and-projectors
 ---
 # Mid-circuit measurement and classical bits
 

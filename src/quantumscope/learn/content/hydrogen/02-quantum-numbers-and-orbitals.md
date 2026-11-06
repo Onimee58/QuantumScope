@@ -4,6 +4,8 @@ area: hydrogen
 kind: lecture
 order: 2
 objectives: List the allowed values of n, ℓ and m | Count states per energy level | Predict the number of radial and angular nodes
+noglossary: Orbital
+math: 05-eigenvalues
 ---
 # Quantum numbers and orbitals
 
@@ -21,7 +23,7 @@ For each $\ell$ there are $2\ell + 1$ values of $m$, so level $n$ holds
 
 $$\sum_{\ell=0}^{n-1}(2\ell+1) = n^2$$
 
-orbitals, all with the same energy in this model (spin doubles this to $2n^2$). For $n = 2$: one 2s and three 2p orbitals.
+[[orbitals|Orbital]], all with the same energy in this model (spin doubles this to $2n^2$). For $n = 2$: one 2s and three 2p orbitals.
 
 ## Nodes
 

@@ -4,6 +4,7 @@ area: principles
 kind: lecture
 order: 7
 objectives: Explain what a measurement does to a quantum state | State and prove the no-cloning theorem | Connect no-cloning to teleportation and secure communication
+math: 02-vectors-and-dirac-notation, 04-hermitian-and-unitary
 ---
 # Measurement, information and no-cloning
 

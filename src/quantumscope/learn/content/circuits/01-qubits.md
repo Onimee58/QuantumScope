@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 1
 objectives: Write a single-qubit state as a vector | Explain what the amplitudes mean when you measure | Build the state of several qubits with the tensor product | Read basis labels in either bit order
+math: 01-complex-numbers, 02-vectors-and-dirac-notation
 ---
 # Qubits, state vectors and bit order
 

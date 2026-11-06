@@ -4,6 +4,7 @@ area: hydrogen
 kind: lecture
 order: 5
 objectives: Explain why stationary states have time-independent densities | Compute the beat period of a two-state superposition | Interpret the Hydrogen Dynamics views correctly
+math: 01-complex-numbers, 09-matrix-exponentials
 ---
 # Superposition and quantum beats
 

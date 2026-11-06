@@ -33,7 +33,7 @@ def test_palette_has_a_noise_section(bell):
     noise = [bell.noise_palette.item(i).text() for i in range(bell.noise_palette.count())]
     assert 'H' in gates and 'M' in gates and 'Depolarize' in noise and 'Depolarize' not in gates
     cell = bell.palette.gridSize()
-    assert bell.palette.width() < 4 * cell.width() and bell.palette.height() < 8 * cell.height()   # 3 × 7 grid
+    assert bell.palette.width() < 7 * cell.width() and bell.palette.height() < 5 * cell.height()   # 6 × 4 grid (v0.7.1)
     assert bell.noise_button.text() == 'Noise: off'
 
 
@@ -81,7 +81,7 @@ def test_bloch_vectors_shrink_and_shots_use_noisy_probabilities(bell):
     assert '(noisy)' in bell.bars.title
     bell.model.set_noise_model(N.NoiseModel(True, single=0.2, two=0.2))
     bell._changed()
-    lengths = [np.linalg.norm(v) for v in bell.inline_blochs.vecs]
+    lengths = [np.linalg.norm(v) for v in bell.blochs.vecs]        # the Bloch panel under the chart
     assert all(length < 0.5 for length in lengths)              # Bell qubits are mixed
 
 

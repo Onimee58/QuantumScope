@@ -1,15 +1,18 @@
 """The Learn window: lectures and labs for each area, plus a teacher's own course folder."""
 import os
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+from PySide6.QtCore import QPoint, Qt, QUrl
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
                                QSplitter, QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from quantumscope.gui import preferences as prefs
 from quantumscope.learn import actions, labs
-from quantumscope.learn.lessons import AREAS, COURSE, builtin_lessons, content_folder, course_lessons, search
+from quantumscope.learn import glossary as glossary_module
+from quantumscope.learn.lessons import AREAS, COURSE, Lesson, builtin_lessons, content_folder, course_lessons, search
 from quantumscope.learn.render import steps_of, to_html
 
+GLOSSARY_KEY = 'glossary'
 KEY_ROLE = Qt.ItemDataRole.UserRole
 
 
@@ -128,10 +131,30 @@ class LearnWindow(QWidget):
         editor = workspace if workspace is not None else getattr(host, 'circuit_widget', None)
         if editor is not None and hasattr(editor, 'state_changed'):
             editor.state_changed.connect(self._circuit_changed)
+        from quantumscope.ml import progress            # Quantum ML labs tick as experiments run
+        progress.listen(self._circuit_changed)
 
     # ---- contents -------------------------------------------------------------------------
+    @property
+    def glossary(self):
+        if not hasattr(self, '_glossary'):
+            try:
+                self._glossary = glossary_module.builtin()
+            except (OSError, ValueError):                 # a missing or broken glossary never breaks Learn
+                self._glossary = None
+        return self._glossary
+
+    def glossary_page(self):
+        """The Glossary page, generated from the glossary (links only where it says [[Term]])."""
+        if self.glossary is None:
+            return None
+        names = tuple(self.glossary.terms)
+        return Lesson(GLOSSARY_KEY, 'Glossary', 'glossary', 'lecture', 0, self.glossary.page_markdown(),
+                      content_folder(), (), names)
+
     def lessons(self):
-        return builtin_lessons() + course_lessons(prefs.get('learn/course_folder'))
+        page = self.glossary_page()
+        return builtin_lessons() + course_lessons(prefs.get('learn/course_folder')) + ([page] if page else [])
 
     def refresh_contents(self):
         self.tree.clear()
@@ -160,6 +183,11 @@ class LearnWindow(QWidget):
             top.setExpanded(True)
             for i in range(top.childCount()):
                 top.child(i).setExpanded(True)
+        if self.glossary is not None:                   # every term, alphabetical and searchable
+            item = QTreeWidgetItem([f'Glossary  ({len(self.glossary.terms)} terms)'])
+            item.setData(0, KEY_ROLE, GLOSSARY_KEY)
+            self.tree.addTopLevelItem(item)
+            self._items[GLOSSARY_KEY] = item
 
     def show_area(self, area):
         """Open the first lesson of an area (used by each tab's Learn button)."""
@@ -197,6 +225,16 @@ class LearnWindow(QWidget):
             self.status.setText(f'My course: {len(course_lessons(folder))} lesson(s) from {folder}')
 
     # ---- reading ------------------------------------------------------------------------------
+    def show_term(self, name, position=None):
+        """The small popup for a glossary term (definition, related terms, Learn more)."""
+        term = self.glossary.resolve(name) if self.glossary is not None else None
+        if term is None:
+            return None
+        if getattr(self, '_term_popup', None) is None:
+            self._term_popup = TermPopup(self)
+        self._term_popup.show_term(term, position or QCursor.pos())
+        return self._term_popup
+
     def open_lesson(self, key, record=True):
         lesson = next((l for l in self.lessons() if l.key == key), None)
         if lesson is None:
@@ -229,7 +267,7 @@ class LearnWindow(QWidget):
         steps = self._lab_steps()
         html = to_html(self.lesson, self._theme(), os.path.join(content_folder(), 'eq'),
                        self.revealed.get(self.lesson.key, set()), steps, self.font_size,
-                       self.answers.get(self.lesson.key, {}))
+                       self.answers.get(self.lesson.key, {}), glossary=self.glossary)
         self.reader.document().setBaseUrl(QUrl.fromLocalFile(self.lesson.folder + os.sep))
         self.reader.setHtml(html)
         self.reader.verticalScrollBar().setValue(0 if scroll_top else position)
@@ -266,6 +304,9 @@ class LearnWindow(QWidget):
 
     def _link(self, url):
         text = url.toString()
+        if text.startswith('glossary:'):
+            self.show_term(QUrl.fromPercentEncoding(text[len('glossary:'):].encode()))
+            return
         if text.startswith('qsquiz:'):
             parts = text.split(':')
             if len(parts) == 3:                        # an option was chosen: check it at once
@@ -294,6 +335,7 @@ class LearnWindow(QWidget):
 
     # ---- export -----------------------------------------------------------------------------------
     def export_pdf(self, path=None):
+        """Save the lesson as a PDF handout (sizes in points, so it prints at its intended size)."""
         if self.lesson is None:
             return None
         if not path:
@@ -309,10 +351,14 @@ class LearnWindow(QWidget):
         printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
         printer.setOutputFileName(path)
         document = QTextDocument()
+        font = document.defaultFont()
+        font.setPointSizeF(11)                         # headings scale from this: keep them above the text
+        document.setDefaultFont(font)
         document.setBaseUrl(QUrl.fromLocalFile(self.lesson.folder + os.sep))
         # Handouts print on white paper: always use the light theme's colors.
-        document.setHtml(to_html(self.lesson, 'light', os.path.join(content_folder(), 'eq'),
-                                 self.revealed.get(self.lesson.key, set()), self._lab_steps(), 12))
+        markup = to_html(self.lesson, 'light', os.path.join(content_folder(), 'eq'),
+                         self.revealed.get(self.lesson.key, set()), self._lab_steps(), 11, glossary=self.glossary)
+        document.setHtml(print_html(handout_terms(markup, self.glossary)))
         try:
             document.print_(printer)
         except Exception as exc:                       # noqa: BLE001 - report any printing problem
@@ -320,3 +366,88 @@ class LearnWindow(QWidget):
             return None
         self.status.setText(f'Saved {path}')
         return path
+
+
+def print_html(markup, font_points=11):
+    """The lesson HTML with physical sizes for printing.
+
+    On screen the HTML sizes text and boxes in pixels; a high-resolution printer has 1200 of
+    them per inch, so pixel sizes printed microscopically (headings and equations were fine).
+    The body text becomes font_points, and every other CSS pixel size the same length in
+    points (1 px = 0.75 pt). Image width/height attributes are not CSS and are left alone."""
+    import re
+    markup = re.sub(r'(<body[^>]*font-size:)\s*[\d.]+px', lambda m: f'{m.group(1)}{font_points}pt', markup, count=1)
+    return re.sub(r'(?<=[:\s])(\d+(?:\.\d+)?)px', lambda m: f'{float(m.group(1)) * 0.75:g}pt', markup)
+
+
+def handout_terms(markup, glossary):
+    """For printing: glossary links become plain text, and a "Terms used" box lists their definitions."""
+    import html as html_module
+    import re
+    names = []
+    for name in re.findall(r'<a href="glossary:([^"]+)"', markup):
+        name = html_module.unescape(name)
+        if name not in names:
+            names.append(name)
+    markup = re.sub(r'<a href="glossary:[^"]*"[^>]*>(.*?)</a>', r'\1', markup)
+    if not names or glossary is None:
+        return markup
+    rows = ''.join(f'<p><b>{html_module.escape(n)}</b> — {html_module.escape(glossary.terms[n].definition)}</p>'
+                   for n in names if n in glossary.terms)
+    box = f'<div style="border-top:1px solid #9bb3c8; margin-top:12px"><h3>Terms used</h3>{rows}</div>'
+    return markup.replace('</body>', box + '</body>') if '</body>' in markup else markup + box
+
+
+class TermPopup(QFrame):
+    """A small popup next to a clicked term."""
+
+    def __init__(self, window):
+        super().__init__(window, Qt.WindowType.Popup)
+        self.window_ = window
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        self.text = QTextBrowser()
+        self.text.setOpenLinks(False)
+        self.text.setFrameShape(QFrame.Shape.NoFrame)
+        self.text.anchorClicked.connect(self._follow)
+        layout.addWidget(self.text)
+        self.setFixedWidth(380)
+        self.term = None
+
+    def show_term(self, term, position):
+        self.term = term
+        related = ', '.join(f'<a href="glossary:{t}">{t}</a>' for t in term.see)
+        links = []
+        if term.lesson:
+            links.append(f'<a href="qs:lesson/{term.lesson}">▶ Learn more</a>')
+        links.append('<a href="qs:glossary">All terms</a>')
+        self.text.setHtml(f'<p style="margin:0"><b style="font-size:15px">{term.name}</b></p>'
+                          f'<p>{term.definition}</p>'
+                          + (f'<p><i>Related:</i> {related}</p>' if related else '')
+                          + f'<p>{"  ·  ".join(links)}</p>')
+        self.text.document().setTextWidth(356)
+        height = int(self.text.document().size().height()) + 24
+        self.text.setFixedHeight(min(height, 320))
+        self.adjustSize()
+        screen = QApplication.screenAt(position) or QApplication.primaryScreen()
+        area = screen.availableGeometry()
+        x = min(position.x() + 8, area.right() - self.width())
+        y = position.y() + 16
+        if y + self.height() > area.bottom():
+            y = position.y() - self.height() - 8
+        self.move(x, y)
+        self.show()
+
+    def _follow(self, url):
+        text = url.toString()
+        if text.startswith('glossary:'):
+            term = self.window_.glossary.resolve(QUrl.fromPercentEncoding(text[9:].encode()))
+            if term is not None:
+                self.show_term(term, self.pos() - QPoint(8, 16))
+            return
+        self.hide()
+        if text == 'qs:glossary':
+            self.window_.open_lesson(GLOSSARY_KEY)
+        elif text.startswith('qs:lesson/'):
+            self.window_.open_lesson(text[len('qs:lesson/'):])

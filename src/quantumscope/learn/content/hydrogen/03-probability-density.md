@@ -4,6 +4,7 @@ area: hydrogen
 kind: lecture
 order: 3
 objectives: Distinguish |ψ|² from the radial probability distribution | Find the most probable radius and the mean radius | Interpret clouds and enclosure surfaces
+math: 01-complex-numbers, 06-probability
 ---
 # Probability density and radial probability
 

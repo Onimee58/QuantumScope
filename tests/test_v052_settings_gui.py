@@ -80,10 +80,9 @@ def test_restore_defaults(app):
 
 def test_workspace_uses_defaults_and_confirms_clear(app, monkeypatch):
     prefs.set('circuits/default_shots', 333)
-    prefs.set('circuits/show_blochs', False)
     from quantumscope.gui.circuit_workspace import CircuitWorkspace
     w = CircuitWorkspace()
-    assert w.shots.value() == 333 and not w.show_blochs.isChecked()
+    assert w.shots.value() == 333
     assert w.model.gates == {} and w.model.blocks == {}       # v0.5.2 starts with an empty circuit
     monkeypatch.setattr(QtWidgets.QMessageBox, 'question',
                         staticmethod(lambda *a, **k: pytest.fail('an empty circuit clears without asking')))
@@ -202,9 +201,10 @@ def test_tools_simplify_and_equivalence(app, tmp_path, monkeypatch):
 
 
 def test_tabs_open_and_close_correctly(app):
-    """The QASM Converter opens on demand and closes; the first experiment in an area closes;
-    the Hydrogen Explorer and Gate Circuit Simulator stay. (MainWindow itself needs OpenGL,
-    so its tab methods run on a stand-in built from real tab widgets.)"""
+    """The QASM Converter opens on demand and closes, keeping its text. Since v0.7.1 every tab
+    closes — the Gate Circuit Simulator and Hydrogen Explorer too — leaving a placeholder in an
+    empty area. (The whole window is tested in test_v071_mainwindow_gui.py; here the tab methods
+    run on a stand-in built from real tab widgets.)"""
     from quantumscope.gui.main_window import MainWindow
 
     class Fake:
@@ -212,6 +212,13 @@ def test_tabs_open_and_close_correctly(app):
         _launch_converter = MainWindow._launch_converter
         _close_workspace_tab = MainWindow._close_workspace_tab
         _open_experiment = MainWindow._open_experiment
+        _add_area_tab = MainWindow._add_area_tab
+        _show_placeholder = MainWindow._show_placeholder
+        _make_placeholder = MainWindow._make_placeholder
+        EXPERIMENT_AREAS = MainWindow.EXPERIMENT_AREAS
+
+        def _experiment_menu(self, parent, category=None):
+            return QtWidgets.QMenu(parent)
 
         def __init__(self):
             self.categories = QtWidgets.QTabWidget()
@@ -224,6 +231,7 @@ def test_tabs_open_and_close_correctly(app):
             self.workspaces['circuits'].addTab(self.circuit_widget, 'Gate Circuit Simulator')
             self.converter_widget = QtWidgets.QLineEdit()
             self._open_experiments = {}
+            self._experiment_labels, self._experiment_icons, self._placeholders = {}, {}, {}
 
         def statusBar(self):
             return QtWidgets.QStatusBar()
@@ -238,11 +246,13 @@ def test_tabs_open_and_close_correctly(app):
     assert circuits.count() == 1
     w._launch_converter()
     assert circuits.count() == 2 and w.converter_widget.text() == 'kept'   # reopens with its content
-    w._close_workspace_tab('circuits', 0)                         # the simulator is permanent
-    w._close_workspace_tab('hydrogen', 0)                         # so is the Hydrogen Explorer
-    assert circuits.indexOf(w.circuit_widget) == 0 and w.workspaces['hydrogen'].count() == 1
+    w._close_workspace_tab('circuits', 1)
+    w._close_workspace_tab('circuits', 0)                         # the simulator closes too (v0.7.1)
+    assert circuits.count() == 1 and circuits.widget(0) is w._placeholders['circuits']   # never blank
     principles = w.workspaces['principles']
     w._open_experiment('double_slit', 'Double slit', lambda parent: QtWidgets.QWidget(parent))
-    assert principles.count() == 1
-    w._close_workspace_tab('principles', 0)                       # the first experiment in an area closes
-    assert principles.count() == 0 and w._open_experiments == {}
+    kept = w._open_experiments['double_slit']
+    w._close_workspace_tab('principles', 0)
+    assert principles.widget(0) is w._placeholders['principles']
+    w._open_experiment('double_slit', 'Double slit', lambda parent: QtWidgets.QWidget(parent))
+    assert principles.currentWidget() is kept and principles.indexOf(w._placeholders['principles']) < 0

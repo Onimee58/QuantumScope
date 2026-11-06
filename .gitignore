@@ -23,3 +23,5 @@ dist/
 # Operating system files
 .DS_Store
 Thumbs.db
+docs/.guide-settings.ini
+docs/.guide-data/

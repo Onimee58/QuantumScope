@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 4
 objectives: Build the four Bell states and a GHZ state | Decide whether a two-qubit state is entangled | Use the reduced state and its entropy as an entanglement measure
+math: 07-tensor-products
 ---
 # Entanglement in circuits
 

@@ -1,3 +1,200 @@
+## v0.8.0 — Quantum machine learning, VQLS, and the guide upgraded
+
+### Quantum ML (a fourth area)
+- **Datasets:** five built-in datasets, shipped with the app and used offline: Iris, Wine, Breast Cancer Wisconsin (Diagnostic), Digits (8×8) and a 2,000-image MNIST subset (the first 200 of each digit from the MNIST test set, verified against the official checksums). Synthetic moons, circles, XOR and blobs.
+  - **Your own data:** **Import CSV or .npz…** (header, label column, text columns, missing values and separators detected).
+  - **The checker:** a verdict (ready, usable after preprocessing, cannot be used) and findings with suggested fixes.
+  - **Preprocessing,** step by step and adjustable: classes, missing values, text columns, constant features, balanced subsampling, PCA and scaling to [0, π]. The split comes first, and every learned step is fitted on the training data only.
+  - **Licences:** `DATASETS.md` lists each dataset's licence (CC BY 4.0; CC BY-SA 3.0 for the MNIST subset) and citation.
+- **Quantum Kernel Classifier:** angle encoding or the ZZ feature map (with repetitions), a bandwidth, exact kernels or kernels estimated from shots, an SVM (SMO, checked against SciPy) or kernel ridge, a kernel heatmap, and decision regions for any number of features (in the plane of the two leading principal components), with a boundary line and confidence shading. A hint appears when the kernel concentrates.
+- **Variational Classifier:** feature map plus trainable RY/CNOT layers, trained with BFGS (exact parameter-shift gradients) or Adam, with a live training curve, **Stop**, and **Open in circuit simulator**.
+- **Classes:** for datasets with more than two classes, the classifiers choose the pair to separate. With data from the Datasets tab, **Qubits (= features)** follows what was prepared.
+
+### VQLS
+- **Algorithms → Variational quantum linear solver:** the standard 3-qubit system, a worse-conditioned one, a 1-qubit one, or your own A (a Pauli sum on 1–3 qubits, checked for invertibility) with b = |0…0⟩, |+…+⟩ or |1…1⟩. The cost A†(I − |b⟩⟨b|)A is the observable, so **Optimize**, **Landscape** and **Best of N** apply. The check passes at a fidelity of at least 0.99 with A⁻¹b, and **Show the solution** compares the amplitudes live.
+
+### Lessons
+- **Learn → Quantum ML:** five lectures (from data to quantum states; kernel classifiers and the SVM; variational classifiers; generalization, bandwidth and kernel concentration; preparing real data) and three labs. New lab checks (`qml …`) tick steps as the experiments run.
+- **A VQLS lecture and lab** in Quantum Circuits, and 14 glossary terms (105 in total).
+
+### The user guide
+- **21 pages:** a title page, a table of contents with page numbers, PDF bookmarks, clickable entries, numbered figures with a list of figures, page numbers, and chapters on Quantum ML and VQLS.
+- **References:** 41 references, each checked against its publisher, the arXiv or a library record (`docs/references.md`).
+- **The builder** (`tools/guide_pdf.py`) repairs blank spots by shrinking figures slightly or letting them float below their text within their section, and checks every page.
+
+### Quality
+- Automated tests: 1545 passing, plus 137 opt-in GUI tests. A golden replay of 19 circuit-editor steps is unchanged.
+
+## v0.7.8 — User guide
+
+### The guide
+- **`QuantumScope-User-Guide.pdf`:** 13 pages with 11 screenshots, written for anyone who uses QuantumScope. It covers installing and updating, a tour of the window, Hydrogen, Quantum Principles, Quantum Circuits, Learn, Settings, troubleshooting, and a mouse and keyboard reference.
+- **Exact names:** every control is named as it appears in the app, taken from a programmatic inventory of the real windows. A test checks that the controls it names still exist in the code.
+- **Delivery:** it ships inside QuantumScope (**ⓘ → User guide** opens it in the system's PDF viewer, or the releases page if it is missing), and the release workflow attaches it to each release. The updater only ever picks installer files, so the PDF can never be mistaken for one.
+
+### Rebuilding it (authors)
+- **The source** is `docs/user-guide.md`.
+- **`python tools/make_user_guide.py`** photographs the real app (`docs/images/`) and lays out the PDF with Qt (`--pdf-only` skips the screenshots).
+  - **On a desktop,** the Hydrogen screenshot includes the live 3-D view.
+  - **Without a display,** it shows the Explorer's controls, since software 3-D rendering is unreliable there.
+- **The self-test** checks that the guide is packaged.
+
+### Quality
+- Automated tests: 1434 passing, plus 128 opt-in GUI tests.
+
+## v0.7.7 — Learn → Mathematics
+
+### Mathematics lessons
+- **A fourth area in Learn, Mathematics,** with 12 lectures, each with worked examples, quizzes, a **Try it** link into the app, and a summary:
+  - complex numbers; vectors and Dirac notation; matrices acting on states;
+  - conjugate transpose, Hermitian and unitary; eigenvalues and eigenvectors;
+  - probability for quantum experiments; tensor products;
+  - outer products, projectors and density matrices; matrix exponentials and rotations;
+  - Pauli algebra; the discrete Fourier transform; gradients and optimization.
+- **Every formula, worked example and quiz answer was checked numerically** (23 checks), and every Try it link is checked by the link parser.
+
+### "Math you need"
+- **A box under the objectives of all 40 physics lectures** links to the math lessons each one builds on.
+- **Authors** list them with a new `math:` header field (see LEARN.md).
+
+### Glossary
+- **91 terms (+10):** a new **Mathematics** group (complex number, conjugate transpose, inner product, outer product, projector, trace, partial trace, matrix exponential, commutator, gradient). All their links in the lessons were checked in context.
+- **Hermitian, Unitary, Eigenvalue, Tensor product, Pauli matrices and Dirac notation** now open the matching math lesson from **Learn more**.
+
+### Quality
+- 400 new equation images; no existing image changed.
+- Automated tests: 1431 passing, plus 127 opt-in GUI tests.
+
+## v0.7.6 — Teleportation redesigned
+
+### Physics (`physics/teleport_story.py`, the circuit engine)
+- **A noisy shared pair:** *v*·(Bell pair) + (1 − *v*)·(completely random pair), computed through the same branch engine as the circuit simulator.
+  - **The fidelity is (1 + *v*)/2 for every result,** reaching the classical limit of ⅔ at *v* = ⅓.
+- **Skipping Bob's correction:** result 00 stays right, and on average Bob's qubit is random (fidelity ½).
+- **New functions:** `expected_fidelity()` and `teleport_once()`. Existing calls behave exactly as before.
+
+### The experiment
+- **A mini circuit** with the current step highlighted; skipped corrections are shown as skipped.
+- **Three shaded Bloch spheres** (q0 Alice's input, q1 Alice's half, q2 Bob), animated between steps, with flashes when Alice measures and when Bob corrects. Drag q0 at the start to choose the state.
+- **A classical channel:** Alice's two bits visibly travel to Bob before his correction.
+- **▶ Play,** **Clean pairs,** **"Bob applies the correction",** and **Teleport many** with a fidelity meter (½ random, ⅔ classical limit, 1 perfect, and the expected value).
+- **Open in the circuit simulator** works as before.
+
+### Fixes
+- **Entanglement:** Bob's delayed measurement uses a timer owned by the dialog, so it can never fire into a closed dialog.
+- **GUI tests:** a process that used pyqtgraph charts could crash at the very end, after every test had passed, because a forced deletion of a chart crashes at random. Like the 3-D tests, such processes now exit right after reporting, keeping their result.
+
+### Quality
+- Automated tests: 1367 passing, plus 126 opt-in GUI tests.
+
+## v0.7.5 — Entanglement redesigned; turning the spheres
+
+### Turning the spheres
+- **Every Bloch sphere has its own turntable camera:** **right-drag** or **Shift + left-drag** turns it, and **double-click** resets it. |0⟩ stays on top, and the tilt is limited to ±80°. Left-drag still sets the state (or, in Entanglement, aims a detector), exactly, however the sphere is turned.
+
+### Entanglement
+- **Exact physics** (`physics/bell.py`, no Qt), using density matrices:
+  - the four Bell states, a classically correlated mixture, and noise (a visibility *v*);
+  - joint probabilities for any two axes;
+  - each qubit's own (reduced) state, and Bob's state after Alice's result;
+  - correlations, and CHSH with the best angles for each state.
+- **Tested:** the textbook formulas, agreement with the existing singlet code, no-signalling, Tsirelson's bound 2√2 (scaling as 2√2·*v*, so it crosses 2 at *v* = 1/√2), and the classical mixture never above 2.
+- **Two spheres, Alice's and Bob's,** show each qubit's own state: "random" for an entangled pair. Dragging the amber axis aims each detector.
+- **Send one pair:** it flies out; Alice measures and both spheres jump, then Bob measures. The text explains why no signal travels.
+- **Send many:** Slow, Fast or Instant, filling a **correlation grid** (with predicted shares) and a **correlation curve** (quantum, the simple classical model, and the measured points).
+- **The Bell-test meter:** |S| with its uncertainty, against the classical limit of 2 and the quantum limit of 2√2, with a verdict ("beats", "stays below", "too close to decide").
+- **Removed:** the old Entanglement experiment and its unused drawing classes.
+
+### Quality
+- Automated tests: 1361 passing, plus 125 opt-in GUI tests.
+
+## v0.7.4 — Quantum Principles redesign, part 1
+
+### Shared building blocks (`gui/principles_visuals.py`)
+- **A shaded Bloch sphere:**
+  - a lit surface, with the far half of the grid dimmed;
+  - labelled poles, and a glowing state arrow with its shadow;
+  - an amber measurement axis with its +1 and −1 ends;
+  - **smooth animated changes** and a **flash on collapse**.
+- **Dragging the arrow** sets the state. Grabbing it keeps its side of the sphere, and dragging past the rim carries it round, so every state can be reached. The viewpoint shows every preset and typical state clearly, never end-on.
+- **Live tallies:** outcome bars that grow smoothly as counts arrive, with dashed Born-rule targets.
+
+### Superposition
+- **Prepare** by dragging, with the θ/φ sliders (which follow the drag), or with presets (|0⟩ |1⟩ |+⟩ |−⟩ |+i⟩ |−i⟩).
+- **Measure once:** the animated collapse onto +1 or −1, then counted.
+- **Measure many:** fresh copies streamed into the tally (Slow, Fast or Instant; Stop).
+- **Less text:** one short line explains what just happened.
+- **Changed:** dragging the sphere used to rotate the view; it now sets the state, as students expect.
+
+### Double-Slit
+- **A detector screen:** each particle lands as one glowing dot, and dense places glow brighter, so the fringes emerge from individual detections. Firing runs at Slow, Fast or Instant speed, with Stop.
+- **The wavelength sets the colour** of the dots, the drawn waves and the apparatus hits. Ultraviolet and infrared are shown in a labelled false colour.
+- **Dragging the slits** changes their separation: the exact inverse of the drawing rule.
+- **The physics is unchanged:** the Fraunhofer model, its sampling and the chart are as before.
+
+### Fixes
+- **The circuit tab:** a short circuit in a tall window, for example after **Clear** in a maximized window, stretched the heading into a blank band above the tools. Spare height now goes below everything.
+- **Clear** (or leaving an example) left the last example's check on screen, for example a VQE energy for an empty circuit. The verification panel now resets. Editing the example keeps its check.
+
+### Testing
+- **A CI fix:** a test module that needs Qt's graphics libraries now skips cleanly where they are missing. Before, `importorskip` let a missing system library stop the whole test run.
+- Automated tests: 1349 passing, plus 122 opt-in GUI tests.
+
+## v0.7.3 — Glossary and splash
+
+### Glossary
+- **81 terms** in nine groups (quantum basics, measurement, linear algebra, gates and circuits, states, noise, measurement in circuits, error correction, algorithms, and hydrogen), each with aliases, a definition, related terms and the lesson that teaches it.
+- **Automatic links:** the first occurrence of each term in a lesson is linked, longest terms first ("phase flip" before "phase"). Links appear in body text only, never in headings, quizzes, lab steps, code, equations or existing links. Acronyms match exactly. All 265 automatic links in the lectures were checked in context.
+- **Clicking a term** opens a popup with its definition, related terms (themselves links), **Learn more** and **All terms**.
+- **A Glossary page** in the Learn contents.
+- **PDF handouts** print terms as plain text and end with a **Terms used** box.
+- **For authors:** `[[Term]]` or `[[shown text|Term]]` makes an explicit link, and `noglossary: Term, …` in a lesson's header switches terms off there. Teachers' own lessons are linked too.
+
+### Start-up
+- **A splash screen:** only the Q, on a transparent background, shown as soon as Qt starts. It covers loading the 3-D libraries, then closes when the window appears.
+
+### Packaging
+- **The glossary and the splash logo are always packaged:** `learn/content/*.md` is now part of the package data, and the self-test checks both files.
+
+### Quality
+- Automated tests: 1346 passing, plus 119 opt-in GUI tests.
+
+## v0.7.2 — Fixes
+
+- **Learn → Export PDF:** handouts printed their body text at 0.7 pt, because pixel sizes were sent to a 1200-dpi printer. They now use points: 11-pt text, with headings (13.2 pt) and titles (16.5 pt) above it, and box padding and borders in proportion. Equations were already correct.
+- **The circuit sidebar:** on tall pages (for example with many parameters), the Classical/Noise row took the spare height and the Noise buttons drifted down. The row now has a fixed height, with both columns at the top.
+- **Updating on Ubuntu:**
+  - **QuantumScope waits for the installer** after you enter your password, then offers **Restart now**.
+  - **A cancelled password prompt or a failed install** is explained, with the manual `sudo apt install` command.
+  - **No leftover "defunct" installer process.** Before, the app gave no sign when the install had finished.
+- Automated tests: 1338 passing, plus 117 opt-in GUI tests.
+
+## v0.7.1 — Tester suggestions
+
+### Circuit tab layout
+- **A fixed 400-px sidebar:** the gates, 6 per row; Classical and Noise side by side; **Measurement shots** (with **Run shots**); and **Circuit Verification & Truth Table** (Input · Output · Expected · Result, long cells wrapped). The results and their check now sit side by side.
+- **The canvas height fits the circuit:** one row per qubit plus a spare one, up to ten. It used to be fixed at ten.
+- **Removed: the Bloch spheres beside the wires**, with their setting. Every qubit's Bloch sphere stays in the panel under the chart and in the State Inspector.
+- **No sideways scrolling:** a long status message no longer widens the page (this was latent in every version), and the Optimize options take two lines. The page's minimum width fell from about 1,420 px to about 1,070 px.
+
+### Parameters
+- **Randomize all**, and **🎲** for one parameter: random angles in −π…π, each one undo step.
+- **Best of N random starts** (off by default; N = 5) keeps the best of several optimizations.
+- **Two columns of parameters** on wide panels, filled across (γ0 β0 / γ1 β1 …), with compact usage counts and ✕.
+
+### Tabs
+- **Every tab can close,** including the Hydrogen Explorer and the Gate Circuit Simulator.
+  - **Closing only hides a tab,** so reopening it (from **+**, a placeholder, Learn, or the QASM Converter) brings it back as you left it.
+  - **An empty area shows a placeholder** with its experiments instead of a blank window.
+- **Experiments open in their own area:** the Error-correction explorer used to open in Quantum Principles. Every entry of every **+** menu is now tested.
+
+### Fixes
+- **No more highlighted rows on the circuit canvas:** pressing Ctrl+A or Shift+arrows selected cells, which showed up as highlighted rows.
+- **GUI tests:** test runs that use the 3-D view sometimes crashed at exit after every test had passed, also in v0.7.0. They now exit cleanly, keeping the result.
+
+### Quality
+- Automated tests: 1338 passing, plus 110 opt-in GUI tests (`tools/run_gui_tests.sh`). The 44-step editing replay is unchanged.
+
 ## v0.7.0 — Variational algorithms
 
 ### Updates

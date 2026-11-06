@@ -1,3 +1,4 @@
+import math
 """Qt-free model of the circuit editor.
 
 Holds the editable circuit (gates by grid cell, terminal measurements, column
@@ -616,6 +617,20 @@ class CircuitModel:
         self.parameters[name] = value
         self._apply_bindings()
         return True
+
+    def randomize_parameters(self, names=None, rng=None):
+        """Set parameters (all, or the given names) to random angles in [−π, π): one undo step.
+        The energy repeats every 2π for every bindable gate, so this range covers every setting."""
+        import numpy as np
+        rng = rng or np.random.default_rng()
+        names = [n for n in (names or list(self.parameters)) if n in self.parameters]
+        if not names:
+            return {}
+        self.snapshot()
+        chosen = {n: float(rng.uniform(-math.pi, math.pi)) for n in names}
+        self.parameters.update(chosen)
+        self._apply_bindings()
+        return chosen
 
     def bind(self, row, col, field, name, factor=1.0):
         """Tie a gate angle to a parameter: angle = factor × parameter. A new parameter starts at the

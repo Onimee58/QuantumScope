@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 26
 objectives: State the MaxCut problem as an energy | Build a QAOA circuit from cost and mixer layers | Interpret approximation ratios and the effect of symmetry
+math: 10-pauli-algebra, 12-gradients-and-optimization
 ---
 # QAOA and MaxCut
 

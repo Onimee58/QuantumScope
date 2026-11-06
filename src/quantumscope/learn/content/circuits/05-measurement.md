@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 5
 objectives: Predict measurement probabilities from amplitudes | Compute the outcome distribution of measuring some of the qubits | Explain why finite shots only estimate probabilities
+math: 02-vectors-and-dirac-notation, 06-probability
 ---
 # Measurement in circuits
 
@@ -27,7 +28,7 @@ A real experiment repeats the circuit many times (**shots**) and counts outcomes
 
 $$\sqrt{Np(1-p)}$$
 
-For $p = \frac{1}{2}$ and $N = 1024$ that is about 16 counts, so seeing 497 instead of 512 is perfectly normal. **Run measurement shots** in the circuit tab samples from the exact probabilities, so the counts fluctuate the same way.
+For $p = \frac{1}{2}$ and $N = 1024$ that is about 16 counts, so seeing 497 instead of 512 is perfectly normal. **Run shots** in the circuit tab samples from the exact probabilities, so the counts fluctuate the same way.
 
 ## Check your understanding
 

@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 9
 objectives: State what the QFT does to a basis state | Build the QFT from H, controlled-phase and SWAP gates | Recognize the QFT's phase pattern in the State Inspector
+math: 01-complex-numbers, 11-fourier-transform
 ---
 # The quantum Fourier transform
 

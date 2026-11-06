@@ -23,6 +23,22 @@ from quantumscope.physics.hydrogen import A_MU_METERS, captured_probability, Rea
 from quantumscope.visualization.orbitals import draw_orbital, set_camera_view, probability_radius
 
 
+
+USER_GUIDE_URL = 'https://github.com/Onimee58/QuantumScope/releases/latest'
+
+
+def user_guide_path():
+    """The user guide shipped with QuantumScope (assets/QuantumScope-User-Guide.pdf)."""
+    return Path(str(files('quantumscope').joinpath('assets/QuantumScope-User-Guide.pdf')))
+
+
+def open_user_guide():
+    """Open the user guide in the system's PDF viewer (or, if it is missing, the releases page)."""
+    path = user_guide_path()
+    if path.is_file():
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+    return QDesktopServices.openUrl(QUrl(USER_GUIDE_URL))
+
 class AboutDialog(QDialog):
     """Branded, accessible project credits; GitHub avatar is cached offline."""
     AVATAR_URL = 'https://avatars.githubusercontent.com/u/50075168?s=256&v=4'
@@ -44,7 +60,11 @@ class AboutDialog(QDialog):
         self.update_button=QPushButton('Check for updates…')
         self.update_button.setToolTip('Asks first, then looks on github.com for a newer full release')
         self.update_button.clicked.connect(self._check_for_updates)
-        update_row=QHBoxLayout();update_row.addStretch();update_row.addWidget(self.update_button);update_row.addStretch()
+        self.guide_button=QPushButton('User guide')
+        self.guide_button.setToolTip('Open the QuantumScope User Guide (PDF)')
+        self.guide_button.clicked.connect(open_user_guide)
+        update_row=QHBoxLayout();update_row.addStretch();update_row.addWidget(self.update_button)
+        update_row.addWidget(self.guide_button);update_row.addStretch()
         layout.addLayout(update_row)
         tagline=QLabel('Explore  •  Visualize  •  Simulate');tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline.setStyleSheet('color:#5ad1e9;font-size:12px;');layout.addWidget(tagline)
@@ -143,6 +163,11 @@ class MainWindow(QMainWindow):
             menu.addAction("Gate Circuit Simulator", self._launch_circuits)
             menu.addAction("QASM Converter", self._launch_converter)
             menu.addAction("Error-correction explorer", self._launch_qec_explorer)
+        if category in (None,"qml"):
+            menu.addSection("QUANTUM ML")
+            menu.addAction("Datasets", self._launch_qml_datasets)
+            menu.addAction("Quantum Kernel Classifier", self._launch_qml_kernel)
+            menu.addAction("Variational Classifier", self._launch_qml_variational)
         return menu
 
     def _show_settings(self):
@@ -174,7 +199,8 @@ class MainWindow(QMainWindow):
          "orbital": self._show_hydrogen, "dynamics2d": self.show_dynamics, "dynamics3d": self.show_dynamics_3d,
          "doubleslit": self._launch_double_slit, "superposition": self._launch_superposition,
          "entanglement": self._launch_entanglement, "teleportation": self._launch_teleportation,
-         "qec": self._launch_qec_explorer}[view]()
+         "qec": self._launch_qec_explorer, "qml_datasets": self._launch_qml_datasets,
+         "qml_kernel": self._launch_qml_kernel, "qml_variational": self._launch_qml_variational}[view]()
 
     def apply_preferences(self):
         from quantumscope.gui import preferences as prefs
@@ -270,7 +296,8 @@ class MainWindow(QMainWindow):
         self.workspaces = {}
         for category, title in (("hydrogen", "⚛  Hydrogen"),
                                 ("principles", "◈  Quantum Principles"),
-                                ("circuits", "▦  Quantum Circuits")):
+                                ("circuits", "▦  Quantum Circuits"),
+                                ("qml", "◇  Quantum ML")):
             tabs = QTabWidget()
             tabs.setObjectName("experimentWorkspace")
             tabs.setTabsClosable(True)
@@ -299,12 +326,10 @@ class MainWindow(QMainWindow):
             self.workspaces[category] = tabs
         self.workspace = self.workspaces["hydrogen"]
         self.workspace.addTab(explorer, QIcon(str(files("quantumscope").joinpath("assets/quantumscope-24.png"))), "Hydrogen Explorer")
-        self._hydrogen_explorer = explorer          # permanent tab (its 3D view is shared)
-        self.workspace.tabBar().setTabButton(0, self.workspace.tabBar().ButtonPosition.RightSide, None)
+        self._hydrogen_explorer = explorer          # closing hides it; + → Hydrogen Explorer brings it back
         from quantumscope.gui.circuit_workspace import CircuitWorkspace
         self.circuit_widget = CircuitWorkspace(self.workspaces["circuits"])
         self.workspaces["circuits"].addTab(self.circuit_widget, "Gate Circuit Simulator")
-        self.workspaces["circuits"].tabBar().setTabButton(0, self.workspaces["circuits"].tabBar().ButtonPosition.RightSide, None)
         from quantumscope.gui.qasm_converter import QasmConverter
         # The converter opens as a tab only when chosen (+ → QASM Converter) and can be closed;
         # the widget is kept, so reopening it keeps what you were converting.
@@ -313,7 +338,9 @@ class MainWindow(QMainWindow):
         outer.addWidget(self.categories, 1)
         self.setCentralWidget(shell)
         self._open_experiments = {}
+        self._experiment_labels, self._experiment_icons, self._placeholders = {}, {}, {}
         self._launch_double_slit()
+        self._show_placeholder("qml")                    # Quantum ML opens on its Start page
         self._select_category("hydrogen")
         self.statusBar().showMessage("Ready  ·  Choose an experiment or explore hydrogen orbitals")
 
@@ -322,53 +349,95 @@ class MainWindow(QMainWindow):
         self.categories.setCurrentWidget(tabs)
         return tabs
 
+    # The area each experiment belongs to (the + menu it is listed in).
+    EXPERIMENT_AREAS={"dynamics_2d":"hydrogen","dynamics_3d":"hydrogen","qec_explorer":"circuits",
+                      "double_slit":"principles","superposition":"principles","entanglement":"principles",
+                      "teleportation":"principles","qml_datasets":"qml","qml_kernel":"qml",
+                      "qml_variational":"qml"}
+
     def _open_experiment(self, key, label, constructor):
-        """One persistent experiment tab in the appropriate category."""
-        category = "hydrogen" if key.startswith("dynamics_") else "principles"
+        """One persistent experiment tab in its own area. A closed tab was only hidden, so it
+        comes back exactly as it was left."""
+        category = self.EXPERIMENT_AREAS[key]
         tabs=self._select_category(category)
         if key in self._open_experiments:
             widget=self._open_experiments[key]
             index=tabs.indexOf(widget)
-            if index>=0:
-                tabs.setCurrentIndex(index)
-                return
-            del self._open_experiments[key]
+            if index<0:
+                index=self._add_area_tab(category,widget,self._experiment_labels.get(key,label),self._experiment_icons.get(key))
+            tabs.setCurrentIndex(index)
+            return
         widget=constructor(tabs)
         widget.setWindowFlags(Qt.WindowType.Widget)
         widget.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Expanding)
         icon_name={"double_slit":"◫","dynamics_2d":"∿","dynamics_3d":"⬡"}.get(key,"◈")
-        index=tabs.addTab(widget,f"{icon_name}  {label.strip()}")
+        self._experiment_labels[key]=f"{icon_name}  {label.strip()}"
+        index=self._add_area_tab(category,widget,self._experiment_labels[key])
         self._open_experiments[key]=widget
         tabs.setCurrentIndex(index)
         self.statusBar().showMessage(f"Opened {label.strip()}",3500)
 
+    def _add_area_tab(self,category,widget,label,icon=None,index=None):
+        """Add (or re-add) a tab to an area, replacing its "nothing open" placeholder."""
+        tabs=self.workspaces[category]
+        placeholder=self._placeholders.get(category)
+        if placeholder is not None and tabs.indexOf(placeholder)>=0:
+            tabs.removeTab(tabs.indexOf(placeholder))
+        widget.show()
+        if index is None:
+            return tabs.addTab(widget,icon,label) if icon is not None else tabs.addTab(widget,label)
+        return tabs.insertTab(index,widget,icon,label) if icon is not None else tabs.insertTab(index,widget,label)
+
     def _close_workspace_tab(self,category,index):
-        """Close any experiment tab except the two permanent ones (Hydrogen Explorer and
-        Gate Circuit Simulator), wherever a tab sits — the first experiment opened in an
-        area lands at position 0 and must close like the others."""
+        """Every tab can close. Closing only hides its widget, so + brings it back exactly as it
+        was (a circuit, an experiment's settings); an empty area shows a placeholder."""
         tabs=self.workspaces[category]
         widget=tabs.widget(index)
-        if widget is None or widget is getattr(self,"_hydrogen_explorer",None) or widget is getattr(self,"circuit_widget",None):
-            return
-        if widget is self.converter_widget:
-            tabs.removeTab(index)                    # keep the converter (and its text) for reopening
-            widget.hide()
+        if widget is None or widget is self._placeholders.get(category):
             return
         tabs.removeTab(index)
-        for key,active in list(self._open_experiments.items()):
-            if active is widget:del self._open_experiments[key]
-        widget.close()
-        widget.deleteLater()
+        widget.hide()
+        if tabs.count()==0:
+            self._show_placeholder(category)
+
+    def _show_placeholder(self,category):
+        tabs=self.workspaces[category]
+        placeholder=self._placeholders.get(category)
+        if placeholder is None:
+            placeholder=self._placeholders[category]=self._make_placeholder(category)
+        if tabs.indexOf(placeholder)<0:
+            index=tabs.addTab(placeholder,"Start")
+            tabs.tabBar().setTabButton(index,tabs.tabBar().ButtonPosition.RightSide,None)
+        tabs.setCurrentWidget(placeholder)
+
+    def _make_placeholder(self,category):
+        """'No experiment open', with one button per experiment of this area (from its + menu)."""
+        page=QWidget();page.setObjectName("areaPlaceholder")
+        outer=QVBoxLayout(page);outer.addStretch()
+        title=QLabel("No experiment open");title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 18px; font-weight: 700;");outer.addWidget(title)
+        hint=QLabel("Open one here, or with + above.");hint.setAlignment(Qt.AlignmentFlag.AlignCenter);hint.setObjectName("muted")
+        outer.addWidget(hint)
+        row=QHBoxLayout();row.addStretch()
+        for action in self._experiment_menu(page,category).actions():
+            if action.isSeparator() or not action.text():
+                continue
+            button=QPushButton(action.text());button.clicked.connect(action.trigger);row.addWidget(button)
+        row.addStretch();outer.addLayout(row);outer.addStretch()
+        page._buttons=[b for b in page.findChildren(QPushButton)]
+        return page
 
     def _launch_circuits(self):
         tabs=self._select_category("circuits")
+        if tabs.indexOf(self.circuit_widget)<0:                 # closed: bring it back, first
+            self._add_area_tab("circuits",self.circuit_widget,"Gate Circuit Simulator",index=0)
         tabs.setCurrentWidget(self.circuit_widget)
 
     def _launch_converter(self):
         tabs=self._select_category("circuits")
         index=tabs.indexOf(self.converter_widget)
         if index<0:
-            index=tabs.addTab(self.converter_widget,"QASM Converter")
+            index=self._add_area_tab("circuits",self.converter_widget,"QASM Converter")
         tabs.setCurrentIndex(index)
 
     def _load_converted_circuit(self,n,gates,measured=(),layout=None):
@@ -380,7 +449,11 @@ class MainWindow(QMainWindow):
 
     def _show_hydrogen(self):
         tabs=self._select_category("hydrogen")
-        tabs.setCurrentIndex(0)
+        explorer=self._hydrogen_explorer
+        if tabs.indexOf(explorer)<0:                            # closed: bring it back, first
+            self._add_area_tab("hydrogen",explorer,"Hydrogen Explorer",
+                               QIcon(str(files("quantumscope").joinpath("assets/quantumscope-24.png"))),index=0)
+        tabs.setCurrentWidget(explorer)
 
     def _launch_double_slit(self):
         from quantumscope.gui.double_slit_dialog import DoubleSlitDialog
@@ -389,6 +462,18 @@ class MainWindow(QMainWindow):
     def _launch_superposition(self):
         from quantumscope.gui.quantum_principles import SuperpositionDialog
         self._open_experiment("superposition", "Quantum Superposition", SuperpositionDialog)
+
+    def _launch_qml_datasets(self):
+        from quantumscope.gui.qml_experiments import DatasetsExperiment
+        self._open_experiment("qml_datasets", "Datasets", DatasetsExperiment)
+
+    def _launch_qml_kernel(self):
+        from quantumscope.gui.qml_experiments import KernelExperiment
+        self._open_experiment("qml_kernel", "Quantum Kernel Classifier", KernelExperiment)
+
+    def _launch_qml_variational(self):
+        from quantumscope.gui.qml_experiments import VariationalExperiment
+        self._open_experiment("qml_variational", "Variational Classifier", VariationalExperiment)
 
     def _launch_qec_explorer(self):
         from quantumscope.gui.qec_chart import ErrorCorrectionExplorer
@@ -399,7 +484,7 @@ class MainWindow(QMainWindow):
         self._open_experiment("teleportation", "Quantum Teleportation", TeleportationDialog)
 
     def _launch_entanglement(self):
-        from quantumscope.gui.quantum_principles import EntanglementDialog
+        from quantumscope.gui.entanglement_experiment import EntanglementDialog
         self._open_experiment("entanglement", "Quantum Entanglement", EntanglementDialog)
 
     def show_dynamics(self):

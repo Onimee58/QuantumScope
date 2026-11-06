@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 21
 objectives: State what phase estimation computes | Follow the circuit from controlled powers to the inverse QFT | Predict the result when the phase is not an exact binary fraction
+math: 05-eigenvalues, 11-fourier-transform
 ---
 # Quantum phase estimation
 

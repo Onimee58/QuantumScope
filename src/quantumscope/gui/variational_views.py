@@ -110,9 +110,9 @@ class OptimizeDialog(QDialog):
     def _stop(self):
         self.stopped = True
 
-    def configure(self, method, steps):
-        """Reuse this window for a new run (the panel's current method and step limit)."""
-        self.method, self.steps = method, steps
+    def configure(self, method, steps, starts=1):
+        """Reuse this window for a new run (the panel's current method, step limit and starts)."""
+        self.method, self.steps, self.starts = method, steps, max(1, int(starts))
         self.history, self.stopped = [], False
         self.stop_button.setEnabled(True)
         self.chart.set_data([], None)
@@ -134,7 +134,19 @@ class OptimizeDialog(QDialog):
                                      (f'   (exact minimum {exact:.6f})' if exact is not None else ''))
                 QApplication.processEvents()
             return not self.stopped
-        self.history = V.optimize(model, self.method, self.steps, callback=progress)
+        starts = getattr(self, 'starts', 1)
+        best_index, finals = 0, []
+        if starts > 1:
+            def begin(k, total):
+                energies.clear()
+                self.summary.setText(f'Start {k + 1} of {total}' + (' (your current parameters)' if k == 0 else
+                                                                    ' (random parameters)') + '…')
+                QApplication.processEvents()
+            self.history, best_index, finals = V.best_of(model, starts, self.method, self.steps,
+                                                         callback=progress, on_start=begin)
+            self.history.evaluations = getattr(self.history, 'evaluations', 0)
+        else:
+            self.history = V.optimize(model, self.method, self.steps, callback=progress)
         values, energy = self.history[-1]
         model.snapshot()                                      # the whole optimization is one undo step
         values = V.wrap_safely(model, values)                 # back into −π…π where that changes nothing
@@ -148,7 +160,14 @@ class OptimizeDialog(QDialog):
         start = self.history[0][1]
         steps = len(self.history) - 1
         evaluations = getattr(self.history, 'evaluations', 0)
-        if exact is not None and start - exact < 1e-6:
+        if finals:                                              # best of several starts
+            ranked = ', '.join(f'{e:.4f}' for e in finals)
+            gap_text = ('' if exact is None else ' — the ground state is reached.' if energy - exact < 1e-6 else
+                        f' — {energy - exact:.4g} above the exact minimum over all states.')
+            self.summary.setText(f'Best of {len(finals)} starts: start {best_index + 1} reached ⟨H⟩ = {energy:.6f}'
+                                 + (f' (exact minimum {exact:.6f})' if exact is not None else '') + gap_text
+                                 + f' Final values of the starts: {ranked}.')
+        elif exact is not None and start - exact < 1e-6:
             self.summary.setText(f'⟨H⟩ = {start:.6f} was already at the exact minimum: nothing to improve.')
         elif steps == 0 and not self.stopped:
             self.summary.setText(

@@ -161,7 +161,7 @@ def test_teleportation_experiment(app):
     assert d.scene.view['record'] in ('00', '01', '10', '11')
     d.preset.setCurrentIndex(d.preset.findData('custom'))
     d.theta.setValue(100)
-    d.go(4)
+    d.go(4, animate=False)                    # v0.7.6: animated, the bits travel to Bob first
     assert d.theta.isEnabled() and d.scene.view['bob_fidelity'] == pytest.approx(1)
 
 

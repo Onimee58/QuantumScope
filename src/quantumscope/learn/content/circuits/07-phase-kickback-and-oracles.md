@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 7
 objectives: Explain phase kickback with the target in the minus state | Describe a phase oracle | Follow the Deutsch, Deutsch–Jozsa and Bernstein–Vazirani algorithms
+math: 05-eigenvalues, 07-tensor-products
 ---
 # Phase kickback and oracles
 

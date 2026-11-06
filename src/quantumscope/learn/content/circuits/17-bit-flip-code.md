@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 17
 objectives: Explain why quantum error correction cannot simply copy qubits | Encode one qubit into three | Detect an error with syndrome measurements without disturbing the encoded state | Correct it with feed-forward on two bits
+math: 06-probability, 10-pauli-algebra
 ---
 # Error correction: the bit-flip code
 

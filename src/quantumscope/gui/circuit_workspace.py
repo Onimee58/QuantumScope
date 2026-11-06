@@ -5,7 +5,7 @@ import html
 import numpy as np
 from PySide6.QtCore import Qt, QMimeData, QPoint, QEvent, QTimer, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QDrag, QFont, QBrush, QWheelEvent, QPdfWriter, QPageSize
-from PySide6.QtWidgets import (QFrame, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHeaderView, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QSplitter,
     QLabel, QPushButton, QListWidget, QTableWidget, QTableWidgetItem, QSpinBox,
     QSlider, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView, QComboBox, QScrollArea, QCheckBox, QInputDialog, QMenu, QGroupBox, QToolButton, QSizePolicy, QDialog, QDialogButtonBox, QLineEdit, QTabWidget, QApplication, QDoubleSpinBox)
 from quantumscope.physics.circuit_files import to_native,from_native,to_qasm, to_native_measured, from_native_measured, to_qasm_measured, from_qasm_measured, from_native_layout, from_qasm_layout
@@ -300,7 +300,6 @@ class Grid(QTableWidget):
         self._zoom=max(0.55,min(2.5,self._zoom*multiplier))
         self.horizontalHeader().setDefaultSectionSize(round(82*self._zoom))
         self.verticalHeader().setDefaultSectionSize(round(54*self._zoom))
-        self.owner.inline_blochs.update()
     def fit_view(self):
         # Fit the circuit when practical while retaining legible gates on long circuits.
         # For longer circuits the viewport shows a readable subset; users pan to the rest.
@@ -310,13 +309,11 @@ class Grid(QTableWidget):
         self.horizontalHeader().setDefaultSectionSize(width)
         self.verticalHeader().setDefaultSectionSize(height)
         self._zoom=width/82
-        self.owner.inline_blochs.update()
 
     def reset_zoom(self):
         self._zoom=1.0
         self.horizontalHeader().setDefaultSectionSize(82)
         self.verticalHeader().setDefaultSectionSize(54)
-        self.owner.inline_blochs.update()
 
     def eventFilter(self,obj,event):
         if obj is self.viewport() and event.type() in (QEvent.Type.DragEnter,QEvent.Type.DragMove,QEvent.Type.Drop):
@@ -385,27 +382,6 @@ class BlochPanel(QWidget):
 
 
 
-class InlineBlochs(QWidget):
-    """Fixed-size qubit glyphs aligned with the table's row centers."""
-    def __init__(self,grid,parent=None):
-        super().__init__(parent);self.grid=grid;self.vecs=[];self.setFixedWidth(105)
-    def set_vectors(self,vecs):self.vecs=vecs;self.update()
-    def paintEvent(self,event):
-        p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        header=self.grid.horizontalHeader().height()
-        for q,(x,y,z) in enumerate(self.vecs):
-            ymid=header+q*self.grid.verticalHeader().defaultSectionSize()+23-self.grid.verticalScrollBar().value()
-            if ymid<15 or ymid>self.height()-10:continue
-            cx=36;r=16
-            p.setPen(QPen(canvas_color('bloch_outline'),1));p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QPoint(cx,int(ymid)),r,r)
-            p.drawEllipse(cx-r,int(ymid-5),r*2,10)
-            p.setPen(QPen(canvas_color('bloch_vector'),2.5))
-            p.drawLine(cx,int(ymid),int(cx+r*(.85*x+.25*y)),int(ymid-r*(z+.25*y)))
-            p.setPen(canvas_color('bloch_text'));p.setFont(QFont('Sans',8))
-            p.drawText(56,int(ymid+4),f'{math.sqrt(x*x+y*y+z*z):.2f}')
-        p.end()
-
 class ProbabilityBars(QWidget):
     """Compact vertical histogram with paired theoretical and sampled bars."""
     def __init__(self,parent=None):
@@ -473,6 +449,7 @@ class CircuitWorkspace(QWidget):
         self.page_scroll.setWidget(page)
         outer=QVBoxLayout(page);outer.setSpacing(8)
         heading=QLabel('QUANTUM CIRCUITS  ·  Drag gates from the palette onto empty cells; click a placed gate to select it')
+        heading.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)   # never takes spare height
         outer.addWidget(heading)
         top=QHBoxLayout();outer.addLayout(top)
         top.addWidget(QLabel('Qubits'))
@@ -516,7 +493,6 @@ class CircuitWorkspace(QWidget):
         self.inspector_button=QPushButton('State Inspector…')
         self.inspector_button.setToolTip('Open amplitudes, statevector, reduced density matrices and circuit statistics')
         self.inspector_button.clicked.connect(self.open_state_inspector);edits.addWidget(self.inspector_button)
-        self.show_blochs=QCheckBox('Show Bloch spheres beside wires');self.show_blochs.setChecked(prefs.get('circuits/show_blochs'));edits.addWidget(self.show_blochs)
         from quantumscope.physics.algorithms import LIBRARY
         self._library_titles={e.title:e.key for e in LIBRARY}
         self.examples=QComboBox();self.examples.addItems(['Examples…',*EXAMPLE_NAMES,*[e.title for e in LIBRARY if e.menu=='Examples']])
@@ -529,41 +505,50 @@ class CircuitWorkspace(QWidget):
         # A whole-page scroll area, not a shrinking circuit editor, handles
         # limited vertical space on Windows and older Ubuntu releases.
         outer.addWidget(split)
+        outer.addStretch(1)              # spare height (a short circuit in a tall window) goes below everything
         # Palette: gates in a 3-column grid, noise channels in a 2-column grid below.
         # Clicks only select entries; they never place or replace gates.
         side=QWidget();sv=QVBoxLayout(side);sv.setContentsMargins(0,0,0,0);sv.setSpacing(4)
+        side.setFixedWidth(self.SIDEBAR_WIDTH)     # gates, shots and the check sit beside the results
         sv.addWidget(QLabel('Gates'))
-        self.palette=Palette();self.palette.addItems(list(ALL)+['M']);self._grid_palette(self.palette,3,64)
+        self.palette=Palette();self.palette.addItems(list(ALL)+['M']);self._grid_palette(self.palette,6,64)
         self.palette.setToolTip('Drag to place a gate; double-click for the Gate Explorer')
         self.palette.itemDoubleClicked.connect(lambda item:self.show_gate_explorer(item.text()))
         sv.addWidget(self.palette)
-        sv.addWidget(QLabel('Classical'))
+        # Classical and Noise side by side, in a row of fixed height aligned to the top: a tall
+        # sidebar must give its spare height to the bottom spacer, never to this row.
+        small_row=QWidget();small_row.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)
+        small=QHBoxLayout(small_row);small.setContentsMargins(0,0,0,0);small.setSpacing(8);sv.addWidget(small_row)
+        classical_box=QVBoxLayout();classical_box.setAlignment(Qt.AlignmentFlag.AlignTop)
+        small.addLayout(classical_box);classical_box.addWidget(QLabel('Classical'))
         self.classical_palette=Palette();self.classical_palette.addItems(list(CLASSICAL_PALETTE));self._grid_palette(self.classical_palette,2,92)
         self.classical_palette.item(0).setToolTip('Mid-circuit measurement: measures the qubit here and stores the result '
                                                    'in a classical bit (c0 by default for q0, c1 for q1 …); later gates can be conditioned on it')
         self.classical_palette.item(1).setToolTip('Reset: returns the qubit to |0⟩ at this point')
-        sv.addWidget(self.classical_palette)
-        sv.addWidget(QLabel('Noise'))
+        classical_box.addWidget(self.classical_palette);classical_box.addStretch()   # fixed row: safe
+        noise_box=QVBoxLayout();noise_box.setAlignment(Qt.AlignmentFlag.AlignTop)
+        small.addLayout(noise_box,0);noise_box.addWidget(QLabel('Noise'))
         self.noise_palette=Palette();self.noise_palette.addItems(list(NOISE_PALETTE));self._grid_palette(self.noise_palette,2,92)
         self.noise_palette.setToolTip('Drag a noise channel onto a wire; double-click here to learn what it does')
         self.noise_palette.itemDoubleClicked.connect(lambda item:self.show_noise_explorer(NOISE_PALETTE[item.text()]))
-        sv.addWidget(self.noise_palette)
-        sv.addStretch()
+        noise_box.addWidget(self.noise_palette);small.addStretch()
+        self._sidebar=sv                       # Shots and the verification panel are added below
         self._style_palette()
         split.addWidget(side)
         center=QWidget();v=QVBoxLayout(center);split.addWidget(center)
         self.grid=Grid(self);self.grid.setRowCount(self.n);self.grid.setColumnCount(self.columns)
         self.grid.setHorizontalHeaderLabels([f'{i+1}' for i in range(self.columns)]);self.grid.setVerticalHeaderLabels(self._qubit_labels())
         self.grid.verticalHeader().setDefaultSectionSize(54);self.grid.horizontalHeader().setDefaultSectionSize(82)
-        # Reserve room for ten wires at the default scale.  The model still
-        # contains only active qubits, leaving the remaining canvas blank.
-        # Keep the circuit's panning/zoom mechanics, but no internal scrollbars.
-        self.grid.setFixedHeight(10 * 54 + self.grid.horizontalHeader().height()
-                                 + 2 * self.grid.frameWidth() + 12)
+        # The canvas fits the circuit: one row per qubit plus a spare one to drop onto (at most
+        # ten), as columns grow with the circuit. Panning/zoom stay; no internal scrollbars.
+        self._fit_canvas_height()
         self.grid.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.grid.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.grid.setShowGrid(False)
         self.grid.setAlternatingRowColors(False)
+        # The canvas draws and handles everything itself: never select cells (Ctrl+A or Shift+arrows
+        # used to light up rows of the grid, seen as "background rows" on Windows).
+        self.grid.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.grid.setToolTip('Drag gates onto empty cells; click to select. Middle-drag to pan, Ctrl+wheel to zoom.')
         # Example title bar: what this circuit is, its parameters, and where to learn about it.
         self.example_bar=QWidget();bar=QHBoxLayout(self.example_bar);bar.setContentsMargins(0,0,0,0)
@@ -582,9 +567,6 @@ class CircuitWorkspace(QWidget):
         self.grid.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.grid.horizontalHeader().customContextMenuRequested.connect(self.header_menu)
         wires=QHBoxLayout();v.addLayout(wires);wires.addWidget(self.grid,1)
-        self.inline_blochs=InlineBlochs(self.grid);wires.addWidget(self.inline_blochs)
-        self.show_blochs.toggled.connect(self.inline_blochs.setVisible)
-        self.grid.verticalScrollBar().valueChanged.connect(lambda _:self.inline_blochs.update())
         self._build_parameter_panel(v)          # right under the circuit, shown when in use
         helptext=QLabel('Drag a multi-qubit gate to its first operand, then click remaining qubits in the same column. Right-click to remove a gate. Up to 10 qubits; ideal statevector.')
         helptext.setWordWrap(True);v.addWidget(helptext)
@@ -592,7 +574,7 @@ class CircuitWorkspace(QWidget):
         self.grid.customContextMenuRequested.connect(self.gate_context_menu)
         self.grid.cellDoubleClicked.connect(self.edit_gate_at)
         self.grid.cellClicked.connect(self.cell_click)
-        self.status=QLabel('Ready');v.addWidget(self.status)
+        self.status=QLabel('Ready');self.status.setWordWrap(True);v.addWidget(self.status)   # long notes wrap, never widen the page
         playback=QHBoxLayout();v.addLayout(playback)
         self.prev_step=QPushButton('◀');self.prev_step.clicked.connect(lambda:self.step.setValue(max(0,self.step.value()-1)));playback.addWidget(self.prev_step)
         self.play_button=QPushButton('▶ Play');self.play_button.clicked.connect(self.toggle_play);playback.addWidget(self.play_button)
@@ -615,23 +597,36 @@ class CircuitWorkspace(QWidget):
         self.verify_panel=QGroupBox('Circuit Verification && Truth Table')
         verify_layout=QVBoxLayout(self.verify_panel)
         controls=QHBoxLayout()
-        self.verify_button=QPushButton('Verify circuit / Show truth table');self.verify_button.clicked.connect(self.verify_circuit);controls.addWidget(self.verify_button)
+        self.verify_button=QPushButton('Verify / truth table');self.verify_button.clicked.connect(self.verify_circuit);controls.addWidget(self.verify_button)
         self.qec_button=QPushButton('Plot logical error rate')
         self.qec_button.setToolTip('Sweep the strength of this circuit\'s noise boxes and compare with an unprotected qubit')
         self.qec_button.clicked.connect(self.plot_logical_error_rate);self.qec_button.setVisible(False);controls.addWidget(self.qec_button)
         self.graph_button=QPushButton('Show the graph');self.graph_button.setToolTip('The MaxCut graph with the likeliest cut, updated live')
         self.graph_button.clicked.connect(self.show_maxcut_graph);self.graph_button.setVisible(False);controls.addWidget(self.graph_button)
-        self.verify_status=QLabel('Select an example to verify arithmetic, or inspect basis-state inputs.');self.verify_status.setWordWrap(True);controls.addWidget(self.verify_status,1)
+        self.solution_button=QPushButton('Show the solution');self.solution_button.setToolTip('The circuit\'s state against the classical solution A⁻¹b, updated live')
+        self.solution_button.clicked.connect(self.show_vqls_solution);self.solution_button.setVisible(False);controls.addWidget(self.solution_button)
+        controls.addStretch()
         verify_layout.addLayout(controls)
-        self.verify_table=QTableWidget(0,4);self.verify_table.setHorizontalHeaderLabels(['Input','Simulated output','Expected','Probability / Result'])
+        self.verify_status=QLabel(self.VERIFY_HINT);self.verify_status.setWordWrap(True)
+        verify_layout.addWidget(self.verify_status)
+        self.verify_table=QTableWidget(0,4);self.verify_table.setHorizontalHeaderLabels(['Input','Output','Expected','Result'])
         self.verify_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.verify_table.setMinimumHeight(130);self.verify_table.setMaximumHeight(230)
-        self.verify_table.horizontalHeader().setStretchLastSection(True)
+        self.verify_table.setMinimumHeight(160);self.verify_table.setMaximumHeight(460)
+        self.verify_table.setWordWrap(True)           # long cells wrap in the 400-px sidebar
+        self.verify_table.setTextElideMode(Qt.TextElideMode.ElideNone)   # wrap, never cut with "…"
+        self.verify_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.verify_table.horizontalHeader().setSectionResizeMode(0,QHeaderView.ResizeMode.Fixed)
+        self.verify_table.setColumnWidth(0,56)            # inputs are short (kets, bit strings)
+        self.verify_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        # Row heights follow the final column widths (they were computed too early before).
+        self.verify_table.horizontalHeader().sectionResized.connect(lambda *_:self.verify_table.resizeRowsToContents())
         verify_layout.addWidget(self.verify_table)
-        v.addWidget(self.verify_panel)
-        shots=QHBoxLayout();v.addLayout(shots);shots.addWidget(QLabel('Shots'))
+        shots_box=QGroupBox('Measurement shots');shots=QHBoxLayout(shots_box)
         self.shots=QSpinBox();self.shots.setRange(1,100000);self.shots.setValue(prefs.get('circuits/default_shots'));shots.addWidget(self.shots)
-        run=QPushButton('Run measurement shots');run.clicked.connect(self.measure);shots.addWidget(run)
+        run=QPushButton('Run shots');run.setToolTip('Sample measurement outcomes from the circuit');run.clicked.connect(self.measure);shots.addWidget(run,1)
+        self._sidebar.addWidget(shots_box)
+        self._sidebar.addWidget(self.verify_panel)
+        self._sidebar.addStretch()
         # Maintain the complete ten-wire canvas even when the host tab is short.
         # The page scrolls instead of allowing the splitter to compress it.
         self._center,self._split=center,split
@@ -680,6 +675,7 @@ class CircuitWorkspace(QWidget):
 
     def _sync_view(self):
         """Match qubit controls, wires and columns to the model."""
+        if hasattr(self,'grid'):self._fit_canvas_height()
         n=self.model.n
         if self.qubits.value()!=n:
             self.qubits.blockSignals(True);self.qubits.setValue(n);self.qubits.blockSignals(False)
@@ -713,9 +709,40 @@ class CircuitWorkspace(QWidget):
         factor=parse_angle(m.group(1)) if m.group(1) else 1.0
         return CircuitModel.greek_name(m.group(3)),(-factor if m.group(2) else factor)
     PARAM_ROW=34
+    TWO_COLUMNS_FROM=980          # panel width (px) from which parameters are shown in two columns
+    def eventFilter(self,watched,event):
+        if watched is getattr(self,'param_panel',None) and event.type()==QEvent.Type.Resize:
+            if self._parameter_columns()!=getattr(self,'_param_columns',1):
+                QTimer.singleShot(0,self._place_parameter_rows)   # after this resize has finished
+        return super().eventFilter(watched,event)
+    def _parameter_columns(self):
+        return 2 if self.param_panel.width()>=self.TWO_COLUMNS_FROM and len(getattr(self,'_param_rows_widgets',[]))>1 else 1
+    def _place_parameter_rows(self):
+        """Lay the rows out in one or two columns (by width); up to four rows show before scrolling."""
+        rows=getattr(self,'_param_rows_widgets',[])
+        columns=self._parameter_columns();self._param_columns=columns
+        for widget in rows:self.param_rows.removeWidget(widget)
+        per_column=-(-len(rows)//columns) if rows else 0
+        for i,widget in enumerate(rows):                          # fill across: γ0 β0 / γ1 β1 … stay paired
+            self.param_rows.addWidget(widget,i//columns,i%columns)
+        for c in range(2):self.param_rows.setColumnStretch(c,1 if c<columns else 0)
+        shown=min(per_column,4)
+        self.param_scroll.setVisible(shown>0)
+        self.param_scroll.setFixedHeight(shown*(self.PARAM_ROW+4)+2 if shown else 0)
+        self._fit_parameter_panel()
+    def _randomize(self,names=None):
+        if self.model.randomize_parameters(names):
+            self._changed();self._sync_parameter_values();self._update_expectation()
+    SIDEBAR_WIDTH=400
+    ROW_HEIGHT=54
+    def _fit_canvas_height(self):
+        """Height for the qubits plus one spare row to drop onto (at most ten rows)."""
+        rows=min(10,self.n+1)
+        self.grid.setFixedHeight(rows*self.ROW_HEIGHT+self.grid.horizontalHeader().height()+2*self.grid.frameWidth()+12)
+        if hasattr(self,'_center'):self._refit_page()
     def _fit_parameter_panel(self):
         """Reserve the height the panel's contents need, so the layout cannot squeeze its rows."""
-        count=len(self.model.parameters)
+        count=-(-len(self.model.parameters)//getattr(self,'_param_columns',1)) if self.model.parameters else 0
         self.param_list.setMinimumHeight(count*self.PARAM_ROW+max(0,count-1)*4)   # rows scroll, never squash
         self.param_panel.layout().activate()
         self.param_panel.setMinimumHeight(self.param_panel.layout().sizeHint().height()
@@ -733,12 +760,13 @@ class CircuitWorkspace(QWidget):
         self._split.setMinimumHeight(need+8)
     def _build_parameter_panel(self,v):
         self.param_panel=QGroupBox('Parameters && observable')
+        self.param_panel.installEventFilter(self)          # re-flow one/two columns when its width changes
         # Keep the height the contents need: the canvas above must never squeeze these rows.
         self.param_panel.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)
         layout=QVBoxLayout(self.param_panel)
         # Parameter rows keep a fixed height; more than four scroll instead of being squashed.
-        self.param_list=QWidget();self.param_rows=QVBoxLayout(self.param_list)
-        self.param_rows.setContentsMargins(0,0,0,0);self.param_rows.setSpacing(4)
+        self.param_list=QWidget();self.param_rows=QGridLayout(self.param_list)
+        self.param_rows.setContentsMargins(0,0,0,0);self.param_rows.setHorizontalSpacing(18);self.param_rows.setVerticalSpacing(4)
         self.param_scroll=QScrollArea();self.param_scroll.setWidgetResizable(True);self.param_scroll.setWidget(self.param_list)
         self.param_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.param_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -748,6 +776,8 @@ class CircuitWorkspace(QWidget):
         self.param_name.setToolTip('Type Greek letters as in LaTeX: \\theta → θ, \\gamma0 → γ0, \\beta → β')
         add.addWidget(self.param_name,1)
         add_button=QPushButton('Add parameter');add_button.clicked.connect(self._add_parameter_clicked);add.addWidget(add_button)
+        self.randomize_button=QPushButton('Randomize all');self.randomize_button.setToolTip('Set every parameter to a random angle in −π…π (one undo step)')
+        self.randomize_button.clicked.connect(lambda:self._randomize());add.addWidget(self.randomize_button)
         layout.addLayout(add)
         hint=QLabel('To use a parameter, double-click a rotation gate (RX, RY, RZ, P, CP, U) and type its name as the angle. '
                     'Type Greek letters as in LaTeX: \\theta → θ, \\gamma0 → γ0, 2*\\beta → 2·β.')
@@ -773,6 +803,13 @@ class CircuitWorkspace(QWidget):
                                    '(it can crawl across flat regions); COBYLA and Nelder–Mead need no gradients')
         opt.addWidget(self.opt_method,1)
         opt.addWidget(QLabel('max steps'));self.opt_steps=QSpinBox();self.opt_steps.setRange(5,2000);self.opt_steps.setValue(200);opt.addWidget(self.opt_steps)
+        layout.addLayout(opt);opt=QHBoxLayout()                 # second line: starts and the two buttons
+        opt.addSpacing(4)
+        self.opt_multi=QCheckBox('Best of');self.opt_multi.setToolTip('Also start from random parameters and keep the best result '
+                                                                      '(helps against local minima; takes N times longer)')
+        opt.addWidget(self.opt_multi)
+        self.opt_starts=QSpinBox();self.opt_starts.setRange(2,20);self.opt_starts.setValue(5);opt.addWidget(self.opt_starts)
+        opt.addWidget(QLabel('random starts'));opt.addStretch()
         self.opt_button=QPushButton('Optimize');self.opt_button.setToolTip('Lower ⟨O⟩ by changing every parameter')
         self.opt_button.clicked.connect(self.optimize_parameters);opt.addWidget(self.opt_button)
         self.landscape_button=QPushButton('Landscape…');self.landscape_button.clicked.connect(self.show_landscape);opt.addWidget(self.landscape_button)
@@ -787,7 +824,8 @@ class CircuitWorkspace(QWidget):
         dialog=getattr(self,'_optimize_dialog',None)
         if dialog is None:
             dialog=self._optimize_dialog=OptimizeDialog(self,self.opt_method.currentData(),self.opt_steps.value())
-        dialog.configure(self.opt_method.currentData(),self.opt_steps.value())
+        dialog.configure(self.opt_method.currentData(),self.opt_steps.value(),
+                         self.opt_starts.value() if self.opt_multi.isChecked() else 1)
         dialog.show();dialog.raise_();dialog.activateWindow()
         self._last_path=dialog.run()
         self._last_path_for=self._path_key()
@@ -859,25 +897,26 @@ class CircuitWorkspace(QWidget):
             widget=item.widget()
             if widget is not None:                   # hide and detach now: deleteLater alone leaves a ghost row
                 widget.hide();widget.setParent(None);widget.deleteLater()
-        self._param_widgets={}
+        self._param_widgets={};self._param_rows_widgets=[]
         for name,value in self.model.parameters.items():
-            row=QWidget();row.setFixedHeight(self.PARAM_ROW);h=QHBoxLayout(row);h.setContentsMargins(0,0,0,0)
-            label=QLabel(name);label.setMinimumWidth(56);h.addWidget(label)
+            row=QWidget();row.setFixedHeight(self.PARAM_ROW);h=QHBoxLayout(row);h.setContentsMargins(0,0,0,0);h.setSpacing(6)
+            label=QLabel(name);label.setMinimumWidth(40);h.addWidget(label)
             slider=QSlider(Qt.Orientation.Horizontal);slider.setRange(-3600,3600)      # −2π … 2π in 1/1800 π steps
             slider.setValue(round(value/math.pi*1800));h.addWidget(slider,1)
             box=QDoubleSpinBox();box.setDecimals(6);box.setRange(-4*math.pi,4*math.pi);box.setSingleStep(0.05)
             box.setSuffix(' rad');box.setValue(value);h.addWidget(box)
             users=sum(1 for v in self.model.bindings.values() if v[0]==name)
-            count=QLabel(f'{users} gate{"s" if users!=1 else ""}');count.setObjectName('muted');h.addWidget(count)
-            remove=QPushButton('Delete');remove.setToolTip(f'Delete {name} (its gates keep their current angles)')
+            count=QLabel(f'{users}×');count.setObjectName('muted');count.setMinimumWidth(22)
+            count.setToolTip(f'Used by {users} gate{"s" if users!=1 else ""}');h.addWidget(count)
+            dice=QToolButton();dice.setText('🎲');dice.setToolTip(f'A random value for {name} (−π…π)')
+            dice.clicked.connect(lambda _=False,n=name:self._randomize([n]));h.addWidget(dice)
+            remove=QToolButton();remove.setText('✕');remove.setToolTip(f'Delete {name} (its gates keep their current angles)')
             remove.clicked.connect(lambda _=False,n=name:self._remove_parameter(n));h.addWidget(remove)
             slider.sliderPressed.connect(self.model.snapshot)                   # one undo step per drag
             slider.valueChanged.connect(lambda v,n=name,b=box:self._parameter_moved(n,v*math.pi/1800,b))
             box.editingFinished.connect(lambda n=name,b=box:self._parameter_typed(n,b.value()))
-            self.param_rows.addWidget(row);self._param_widgets[name]=(slider,box)
-        shown=min(len(self.model.parameters),4)
-        self.param_scroll.setVisible(shown>0)
-        self.param_scroll.setFixedHeight(shown*(self.PARAM_ROW+4)+2 if shown else 0)
+            self._param_rows_widgets.append(row);self._param_widgets[name]=(slider,box)
+        self._place_parameter_rows()
         self._fit_parameter_panel()
         self.observable_edit.setText(self.model.observable)
         self._fill_observable_examples()
@@ -1131,7 +1170,6 @@ class CircuitWorkspace(QWidget):
     # ---- settings, recent files and autosave ------------------------------------------------
     def apply_preferences(self):
         """Settings changed: refresh what depends on them now (defaults apply to new circuits)."""
-        self.show_blochs.setChecked(prefs.get('circuits/show_blochs'))
         self._set_angle_fields(prefs.get('circuits/angle_units'))
         prefs.configure_display()
         self._refresh_recent()
@@ -1565,8 +1603,12 @@ class CircuitWorkspace(QWidget):
                             +('dynamic circuit: exact branches for every measurement outcome' if self.branch_view else
                               'noisy density-matrix simulation' if self.noisy_view else 'exact ideal simulation'))
         if has_specification(self.active_example) and hasattr(self,'verify_table'):self.verify_circuit()
+        elif hasattr(self,'verify_table') and getattr(self,'_verified_example',None) is not None \
+                and self._verification_key()!=self._verified_example:
+            self._reset_verification()
     def _sync_timeline(self):
-        self.inline_blochs.update()
+        """Kept for callers; the canvas repaints itself (the Bloch strip it updated is gone)."""
+        self.grid.viewport().update()
     def toggle_play(self):
         if self._play_timer.isActive():self._play_timer.stop();self.play_button.setText('▶ Play')
         else:
@@ -1592,7 +1634,7 @@ class CircuitWorkspace(QWidget):
             # Mixed state: Bloch vectors shrink inside the sphere as qubits lose purity.
             vectors=[noisemod.bloch(noisemod.partial_trace(rho,self.n,[q])) for q in range(self.n)]
             probs=noisemod.populations(rho)
-            self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
+            self.blochs.set_vectors(vectors)
             self.bars.set_probabilities(probs,self.n)
             self.bars.title='Noisy probabilities (density matrix, before measurement) · cyan: theory'
             branches=self._branches_at(k)
@@ -1606,7 +1648,7 @@ class CircuitWorkspace(QWidget):
                 extra=f'   •   purity {noisemod.purity(rho):.4f}, fidelity with ideal {noisemod.fidelity_with_pure(rho,ideal):.4f}'
         else:
             vectors=[bloch(state,self.n,q) for q in range(self.n)]
-            self.inline_blochs.set_vectors(vectors);self.blochs.set_vectors(vectors)
+            self.blochs.set_vectors(vectors)
             self.bars.set_data(state,self.n)
             self.bars.title='Full quantum-state probabilities (before measurement) · cyan: theory'
             probs=distribution(state)
@@ -1747,11 +1789,15 @@ class CircuitWorkspace(QWidget):
                 if item is not None and item.data(Qt.ItemDataRole.UserRole) is not None:
                     item.setForeground(canvas_color('pass' if item.data(Qt.ItemDataRole.UserRole) else 'fail'))
         self._color_header(self.step.value())
-        for widget in (self.grid.viewport(),self.inline_blochs,self.blochs,self.bars):
+        for widget in (self.grid.viewport(),self.blochs,self.bars):
             widget.update()
         if self._inspector is not None:self._inspector.apply_theme()
     def _show_notes(self,title,notes):
         if notes:QMessageBox.information(self,title,'\n\n'.join(notes))
+    def show_vqls_solution(self):
+        from quantumscope.gui.vqls_view import VqlsSolutionDialog
+        dialog=VqlsSolutionDialog(self);dialog.show()
+        return dialog
     def show_maxcut_graph(self):
         from quantumscope.gui.maxcut_view import MaxCutDialog
         dialog=MaxCutDialog(self);dialog.show()
@@ -1759,10 +1805,23 @@ class CircuitWorkspace(QWidget):
     def plot_logical_error_rate(self):
         from quantumscope.gui.qec_chart import plot_circuit
         plot_circuit(self).exec()
+    VERIFY_HINT='Select an example to verify arithmetic, or inspect basis-state inputs.'
+    def _verification_key(self):
+        """What a check was for: the example's specification, or (VQE, QAOA, codes…) its library entry."""
+        key=(repr(self.active_example),repr(self.model.active_entry))
+        return None if key==('None','None') else key
+    def _reset_verification(self):
+        """Forget a result whose example is gone (e.g. after Clear), instead of showing it for another circuit."""
+        self._verified_example=None
+        self.verify_table.setRowCount(0)
+        self.verify_status.setText(self.VERIFY_HINT)
+        self.qec_button.setVisible(False);self.graph_button.setVisible(False);self.solution_button.setVisible(False)
     def verify_circuit(self):
+        self._verified_example=self._verification_key()
         entry=self.model.active_entry
         self.qec_button.setVisible(bool(entry) and entry[0] in ('bit_flip_code','phase_flip_code'))
         self.graph_button.setVisible(bool(entry) and entry[0]=='qaoa')
+        self.solution_button.setVisible(bool(entry) and entry[0]=='vqls')
         rows,note=self.model.verification()
         noisy=self.model.noisy_verification()
         if noisy:   # the PASS/FAIL judges the ideal circuit; report what noise does to it
@@ -1777,6 +1836,7 @@ class CircuitWorkspace(QWidget):
                     item.setData(Qt.ItemDataRole.UserRole,bool(row.passed))
                     item.setForeground(canvas_color('pass' if row.passed else 'fail'))
                 self.verify_table.setItem(i,j,item)
+        self.verify_table.resizeRowsToContents()                 # wrapped cells get their full height
         self.verify_status.setText(note + (f'  {sum(r.passed is True for r in rows)}/{len(rows)} PASS' if rows and rows[0].passed is not None else ''))
 
     def load_native(self,path=None):

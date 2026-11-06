@@ -114,3 +114,55 @@ A step is done when all of its `check:` lines pass. Once a later step passes, th
 ## Editing the built-in lessons (contributors)
 
 Built-in lessons live in `src/quantumscope/learn/content/<area>/`. After editing their equations, run `python tools/render_equations.py --prune` (this needs matplotlib). The tests check that every equation has an up-to-date image, that every Try it link works, that every quiz has exactly one correct answer, and that every lab can be completed.
+
+## Glossary links (v0.7.3)
+
+Terms such as *Hermitian* or *Hamiltonian* are linked automatically: in every lesson, including yours in **My course**, the **first** occurrence of each glossary term is underlined. Clicking it opens a short definition, with related terms and **Learn more**, which opens the lesson that teaches it. All the terms are also listed on **Glossary** in the Learn contents.
+
+- **Automatic linking** happens in paragraphs, lists, notes and tables, never in headings, quizzes, lab steps, code, equations or existing links. Longer terms win: "phase flip" links as itself, not as "phase". Acronyms (QFT, VQE) match exactly; other terms match in any case.
+- **An explicit link:** write `[[Hermitian]]`, or `[[shown text|Hermitian]]` to link other words to a term. An unknown term stays plain text.
+- **Turning a term off in one lesson,** where the word means something else, uses the header:
+
+```
+noglossary: Orbital, Circuit depth
+```
+
+- **Adding or editing terms:** edit `learn/content/glossary.md`. Each `### Term` may have `aliases:` (other forms that link), `lesson:` (the lecture key for Learn more) and `see:` (related terms), followed by the definition. `## Group` headings group the Glossary page.
+- **PDF handouts** print the terms as plain text, with a **Terms used** box of their definitions at the end.
+
+## Mathematics and "Math you need" (v0.7.7)
+
+**Learn → Mathematics** has 12 lessons on the mathematics the other lessons use: complex numbers; vectors and Dirac notation; matrices acting on states; conjugate transpose, Hermitian and unitary; eigenvalues and eigenvectors; probability; tensor products; outer products, projectors and density matrices; matrix exponentials; Pauli algebra; the discrete Fourier transform; and gradients and optimization. They assume high-school algebra and trigonometry.
+
+**Every physics lecture shows a "Math you need" box** under its objectives, with links to the lessons it builds on. Authors list them in the lesson's header, by file name, without the `math/` folder:
+
+```
+math: 07-tensor-products, 08-density-matrices-and-projectors
+```
+
+Your own lessons in **My course** can use the field too. The glossary's linear-algebra terms (Hermitian, unitary, eigenvalue, tensor product, Pauli matrices, Dirac notation), and ten new terms in its **Mathematics** group, open these lessons from **Learn more**.
+
+## Quantum ML lessons and lab checks (v0.8.0)
+
+**Learn → Quantum ML** has five lectures:
+1. from data to quantum states;
+2. kernel classifiers and the SVM;
+3. variational classifiers;
+4. generalization, bandwidth and kernel concentration;
+5. preparing real data.
+
+There are also three labs: classify the circles; MNIST, from pixels to qubits; and train a quantum circuit. **Quantum Circuits** gains a VQLS lecture and the lab "solve a linear system".
+
+Lab steps in your own course can check what the student did in the Quantum ML area:
+
+```
+check: qml dataset mnist            the last data prepared or trained on is this dataset
+check: qml features = 4             the prepared data has this many features (also <=, >=)
+check: qml kernel test >= 0.95      the kernel classifier's last test accuracy (also: train)
+check: qml kernel map zz            …trained with this feature map (angle or zz)
+check: qml bandwidth <= 0.5         the kernel classifier's last bandwidth
+check: qml shots >= 100             the kernel was estimated from at least this many shots
+check: qml variational test >= 0.85 the variational classifier's last test accuracy (also: train)
+```
+
+Steps tick as soon as an experiment is run. Link to the experiments with `qs:open/qml_datasets`, `qs:open/qml_kernel` and `qs:open/qml_variational`.

@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 16
 objectives: State the deferred-measurement principle | Rewrite feed-forward with quantum controls | Judge when mid-circuit measurement is really needed
+math: 07-tensor-products
 ---
 # The deferred-measurement principle
 

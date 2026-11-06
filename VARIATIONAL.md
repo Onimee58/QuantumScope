@@ -9,6 +9,8 @@
 - **A bound gate shows its parameter** under its name (for example RY θ). Typing a plain number unbinds it again.
 - **The Parameters panel** (under the circuit; it appears when used, or with the **Parameters** button) has a slider and an exact value for each parameter, how many gates use it, and **Delete**. Deleting a parameter keeps its gates at their current angles.
 - **Undo:** one slider drag is one undo step.
+- **Randomize all** sets every parameter to a random angle in −π…π, and the **🎲** on a row randomizes just that parameter. Each is one undo step. Use them to explore the landscape, or to restart an optimization elsewhere.
+- **Two columns:** on wide windows the parameters show in two columns (γ0 β0 / γ1 β1 …), so that up to eight are visible without scrolling. Narrower windows show one column.
 
 ## Observables
 
@@ -31,6 +33,7 @@ The **Observable** box takes a sum of Pauli terms, such as `Z0 Z1 + 0.5 X0 - 0.3
 | **Gradient descent** | parameter-shift gradients, with a backtracking line search | never goes uphill; can crawl on plateaus |
 | **COBYLA**, **Nelder–Mead** | only ⟨O⟩ values | no gradients; only improving steps are shown |
 
+- **Best of N random starts** (off by default) runs the optimizer from your current parameters and from N − 1 random ones, and keeps the best. This helps against local minima, at N times the cost. The window reports every start's final value.
 - **The optimization window** plots ⟨O⟩ against the steps, with the exact minimum dashed, and reports both the **steps** and the **circuit evaluations** used. It has a **Stop** button, and the whole optimization is one undo step.
 - **Afterwards,** parameters are wrapped back into −π…π wherever that provably changes nothing (whole-number factors).
 - **If no step lowers ⟨O⟩,** the window says so: the parameters are already at a minimum of what this circuit can do.

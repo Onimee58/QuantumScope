@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 23
 objectives: State the parameter-shift rule | Verify it for RY and Z | Explain why it gives exact gradients on hardware
+math: 09-matrix-exponentials, 12-gradients-and-optimization
 ---
 # The parameter-shift rule
 

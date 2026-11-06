@@ -7,7 +7,7 @@
 
   An open-source, cross-platform quantum visualization and circuit simulation studio built with Python and PySide6.
 
-  [![Version](https://img.shields.io/badge/version-v0.7.0-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
+  [![Version](https://img.shields.io/badge/version-v0.8.0-1878b9)](https://github.com/Onimee58/QuantumScope/releases)
   [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
   [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-555)](https://github.com/Onimee58/QuantumScope/releases)
@@ -29,7 +29,8 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 |---|---|
 | **Hydrogen** | Hydrogen Orbital Explorer; coherent-state Hydrogen Dynamics in 2D and 3D; probability density, amplitude and phase visualization; available image/data exports |
 | **Quantum Principles** | Double-Slit Experiment; interactive quantum superposition and Bloch sphere; quantum entanglement demonstrations |
-| **Quantum Circuits** | Drag-and-drop circuit editor, statevector simulation, simulation stepping, Bloch spheres beside wires, measurements, example circuits, verification, QASM Converter and PDF export |
+| **Quantum Circuits** | Drag-and-drop circuit editor, statevector simulation, simulation stepping, Bloch spheres for every qubit, measurements, example circuits, verification, QASM Converter and PDF export |
+| **Quantum ML** | Datasets (five built-in, offline, plus your own CSV or .npz) with a checker and visible preprocessing; Quantum Kernel Classifier (angle and ZZ feature maps, bandwidth, shot noise, SVM or kernel ridge, decision regions); Variational Classifier (live training, open the trained circuit in the simulator) |
 
 ### Quantum circuit studio
 
@@ -44,6 +45,98 @@ Use it for self-study, classroom demonstrations, coursework or experimenting wit
 - **Quantum Gate Explorer**: double-click a gate in the *left palette* for its definition, circuit symbol, matrix/operation and basic state transformations. Double-clicking a placed parameterized gate opens its parameter editor instead.
 
 **Supported operations:** `H`, `X`, `Y`, `Z`, `S`, `T`, `Sdg`, `Tdg`, `SX`, `RX`, `RY`, `RZ`, `U`/`U3`, `P`, `CX`, `CZ`, `SWAP`, `CCX`, `CSWAP`, and terminal `M`.
+
+## What's new in v0.8.0?
+
+**Quantum machine learning, a linear solver, and an upgraded user guide.**
+
+- **A fourth area, Quantum ML,** with three experiments:
+  - **Datasets:** Iris, Wine, Breast Cancer, Digits and an MNIST subset, all offline, or your own CSV or .npz file. A checker says what stands in the way and suggests each fix, and the preprocessing (classes, PCA, scaling, subsampling, missing values, text columns) stays visible and adjustable.
+  - **Quantum Kernel Classifier:** angle or ZZ feature maps, a bandwidth, kernels estimated from shots, an SVM or kernel ridge, a kernel heatmap, and decision regions for any number of features.
+  - **Variational Classifier:** a trainable circuit, trained live with exact parameter-shift gradients; open the trained circuit in the simulator.
+- **VQLS** in **Algorithms**: solve A x = b with a variational circuit, on preset systems or your own, with a live view of the solution.
+- **Lessons:** five Quantum ML lectures and three labs whose steps tick as you run the experiments, a VQLS lecture and lab, and 14 new glossary terms (105 in total).
+- **The user guide** (21 pages) now has a title page, a table of contents with page numbers, bookmarks, numbered figures with a list of figures, chapters on Quantum ML and VQLS, and 41 references, each checked against its source.
+
+## What's new in v0.7.8?
+
+**A user guide:** a 13-page PDF with screenshots, covering installing and updating, every area and experiment, the circuit simulator, Learn, Settings, troubleshooting, and a mouse and keyboard reference.
+- **Open it** from **ⓘ → User guide**. It is also attached to every release.
+- **Its source** is `docs/user-guide.md`. Authors rebuild the screenshots and the PDF with `python tools/make_user_guide.py`, which photographs the real app.
+
+## What's new in v0.7.7?
+
+**Learn → Mathematics:** 12 lessons on the math behind everything else, assuming only high-school algebra and trigonometry:
+- complex numbers and Dirac notation;
+- matrices, Hermitian and unitary matrices, eigenvalues;
+- probability and shot noise;
+- tensor products, density matrices and the partial trace;
+- matrix exponentials, Pauli algebra, the Fourier transform;
+- gradients.
+
+**"Math you need":** every physics lecture now says which of them it builds on, with links. The glossary gains ten mathematics terms.
+
+## What's new in v0.7.6?
+
+**Teleportation, redesigned:**
+
+- **Follow the protocol on three Bloch spheres,** with the circuit above highlighting each step. Play it or step through it.
+- **Watch Alice's two bits travel** to Bob before he corrects his qubit.
+- **Try a noisy pair, or skip Bob's correction,** and measure the average fidelity of many teleports against the classical limit of ⅔.
+
+## What's new in v0.7.5?
+
+**Entanglement, redesigned:**
+
+- **Pairs fly to Alice and Bob,** and each qubit's own Bloch sphere shows that, alone, it is completely random.
+- **Aim the detectors** by dragging their axes.
+- **Watch the correlations build up** in a grid and on a curve.
+- **Run a Bell test:** the meter shows entangled pairs beating the classical limit of 2. Try noisy pairs, or a classically correlated pair, which never can.
+- **Every Bloch sphere now turns:** right-drag, or Shift + left-drag. Double-click resets the view.
+
+## What's new in v0.7.4?
+
+**Quantum Principles, redesigned (part 1):**
+
+- **Superposition:**
+  - **drag the arrow** on a shaded Bloch sphere, or pick a preset;
+  - turn the amber measurement axis;
+  - **Measure once** to watch the state collapse;
+  - **Measure many** to watch the counts grow toward the Born-rule targets.
+- **Double-Slit:**
+  - particles land **one by one** as glowing dots, and the fringes build up before your eyes;
+  - the wavelength sets the **colour of the light**;
+  - **drag the slits** to change their separation.
+
+Entanglement and Teleportation follow in v0.7.5.
+
+## What's new in v0.7.3?
+
+- **A glossary in Learn:** **81 terms**, such as *Hermitian*, *Hamiltonian*, *eigenvalue* and *density matrix*, are underlined where they first appear in a lesson.
+  - Click one for a short definition, related terms, and **Learn more**, which opens the lesson that teaches it.
+  - Every term is also listed on the new **Glossary** page.
+  - PDF handouts end with the terms they use.
+- **A start-up splash:** QuantumScope's Q, on a transparent background, appears while the app loads.
+
+## What's new in v0.7.2?
+
+- **Learn's PDF export** prints at a readable size: 11-pt text, with the headings above it. The body text used to come out microscopic.
+- **The circuit sidebar:** the Noise buttons no longer drift down on tall pages.
+- **Updating on Ubuntu:** QuantumScope now waits for the installer and offers **Restart now**.
+
+## What's new in v0.7.1?
+
+Improvements suggested by a tester:
+
+- **A compact circuit tab:**
+  - the sidebar holds the gates (6 per row), **Shots** and the **verification table**, beside the results;
+  - the canvas height fits the qubits;
+  - there's no sideways scrolling.
+- **Parameters:** **Randomize all**, **🎲** per parameter, **Best of N random starts**, and two columns of sliders on wide windows.
+- **Every tab can close.** Closed tabs come back as you left them, and an empty area shows what you can open.
+- **Fixes:**
+  - the Error-correction explorer opens in Quantum Circuits;
+  - keyboard selection no longer highlights rows of the circuit canvas.
 
 ## What's new in v0.7.0?
 
@@ -240,7 +333,7 @@ More setup details: [Windows guide](WINDOWS.md) · [Packaging and builds](PACKAG
 3. Drag **H** from the left palette onto `q0` in the first operation column.
 4. Drag **CX** into the next column, then choose its remaining operand as prompted. To prepare a Bell state, use `q0` as control and `q1` as target.
 5. Step through the circuit or play the simulation to inspect state probabilities and Bloch spheres.
-6. Optionally add terminal **M** gates and run measurement shots, or use **Export PDF** to save the circuit diagram.
+6. Optionally add terminal **M** gates and press **Run shots** (in the sidebar), or use **Export PDF** to save the circuit diagram.
 
 For the Bell state, the ideal output is `(|00⟩ + |11⟩)/√2`, with theoretical probabilities of **50%** for `00` and **50%** for `11` (up to the displayed bit-order convention). Finite-shot measurements will vary statistically.
 
@@ -283,7 +376,7 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-The v0.7.0 source passes **1336 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
+The v0.7.8 source passes **1434 automated tests**. GUI interactions, installers and graphical rendering still require platform-specific testing.
 
 Build configuration and workflows live in `.github/workflows/`, and desktop packaging scripts live in `packaging/`. Please report reproducible errors with your OS version, installation method, screenshots or logs, and a short reproduction sequence.
 

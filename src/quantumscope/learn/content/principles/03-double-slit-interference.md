@@ -4,6 +4,7 @@ area: principles
 kind: lecture
 order: 3
 objectives: Explain interference as adding amplitudes, not probabilities | Predict the fringe spacing | Explain why which-path information destroys interference
+math: 01-complex-numbers
 ---
 # Interference: the double slit
 

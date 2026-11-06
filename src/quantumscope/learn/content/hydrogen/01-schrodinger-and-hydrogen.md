@@ -4,6 +4,7 @@ area: hydrogen
 kind: lecture
 order: 1
 objectives: Write the time-independent Schrödinger equation for hydrogen | Explain the reduced mass and the length unit a_μ | Separate the wavefunction into radial and angular parts
+math: 01-complex-numbers, 05-eigenvalues, 09-matrix-exponentials
 ---
 # The Schrödinger equation and the hydrogen atom
 

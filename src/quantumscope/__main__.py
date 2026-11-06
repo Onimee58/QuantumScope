@@ -53,6 +53,22 @@ def _self_test():
         if not lessons or missing:
             raise RuntimeError(f"Learn content incomplete: {len(lessons)} lessons, {len(missing)} missing equations")
         lines.append(f"Learn: {len(lessons)} lessons, all equation images present")
+        # The glossary and the splash's logo must ship too (a missing glossary only hides links).
+        from quantumscope.learn import glossary
+        from importlib.resources import files
+        terms = glossary.builtin().terms
+        if len(terms) < 50 or not files("quantumscope").joinpath("assets/quantumscope-mark.svg").is_file():
+            raise RuntimeError(f"Glossary or splash logo missing ({len(terms)} terms)")
+        lines.append(f"Glossary: {len(terms)} terms; splash logo present")
+        guide = files("quantumscope").joinpath("assets/QuantumScope-User-Guide.pdf")
+        if not guide.is_file() or guide.read_bytes()[:5] != b"%PDF-":
+            raise RuntimeError("User guide (assets/QuantumScope-User-Guide.pdf) missing")
+        lines.append("User guide: present")
+        from quantumscope.ml import datasets
+        sizes = {name: len(datasets.load(name).y) for name in datasets.BUILTIN}
+        if sizes != {'iris': 150, 'wine': 178, 'breast_cancer': 569, 'digits': 1797, 'mnist': 2000}:
+            raise RuntimeError(f"Bundled datasets incomplete: {sizes}")
+        lines.append(f"Datasets: {len(sizes)} bundled ({sum(sizes.values())} samples)")
         lines.append("RESULT: PASS")
         status = 0
     except Exception:
@@ -79,9 +95,12 @@ def main():
     from quantumscope.gui.preferences import apply_startup_environment
     apply_startup_environment()
     from PySide6.QtWidgets import QApplication
-    from quantumscope.gui.main_window import MainWindow
 
     app = QApplication.instance() or QApplication(sys.argv)
+    # The splash appears before the slow imports below (the 3-D libraries), so it covers the wait.
+    from quantumscope.gui.splash import show_splash
+    splash = show_splash(app)
+    from quantumscope.gui.main_window import MainWindow
     from PySide6.QtGui import QIcon
     from importlib.resources import files
     app.setApplicationName("QuantumScope")
@@ -97,6 +116,8 @@ def main():
     except AttributeError:
         pass
     window.show()
+    if splash is not None:
+        splash.close()
     window.offer_recovery()
     return app.exec()
 

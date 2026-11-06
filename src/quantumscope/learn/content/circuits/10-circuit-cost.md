@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 10
 objectives: Distinguish gate count, depth and minimum depth | Explain why T gates are expensive in fault-tolerant computing | Identify Clifford gates
+math: 03-matrices-acting-on-states
 ---
 # Circuit cost: depth, T-count and Clifford gates
 

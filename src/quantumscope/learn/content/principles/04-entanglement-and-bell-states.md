@@ -4,6 +4,7 @@ area: principles
 kind: lecture
 order: 4
 objectives: Describe the spin singlet and its correlations | State what a Bell inequality tests | Explain why entanglement cannot send signals
+math: 07-tensor-products, 08-density-matrices-and-projectors
 ---
 # Entanglement and Bell states
 

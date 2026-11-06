@@ -4,6 +4,7 @@ area: principles
 kind: lecture
 order: 5
 objectives: Explain why a global phase is unobservable | Show how a relative phase changes measurement results after interference | Recognize phase on the Bloch sphere
+math: 01-complex-numbers
 ---
 # Global and relative phase
 

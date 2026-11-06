@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 19
 objectives: Compute the logical failure rate of a repetition code | Explain when a code helps and when it hurts | Describe the idea of a threshold
+math: 06-probability
 ---
 # Logical error rates and thresholds
 

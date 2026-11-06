@@ -4,6 +4,7 @@ area: circuits
 kind: lecture
 order: 14
 objectives: Follow the teleportation protocol step by step | Explain the four measurement results and their corrections | Explain why teleportation is neither faster than light nor cloning
+math: 07-tensor-products, 10-pauli-algebra
 ---
 # Quantum teleportation
 

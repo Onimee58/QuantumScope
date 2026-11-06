@@ -4,6 +4,7 @@ area: principles
 kind: lecture
 order: 1
 objectives: Write any single-qubit pure state with two angles | Locate states on the Bloch sphere | Connect a spin-½ particle with a qubit
+math: 01-complex-numbers, 02-vectors-and-dirac-notation
 ---
 # Superposition and the Bloch sphere
 
